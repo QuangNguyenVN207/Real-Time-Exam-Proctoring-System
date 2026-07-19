@@ -50,6 +50,7 @@ exam_proctoring_system/
 ├── .env                         
 ├── requirements.txt
 └── README.md
+```
 ### Chi tiết chức năng từng File / Thư mục
 
 | File / Thư mục | Chức năng chi tiết |
