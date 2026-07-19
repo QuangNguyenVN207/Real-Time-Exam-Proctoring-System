@@ -6,12 +6,12 @@ Tài liệu này quy định cấu trúc thư mục, chiến lược quản lý 
 
 ## 1. 🗂 Cấu trúc Repository (Monorepo)
 
-Dự án được tổ chức theo dạng Monorepo, bao gồm các thư mục chính sau:
+<!-- Dự án được tổ chức theo dạng Monorepo, bao gồm các thư mục chính sau:
 
 *   **`/frontend`**: Chứa source code giao diện UI/UX (Ví dụ: React, Vue, Next.js...).
 *   **`/backend`**: Chứa API và logic hệ thống lõi (Ví dụ: Node.js, Go, Spring Boot...).
 *   **`/ai-core`**: Chứa các model AI và pipeline xử lý dữ liệu multimedia (Ví dụ: Python, PyTorch, TensorFlow...).
-*   **`/docs`**: Chứa tài liệu dự án, bao gồm tài liệu API, kiến trúc hệ thống và hướng dẫn cài đặt.
+*   **`/docs`**: Chứa tài liệu dự án, bao gồm tài liệu API, kiến trúc hệ thống và hướng dẫn cài đặt. -->
 
 ---
 
