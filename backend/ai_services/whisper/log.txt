@@ -1,0 +1,18 @@
+
+
+[2026-07-21]
+
+Đã làm:
+- Hoàn thiện KeywordDetector V2.
+- Tích hợp AudioPipeline.
+
+Kết quả:
+- Phát hiện đúng từ khóa "đáp án".
+- Không còn phát hiện nhầm "Chào" thành "ChatGPT".
+
+Khó khăn:
+- RapidFuzz tạo false positive khi dùng partial_ratio.
+- Đã khắc phục bằng cách so khớp theo n-gram cùng độ dài.
+
+Việc tiếp theo:
+- Tích hợp Silero VAD.

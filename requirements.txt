@@ -1,0 +1,21 @@
+# Nếu muốn dùng cpu, ko tải các gói nvidia nặng thì:
+# uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu   
+# uv pip install -r requirements.txt
+
+# Còn ko thì bỏ # 3 dòng dưới và chạy uv pip install -r requirements.txt
+# torch==2.13.0
+# torchaudio==2.11.0
+# torchvision==0.28.0
+faster_whisper
+numpy
+opencv-python
+ultralytics
+config
+
+ctranslate2
+av
+rapidfuzz
+silero-vad
+sounddevice
+scipy
+onnxruntime
