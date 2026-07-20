@@ -1,10 +1,13 @@
 from whisper.whisper_service import WhisperService
 from whisper.keyword_detector import KeywordDetector
+from whisper.vad_service import VADService
 
 
 class AudioPipeline:
 
     def __init__(self):
+        
+        self.vad = VADService()
 
         self.whisper = WhisperService()
 
@@ -12,20 +15,33 @@ class AudioPipeline:
 
     def process(self, audio_path: str):
 
-        # Bước 1: Chuyển audio thành text
+        speech_segments = self.vad.detect(audio_path)
+
+        # 1. Speech -> Text
         transcript = self.whisper.transcribe(audio_path)
 
-        # Bước 2: Phát hiện từ khóa
+        # 2. Detect keyword
         keyword_result = self.detector.detect(
             transcript["text"]
         )
 
-        # Bước 3: Ghép kết quả
+        # 3. Merge result
         return {
+
             "language": transcript["language"],
+
             "text": transcript["text"],
+
             "segments": transcript["segments"],
+
+            "speech_segments": speech_segments,
+
             "alert": keyword_result["alert"],
+
             "score": keyword_result["score"],
+
             "matched": keyword_result["matched"]
+
         }
+
+        return result

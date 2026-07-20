@@ -19,3 +19,4 @@ silero-vad
 sounddevice
 scipy
 onnxruntime
+soundfile
