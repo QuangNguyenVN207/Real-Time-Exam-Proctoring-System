@@ -1,0 +1,7 @@
+faster_whisper
+numpy
+opencv-python
+torch --index-url https://download.pytorch.org/whl/cpu
+ultralytics
+config
+torchaudio
