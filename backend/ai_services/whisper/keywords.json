@@ -1,0 +1,42 @@
+[
+    {
+        "keyword": "đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đọc đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "cho xem",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gợi ý",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "google",
+        "severity": 2,
+        "category": "internet"
+    },
+    {
+        "keyword": "chatgpt",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "copy",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "làm giúp",
+        "severity": 3,
+        "category": "cheating"
+    }
+]
