@@ -4,4 +4,12 @@ opencv-python
 torch --index-url https://download.pytorch.org/whl/cpu
 ultralytics
 config
-torchaudio
+torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+ctranslate2
+av
+rapidfuzz
+silero-vad
+sounddevice
+scipy
+onnxruntime
