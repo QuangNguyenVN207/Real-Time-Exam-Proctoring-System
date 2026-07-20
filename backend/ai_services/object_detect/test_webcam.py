@@ -58,7 +58,9 @@ def main():
             last_detections = result.get("raw_detections", last_detections)
             last_confirmed = result.get("confirmed_classes", last_confirmed)
             if result["label"] != "clear":
-                print(f"[frame {frame_id}] {result}")
+                # Cứ mỗi 15 frame (~0.5 giây) mới in log ra một lần
+                if frame_id % 15 == 0: 
+                    print(f"[frame {frame_id}] {result}")
 
         draw_boxes(frame, last_boxes, last_detections, last_confirmed)
         cv2.imshow("Test object detect - press q to quit", frame)
