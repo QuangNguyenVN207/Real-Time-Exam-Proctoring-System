@@ -21,6 +21,14 @@ for audio_file in audio_files:
 
     print("Language :", result["language"])
     print("Transcript:", result["text"])
+    print("\nSpeech Segments:")
+
+    for seg in result["speech_segments"]:
+
+        start = seg["start"] / 16000
+        end = seg["end"] / 16000
+
+        print(f"{start:.2f}s -> {end:.2f}s")
     print("Alert     :", result["alert"])
     print("Score     :", result["score"])
 
