@@ -1,0 +1,9 @@
+faster-whisper
+ctranslate2
+av
+rapidfuzz
+silero-vad
+sounddevice
+scipy
+numpy
+onnxruntime
