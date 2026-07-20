@@ -1,0 +1,8 @@
+## commit -m"Tracking and assign id forr student"
+    commit này để thực hiện tracking vị trí ban đầu của từng học sinh (đang set max tracking 10 học sinh)
+    test bằng python -m backend.ai_services.pose_gaze.tracking.test_webcam
+    trả về 2 file output json trong thư mục test_data_tracking
+    file pose_gaze_input.json là output test xác định vị trí cơ bản của từng học sinh, từ đó module 1 sẽ tiếp tục xử lý chụp lấy các thông số cơ bản làm baseline như vị trí ngồi, đầu, vai
+    21-07-2026
+
+    
