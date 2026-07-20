@@ -3,6 +3,7 @@ from pathlib import Path
 from whisper.audio_pipeline import AudioPipeline
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 SAMPLES_DIR = BASE_DIR / "samples"
 
 pipeline = AudioPipeline()
