@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 
-from config import settings
+from core.config import settings
 
 _DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
