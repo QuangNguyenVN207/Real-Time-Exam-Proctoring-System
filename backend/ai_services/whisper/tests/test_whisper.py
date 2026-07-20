@@ -2,7 +2,7 @@ from pathlib import Path
 from whisper.whisper_service import WhisperService
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-AUDIO_PATH = BASE_DIR / "samples" / "test.wav"
+AUDIO_PATH = BASE_DIR / "samples" / "input1.wav"
 
 service = WhisperService()
 
