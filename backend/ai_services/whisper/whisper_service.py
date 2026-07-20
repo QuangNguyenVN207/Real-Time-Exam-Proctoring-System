@@ -1,19 +1,20 @@
 from faster_whisper import WhisperModel
+from whisper.config import (
+    WHISPER_MODEL,
+    WHISPER_LANGUAGE,
+    WHISPER_DEVICE,
+    WHISPER_COMPUTE_TYPE,
+)
 
 
 class WhisperService:
-    def __init__(
-        self,
-        model_size="tiny",
-        device="cuda",
-        compute_type="float16"
-    ):
+    def __init__(self):
         print("[Whisper] Loading model...")
 
         self.model = WhisperModel(
-            model_size,
-            device=device,
-            compute_type=compute_type
+            WHISPER_MODEL,
+            device=WHISPER_DEVICE,
+            compute_type=WHISPER_COMPUTE_TYPE,
         )
 
         print("[Whisper] Model loaded!")
@@ -23,11 +24,10 @@ class WhisperService:
         segments, info = self.model.transcribe(
             audio_path,
             beam_size=5,
-            language="vi"
+            language=WHISPER_LANGUAGE,
         )
 
         results = []
-
         full_text = ""
 
         for segment in segments:
