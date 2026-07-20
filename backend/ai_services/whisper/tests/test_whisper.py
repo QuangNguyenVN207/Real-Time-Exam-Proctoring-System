@@ -1,19 +1,25 @@
 from pathlib import Path
-from whisper.whisper_service import WhisperService
+
+from whisper.audio_pipeline import AudioPipeline
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-AUDIO_PATH = BASE_DIR / "samples" / "test.wav"
+SAMPLES_DIR = BASE_DIR / "samples"
 
-service = WhisperService()
+pipeline = AudioPipeline()
 
-result = service.transcribe(str(AUDIO_PATH))
+# Lấy tất cả file .wav
+audio_files = sorted(SAMPLES_DIR.glob("*.wav"))
 
-print("Language:", result["language"])
-print()
+print(f"Tìm thấy {len(audio_files)} file.\n")
 
-print("Transcript:")
-print(result["text"])
+for audio_file in audio_files:
 
-print("\nSegments:")
-for s in result["segments"]:
-    print(f"[{s['start']:.2f}s -> {s['end']:.2f}s] {s['text']}")
+    print("=" * 70)
+    print(f"Đang xử lý: {audio_file.name}")
+
+    result = pipeline.process(str(audio_file))
+
+    print("Language:", result["language"])
+    print("Transcript:")
+    print(result["text"])
+    print()
