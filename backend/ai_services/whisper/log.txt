@@ -16,3 +16,31 @@ Khó khăn:
 
 Việc tiếp theo:
 - Tích hợp Silero VAD.
+
+[2026-07-22]
+
+Đã làm:
+- Hoàn thiện VADService bằng Silero VAD.
+- Chuẩn hóa audio về Mono, 16 kHz trước khi xử lý.
+- Xây dựng audio_utils.py (load_audio, extract_speech).
+- Tích hợp VAD vào AudioPipeline để cắt bỏ khoảng im lặng trước khi đưa vào Whisper.
+- Hoàn thiện test_vad.py và test_audio_utils.py.
+- Cập nhật test_whisper.py để kiểm thử nhiều file .wav.
+- Xây dựng test_benchmark.py để chuẩn bị đo hiệu năng.
+- Chuẩn hóa và bổ sung tập dữ liệu samples (cheating, normal) phục vụ đánh giá.
+
+Kết quả:
+- VAD phát hiện chính xác các đoạn có giọng nói.
+- Audio sau VAD chỉ giữ lại phần chứa lời nói, loại bỏ khoảng im lặng.
+- AudioPipeline hoạt động theo quy trình:
+  Audio → VAD → Extract Speech → Whisper → Keyword Detector.
+- Kiểm thử thành công trên nhiều file .wav.
+
+Khó khăn:
+- Silero VAD yêu cầu audio Mono và 16 kHz.
+- Whisper sau khi tích hợp VAD phát sinh một số lỗi do thay đổi kiểu dữ liệu đầu vào (file → numpy array), đã xử lý và pipeline hoạt động ổn định.
+
+Việc tiếp theo:
+- Hoàn thiện test_evaluation.py.
+- Đánh giá Accuracy, Precision, Recall, F1-score và Confusion Matrix trên tập dữ liệu.
+- Tối ưu KeywordDetector dựa trên kết quả đánh giá.

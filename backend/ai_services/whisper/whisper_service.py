@@ -19,10 +19,10 @@ class WhisperService:
 
         print("[Whisper] Model loaded!")
 
-    def transcribe(self, audio_path: str):
+    def transcribe(self, audio):
 
         segments, info = self.model.transcribe(
-            audio_path,
+            audio,
             beam_size=5,
             language=WHISPER_LANGUAGE,
         )

@@ -1,8 +1,15 @@
-from silero_vad import load_silero_vad, get_speech_timestamps
-import soundfile as sf
+import librosa
+import numpy as np
+
+from silero_vad import (
+    load_silero_vad,
+    get_speech_timestamps
+)
 
 
 class VADService:
+
+    TARGET_SR = 16000
 
     def __init__(self):
 
@@ -14,16 +21,19 @@ class VADService:
 
     def detect(self, audio_path: str):
 
-        audio, sample_rate = sf.read(audio_path)
+        # Load audio và tự chuyển về mono + 16kHz
+        audio, sample_rate = librosa.load(
+            audio_path,
+            sr=self.TARGET_SR,
+            mono=True
+        )
 
-        # Nếu stereo -> chuyển về mono
-        if len(audio.shape) > 1:
-            audio = audio.mean(axis=1)
+        audio = np.asarray(audio, dtype=np.float32)
 
         timestamps = get_speech_timestamps(
             audio,
             self.model,
-            sampling_rate=sample_rate
+            sampling_rate=self.TARGET_SR
         )
 
         return timestamps
