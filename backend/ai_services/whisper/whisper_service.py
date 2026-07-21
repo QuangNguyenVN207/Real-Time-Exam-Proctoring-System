@@ -44,3 +44,4 @@ class WhisperService:
             "text": full_text.strip(),
             "segments": results
         }
+
