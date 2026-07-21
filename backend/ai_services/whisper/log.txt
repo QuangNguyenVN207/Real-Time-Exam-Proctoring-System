@@ -17,6 +17,7 @@ Khó khăn:
 Việc tiếp theo:
 - Tích hợp Silero VAD.
 
+
 [2026-07-22]
 
 Đã làm:
