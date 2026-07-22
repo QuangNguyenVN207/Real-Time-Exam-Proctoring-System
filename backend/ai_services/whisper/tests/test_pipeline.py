@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pprint import pprint
+
 from whisper.audio_pipeline import AudioPipeline
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,8 +21,9 @@ for audio_file in audio_files:
 
     result = pipeline.process(str(audio_file))
 
+    pprint(result)
     print("Language :", result["language"])
-    print("Transcript:", result["text"])
+    print("Transcript:", result["transcription"])
     print("\nSpeech Segments:")
 
     for seg in result["speech_segments"]:
@@ -29,7 +32,7 @@ for audio_file in audio_files:
         end = seg["end"] / 16000
 
         print(f"{start:.2f}s -> {end:.2f}s")
-    print("Alert     :", result["alert"])
+    print("Alert     :", result["keyword_detected"])
     print("Score     :", result["score"])
 
     if result["matched"]:

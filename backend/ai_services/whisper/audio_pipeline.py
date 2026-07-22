@@ -1,6 +1,8 @@
+import time
 from whisper.whisper_service import WhisperService
 from whisper.keyword_detector import KeywordDetector
 from whisper.vad_service import VADService
+from whisper.audio_logger import AudioLogger
 from whisper.audio_utils import (
     load_audio,
     extract_speech
@@ -17,6 +19,8 @@ class AudioPipeline:
 
         self.detector = KeywordDetector()
 
+        self.logger = AudioLogger()
+
     def process(self, audio_path: str):
 
         audio = load_audio(audio_path)
@@ -31,13 +35,12 @@ class AudioPipeline:
         if len(speech_audio) == 0:
 
             return {
-                "language": "",
-                "text": "",
-                "segments": [],
-                "speech_segments": [],
-                "alert": False,
-                "score": 0,
-                "matched": []
+                "module": "audio_whisper",
+                "status": "idle",
+                "transcription": "",
+                "keyword_detected": False,
+                "matched": [],
+                "timestamp": int(time.time())
             }
 
         # 1. Speech -> Text
@@ -50,21 +53,32 @@ class AudioPipeline:
             transcript["text"]
         )
 
+        if keyword_result["alert"]:
+
+            self.logger.write(
+                transcript["text"],
+                keyword_result["matched"]
+            )
+
         # 3. Merge result
         return {
 
+            "module": "audio_whisper",
+
+            "status": "alert" if keyword_result["alert"] else "normal",
+
             "language": transcript["language"],
 
-            "text": transcript["text"],
-
-            "segments": transcript["segments"],
+            "transcription": transcript["text"],
 
             "speech_segments": speech_segments,
 
-            "alert": keyword_result["alert"],
+            "keyword_detected": keyword_result["alert"],
 
             "score": keyword_result["score"],
 
-            "matched": keyword_result["matched"]
+            "matched": keyword_result["matched"],
+
+            "timestamp": int(time.time())
 
         }
