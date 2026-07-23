@@ -118,3 +118,8 @@ Text: Bắt đầu làm bài
 Keyword:
  - bài làm (score=100.0)
 
+[2026-07-23 21:16:56]
+Text: Hẹn gặp lại ở lại video này.
+Keyword:
+ - mở ai (score=80.0)
+

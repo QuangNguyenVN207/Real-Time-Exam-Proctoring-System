@@ -43,3 +43,73 @@ Khó khăn:
 Việc tiếp theo:
 - Chuyển Input từ file WAV sang microphone realtime (sounddevice/PyAudio).
 - Gửi JSON qua WebSocket để hiển thị trực tiếp trên giao diện giám thị.
+
+[2026-07-23]
+
+Đã làm:
+- Hoàn thiện Silero VAD và tích hợp vào AudioPipeline để tự động loại bỏ khoảng lặng trước khi nhận dạng.
+- Xây dựng MicrophoneService hỗ trợ thu âm realtime bằng sounddevice (record và stream).
+- Chuyển pipeline từ xử lý file WAV sang xử lý microphone realtime.
+- Xây dựng LiveStreamService để nhận dữ liệu liên tục từ microphone, gom buffer và xử lý theo thời gian thực.
+- Hoàn thiện WhisperService, bổ sung khả năng tự động sử dụng CUDA khi có GPU NVIDIA và tự động chuyển sang CPU nếu không có GPU.
+- Hoàn thiện luồng xử lý realtime: Microphone → VAD → Whisper → KeywordDetector → AudioLogger → JSON.
+- Tích hợp AudioPipeline với LiveStreamService để trả về kết quả ngay sau mỗi lần phát hiện tiếng nói.
+- Xây dựng WebSocket Server phục vụ truyền dữ liệu realtime.
+- Xây dựng WebSocket Client để gửi JSON từ AudioPipeline tới WebSocket Server.
+- Xây dựng Test Client để mô phỏng giao diện giám thị nhận dữ liệu realtime.
+- Chuẩn hóa kết quả trả về từ LiveStreamService bao gồm: transcription, keyword_detected, score, matched, timestamp.
+- Kiểm thử toàn bộ pipeline trên microphone và xác nhận luồng xử lý hoạt động từ đầu đến cuối.
+
+Kết quả:
+- Hệ thống đã nhận âm thanh trực tiếp từ microphone thay vì chỉ đọc file WAV.
+- Silero VAD hoạt động ổn định, loại bỏ các khoảng lặng trước khi đưa vào Whisper.
+- Whisper tự động chạy trên GPU (CUDA + float16) khi có NVIDIA GPU, giúp tăng tốc độ suy luận.
+- KeywordDetector vẫn phát hiện chính xác các từ khóa gian lận như "đáp án", "Google", "xem màn hình"... trên dữ liệu realtime.
+- AudioPipeline đã hoạt động theo mô hình realtime và trả về JSON hoàn chỉnh.
+- WebSocket Server và Test Client đã kết nối thành công, sẵn sàng tích hợp với giao diện giám thị.
+- Kiến trúc module Audio AI gần như hoàn chỉnh và có thể tích hợp với frontend.
+
+Khó khăn:
+- Whisper đôi khi nhận dạng chưa chính xác trong môi trường realtime, đặc biệt với câu ngắn hoặc phát âm nhanh, dẫn đến bỏ sót từ khóa.
+- Ban đầu việc sử dụng sounddevice trên WSL không truy cập được microphone, phải chuyển sang môi trường Python Windows.
+- Gặp lỗi tương thích thư viện (numba/librosa) với Python 3.13 và đã khắc phục bằng cách cập nhật phiên bản phù hợp.
+- WebSocket ban đầu liên tục tạo và đóng kết nối, cần điều chỉnh lại kiến trúc client/server để sử dụng kết nối lâu dài.
+- LiveStreamService vẫn cần tối ưu thêm việc quản lý buffer và ổn định kết nối WebSocket.
+
+Việc tiếp theo:
+- Hoàn thiện cơ chế WebSocket giữ kết nối lâu dài và truyền dữ liệu ổn định.
+- Cải thiện chất lượng nhận dạng của Whisper trên dữ liệu realtime (tối ưu buffer, VAD và tham số suy luận).
+- Tích hợp WebSocket với giao diện giám thị (Frontend).
+- Đồng bộ Audio AI với các module AI khác (Eye Tracking, Object Detection, Head Pose...) để tạo hệ thống giám sát thi hoàn chỉnh.
+
+                    AUDIO AI DEVELOPMENT
+
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+   21/07                22/07               23/07
+        │                    │                    │
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+ KeywordDetector V2      Audio Pipeline      Realtime Audio
+        │                    │                    │
+        ▼                    ▼                    ▼
+  RapidFuzz + ngram     JSON Output          Microphone
+        │                    │                    │
+        ▼                    ▼                    ▼
+ False Positive ↓       Audio Logger         Silero VAD
+        │                    │                    │
+        ▼                    ▼                    ▼
+ Keyword Stable      Evaluation Dataset      Whisper CUDA
+                                               │
+                                               ▼
+                                         LiveStream
+                                               │
+                                               ▼
+                                           WebSocket
+                                               │
+                                               ▼
+                                          Test Client
