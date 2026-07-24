@@ -1,8 +1,16 @@
-from silero_vad import load_silero_vad, get_speech_timestamps
-import soundfile as sf
+import librosa
+import numpy as np
+import torch 
+
+from silero_vad import (
+    load_silero_vad,
+    get_speech_timestamps
+)
 
 
 class VADService:
+
+    TARGET_SR = 16000
 
     def __init__(self):
 
@@ -12,18 +20,20 @@ class VADService:
 
         print("[VAD] Model loaded!")
 
-    def detect(self, audio_path: str):
+    def detect(self, audio_path):
 
-        audio, sample_rate = sf.read(audio_path)
-
-        # Nếu stereo -> chuyển về mono
-        if len(audio.shape) > 1:
-            audio = audio.mean(axis=1)
-
-        timestamps = get_speech_timestamps(
-            audio,
-            self.model,
-            sampling_rate=sample_rate
+        audio, sample_rate = librosa.load(
+            audio_path,
+            sr=16000
         )
 
-        return timestamps
+        return self.detect_array(audio)
+
+    def detect_array(self, audio):
+
+        speech_timestamps = get_speech_timestamps(
+            torch.from_numpy(audio),
+            self.model
+        )
+
+        return speech_timestamps

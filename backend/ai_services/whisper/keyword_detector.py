@@ -9,6 +9,17 @@ from whisper.text_utils import (
     generate_ngrams
 )
 
+SAFE_SENTENCES = [
+    "thay cho em hoi",
+    "bat dau lam bai",
+    "em xin phep",
+    "em nop bai",
+    "em lam xong roi",
+    "cam on thay",
+    "chao",
+    "chao thay"
+]
+
 
 class KeywordDetector:
 
@@ -23,6 +34,24 @@ class KeywordDetector:
 
             self.keywords = json.load(f)
 
+    def token_similarity(self, keyword, candidate):
+
+        keyword_tokens = keyword.split()
+        candidate_tokens = candidate.split()
+
+        if len(keyword_tokens) != len(candidate_tokens):
+            return 0
+
+        scores = []
+
+        for kw, cd in zip(keyword_tokens, candidate_tokens):
+
+            scores.append(
+                fuzz.ratio(kw, cd)
+            )
+
+        return sum(scores) / len(scores)
+
     def find_best_match(self, keyword, ngram_dict):
 
         token_count = len(keyword.split())
@@ -30,6 +59,7 @@ class KeywordDetector:
         candidates = ngram_dict.get(token_count, [])
 
         best_candidate = ""
+
         best_score = 0
 
         for gram in candidates:
@@ -49,7 +79,13 @@ class KeywordDetector:
     def detect(self, text: str):
 
         normalized_text = normalize_text(text)
-
+        # Kiểm tra các câu hợp lệ (whitelist)
+        if normalized_text in SAFE_SENTENCES:
+            return {
+                "alert": False,
+                "score": 0,
+                "matched": []
+            }
         tokens = normalized_text.split()
 
         ngram_dict = generate_ngrams(tokens)
@@ -70,6 +106,10 @@ class KeywordDetector:
             )
 
             if score >= 80:
+
+                print(
+                    f"[MATCH] '{candidate}' -> '{item['keyword']}' ({score:.1f})"
+                )
 
                 matched.append({
 
