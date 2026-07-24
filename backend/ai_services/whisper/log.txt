@@ -67,7 +67,7 @@ Kết quả:
 - KeywordDetector vẫn phát hiện chính xác các từ khóa gian lận như "đáp án", "Google", "xem màn hình"... trên dữ liệu realtime.
 - AudioPipeline đã hoạt động theo mô hình realtime và trả về JSON hoàn chỉnh.
 - WebSocket Server và Test Client đã kết nối thành công, sẵn sàng tích hợp với giao diện giám thị.
-- Kiến trúc module Audio AI gần như hoàn chỉnh và có thể tích hợp với frontend.
+- Kiến trúc module Audio AI gần như hoàn chỉnh và có thể tích hợp với frontend. 
 
 Khó khăn:
 - Whisper đôi khi nhận dạng chưa chính xác trong môi trường realtime, đặc biệt với câu ngắn hoặc phát âm nhanh, dẫn đến bỏ sót từ khóa.
@@ -112,4 +112,43 @@ Việc tiếp theo:
                                            WebSocket
                                                │
                                                ▼
+                                          Test Client
+
+
+mục tiêu hiện tại 
+                    Audio
+
+                      │
+                      ▼
+
+                Silero VAD
+
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+        ▼                           ▼
+
+  FasterWhisper              PhoWhisper
+ (baseline)                  (Vietnamese)
+
+        │                           │
+        └─────────────┬─────────────┘
+                      ▼
+
+                 Transcript
+
+          ┌───────────┴────────────┐
+          ▼                        ▼
+
+   Keyword Detector             PhoBERT
+    Rule-based            Context Classification
+
+          └───────────┬────────────┘
+                      ▼
+
+                 Decision Fusion
+
+                      ▼
+
+               Final Alert
                                           Test Client
