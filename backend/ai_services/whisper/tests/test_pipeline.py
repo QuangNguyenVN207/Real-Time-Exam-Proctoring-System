@@ -1,6 +1,8 @@
 from pathlib import Path
 from pprint import pprint
 
+from pprint import pprint
+
 from whisper.audio_pipeline import AudioPipeline
 
 BASE_DIR = Path(__file__).resolve().parent.parent
