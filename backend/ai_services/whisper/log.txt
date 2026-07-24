@@ -113,3 +113,41 @@ Việc tiếp theo:
                                                │
                                                ▼
                                           Test Client
+
+
+mục tiêu hiện tại 
+                    Audio
+
+                      │
+                      ▼
+
+                Silero VAD
+
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+        ▼                           ▼
+
+  FasterWhisper              PhoWhisper
+ (baseline)                  (Vietnamese)
+
+        │                           │
+        └─────────────┬─────────────┘
+                      ▼
+
+                 Transcript
+
+          ┌───────────┴────────────┐
+          ▼                        ▼
+
+   Keyword Detector             PhoBERT
+    Rule-based            Context Classification
+
+          └───────────┬────────────┘
+                      ▼
+
+                 Decision Fusion
+
+                      ▼
+
+               Final Alert
