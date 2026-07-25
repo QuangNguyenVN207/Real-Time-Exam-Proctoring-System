@@ -7,9 +7,9 @@
 # torchaudio==2.11.0
 # torchvision==0.28.0
 faster_whisper
-numpy
-opencv-python
-ultralytics
+numpy>=1.26,<3.0
+opencv-python>=4.10,<5.0
+ultralytics>=8.3,<9.0
 config
 
 ctranslate2
@@ -19,3 +19,8 @@ silero-vad
 sounddevice
 scipy
 onnxruntime
+soundfile
+librosa
+numba>=0.59.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
