@@ -31,10 +31,10 @@ exam_proctoring_system/
 │   │   ├── endpoints_webrtc.py  
 │   │   └── endpoints_ws.py      
 │   ├── ai_services/             
-│   │   ├── pose_gaze.py         
-│   │   ├── object_detect.py     
-│   │   ├── face_verify.py       
-│   │   └── audio_whisper.py     
+│   │   ├── pose_gaze/    
+│   │   ├── object_detect/    
+│   │   ├── face_verify/      
+│   │   └── audio_whisper/    
 │   └── core/                    
 │       └── config.py            
 ├── frontend/
