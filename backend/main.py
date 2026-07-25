@@ -32,6 +32,7 @@
 # 3. An toàn đa luồng: Thao tác đọc/ghi vào ACTIVE_OVERLAYS được khóa cẩn thận bằng OVERLAY_LOCK tránh tình trạng đụng độ dữ liệu giữa luồng AI và luồng Camera.
 
 import os
+# --- ÉP TẮT CẢNH BÁO QUYỀN VÀ FONT CỦA OPENCV TRÊN LINUX ---
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # Thêm dòng này để tắt log lõi của OpenCV
@@ -60,7 +61,7 @@ OVERLAY_TTL = 1.5  # Thời gian sống (giây): Khung cảnh báo sẽ hiển t
 from backend.ai_services.object_detect.object_detect_test import ObjectDetector
 from backend.ai_services.pose_gaze.pose_gaze_test import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify_test import FaceVerifier
-
+from backend.ai_services.whisper.audio_whisper_test import AudioWhisper
 
 # ==========================================
 # 3. HÀM VẼ GIAO DIỆN LÊN OPENCV
@@ -160,6 +161,14 @@ def io_camera_thread():
     cv2.destroyAllWindows()
     FRAME_QUEUE.put(None) # Đánh dấu kết thúc luồng
 
+def io_audio_thread():
+    """Luồng giả lập thu âm từ Microphone."""
+    print("[INFO] Đang khởi động luồng thu âm (Microphone)...")
+    while True:
+        time.sleep(3.0)  # Cứ 3 giây cắt 1 đoạn âm thanh giả lập
+        if not AUDIO_QUEUE.full():
+            dummy_audio_chunk = b'\x00\x00\x00' 
+            AUDIO_QUEUE.put((dummy_audio_chunk, time.time()))
 
 def vision_ai_thread():
     """Luồng 2: Lấy khung hình từ bộ đệm và chạy các mô hình AI thị giác."""
@@ -198,7 +207,23 @@ def vision_ai_thread():
 def audio_ai_thread():
     """Luồng 3: Nhận chuỗi âm thanh và chạy VAD + Whisper."""
     print("[INFO] Đang khởi động luồng AI Âm thanh...")
-    pass
+    
+    # Khởi tạo mô hình Whisper (Mock)
+    audio_model = AudioWhisper()
+    
+    while True:
+        data = AUDIO_QUEUE.get()
+        if data is None: # Tín hiệu thoát
+            break
+            
+        audio_chunk, timestamp = data
+        
+        # Chạy phân tích âm thanh
+        result_audio = audio_model.process_audio(audio_chunk, timestamp)
+        
+        # Nếu phát hiện gian lận bằng giọng nói, đẩy vào hàng đợi cảnh báo chung
+        if result_audio is not None and not RESULT_QUEUE.full():
+            RESULT_QUEUE.put(result_audio)
 
 
 # ==========================================
@@ -209,10 +234,12 @@ def main():
     print("=== HỆ THỐNG GIÁM SÁT PHÒNG THI AI ===")
     
     t_camera = threading.Thread(target=io_camera_thread, daemon=True)
+    t_mic = threading.Thread(target=io_audio_thread, daemon=True)      # Luồng Micro mới
     t_vision = threading.Thread(target=vision_ai_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
     
     t_camera.start()
+    t_mic.start()
     t_vision.start()
     t_audio.start()
     
