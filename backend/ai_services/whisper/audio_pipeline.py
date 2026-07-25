@@ -13,7 +13,6 @@ from whisper.audio_utils import (
 class AudioPipeline:
 
     def __init__(self):
-
         self.vad = VADService()
 
         self.whisper = WhisperService()

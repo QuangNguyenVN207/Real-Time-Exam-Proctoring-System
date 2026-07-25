@@ -6,7 +6,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SAMPLES_DIR = BASE_DIR / "samples"
 
-service = WhisperService()
+SAMPLES_DIR = BASE_DIR / "samples"
+
+pipeline = AudioPipeline()
+
+# Lấy tất cả file .wav
+audio_files = sorted(SAMPLES_DIR.glob("*.wav"))
+
+print(f"Tìm thấy {len(audio_files)} file.\n")
 
 wav_files = list(SAMPLES_DIR.rglob("*.wav"))
 
