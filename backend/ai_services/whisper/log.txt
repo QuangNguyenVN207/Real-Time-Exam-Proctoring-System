@@ -81,8 +81,37 @@ Việc tiếp theo:
 - Cải thiện chất lượng nhận dạng của Whisper trên dữ liệu realtime (tối ưu buffer, VAD và tham số suy luận).
 - Tích hợp WebSocket với giao diện giám thị (Frontend).
 - Đồng bộ Audio AI với các module AI khác (Eye Tracking, Object Detection, Head Pose...) để tạo hệ thống giám sát thi hoàn chỉnh.
+[2026-07-27]
 
-                    AUDIO AI DEVELOPMENT
+Đã làm:
+
+Chuyển toàn bộ module Speech-to-Text từ Whisper sang PhoWhisper để tối ưu nhận dạng tiếng Việt.
+Hoàn thiện AudioPipeline theo luồng: VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON Output.
+Tối ưu PhoWhisperService hỗ trợ tự động sử dụng GPU (CUDA) khi có NVIDIA GPU và CPU khi không có GPU.
+Nâng cấp KeywordDetector bằng RapidFuzz, n-gram, whitelist, negative rules, context words và hệ thống chấm điểm (confidence/risk).
+Mở rộng bộ keywords/rules với nhiều câu gian lận thực tế của sinh viên Việt Nam.
+Cải tiến AudioLogger ghi log chi tiết hơn (timestamp, confidence, risk, matched rules...).
+Hoàn thiện bộ test và đánh giá trên tập dữ liệu mẫu.
+
+Kết quả:
+
+PhoWhisper đã chạy ổn định trên GPU.
+Pipeline nhận dạng và phát hiện từ khóa gian lận hoạt động hoàn chỉnh.
+Giảm đáng kể cảnh báo giả nhờ whitelist và context rules.
+JSON đầu ra đầy đủ, sẵn sàng tích hợp với các module AI khác.
+
+Khó khăn:
+
+PhoWhisper vẫn nhận dạng sai ở một số câu ngắn hoặc phát âm không rõ.
+Cần tiếp tục tinh chỉnh VAD, bộ luật và ngưỡng phát hiện để tăng độ chính xác.
+
+Việc tiếp theo:
+
+Tối ưu thêm độ chính xác của PhoWhisper trên dữ liệu thực tế.
+Hoàn thiện kết nối WebSocket với frontend.
+Đồng bộ Audio AI với các module Eye Tracking, Object Detection và Head Pose để hoàn thiện hệ thống giám sát thi.
+
+                    AUDIO AI DEVELOPMENT                    
 
                              │
         ┌────────────────────┼────────────────────┐
@@ -114,7 +143,45 @@ Việc tiếp theo:
                                                ▼
                                           Test Client
 
+                  AUDIO AI DEVELOPMENT
 
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+   23/07                25/07               27/07
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+ Realtime Audio        PhoWhisper CUDA      Audio Intelligence
+        │                    │                    │
+        ▼                    ▼                    ▼
+ LiveStream          GPU Auto Detect       Text Normalize
+        │                    │                    │
+        ▼                    ▼                    ▼
+ Silero VAD          PhoWhisper STT        RapidFuzz
+        │                    │                    │
+        ▼                    ▼                    ▼
+ WebSocket          Audio Pipeline      Keyword Detector V2
+                                             │
+                                             ▼
+                                      Context Words
+                                             │
+                                             ▼
+                                      Negative Rules
+                                             │
+                                             ▼
+                                      Confidence Score
+                                             │
+                                             ▼
+                                          Risk Level
+                                             │
+                                             ▼
+                                         Audio Logger
+                                             │
+                                             ▼
+                                        JSON Output V2
 mục tiêu hiện tại 
                     Audio
 
@@ -152,3 +219,38 @@ mục tiêu hiện tại
 
                Final Alert
                                           Test Client
+
+Audio AI
+│
+├── Keyword Detection
+│   ├── RapidFuzz
+│   ├── N-gram
+│   ├── Keywords Dataset
+│   ├── Rules Engine
+│   ├── Negative Rules
+│   ├── Context Words
+│   └── Confidence + Risk Score
+│
+├── Speech Recognition
+│   ├── PhoWhisper
+│   ├── CUDA Support
+│   ├── Auto GPU / CPU
+│   └── Vietnamese ASR
+│
+├── Audio Processing
+│   ├── Microphone Service
+│   ├── Silero VAD
+│   ├── Audio Pipeline
+│   ├── Live Stream Service
+│   └── JSON Output
+│
+├── Logging & Evaluation
+│   ├── Audio Logger
+│   ├── Evaluation Dataset
+│   ├── Accuracy / Precision / Recall
+│   └── Runtime Benchmark
+│
+└── Integration
+    ├── WebSocket
+    ├── Frontend
+    └── AI Proctoring System

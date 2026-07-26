@@ -1,7 +1,7 @@
 from pathlib import Path
 from pprint import pprint
 
-from pprint import pprint
+import time
 
 from whisper.audio_pipeline import AudioPipeline
 
@@ -18,7 +18,7 @@ TP = 0
 TN = 0
 FP = 0
 FN = 0
-
+total_time = 0
 # Tìm tất cả file .wav trong samples và các thư mục con
 audio_files = sorted(SAMPLES_DIR.rglob("*.wav"))
 
@@ -28,21 +28,22 @@ for audio_file in audio_files:
 
     print("=" * 70)
     print(f"Đang xử lý: {audio_file.relative_to(SAMPLES_DIR)}")
-
+    start = time.perf_counter()
     result = pipeline.process(str(audio_file))
-
+    elapsed = time.perf_counter() - start
+    total_time += elapsed
     pprint(result)
     print("Language :", result["language"])
     print("Transcript:", result["transcription"])
-
+    print(f"Time      : {elapsed:.3f}s")
     print("\nSpeech Segments:")
 
     for seg in result["speech_segments"]:
 
-        start = seg["start"] / 16000
-        end = seg["end"] / 16000
+        seg_start = seg["start"] / 16000
+        seg_end = seg["end"] / 16000
 
-        print(f"{start:.2f}s -> {end:.2f}s")
+        print(f"{seg_start:.2f}s -> {seg_end:.2f}s")
 
     print("Alert     :", result["keyword_detected"])
     print("Score     :", result["score"])
@@ -107,7 +108,7 @@ f1 = (
 
 print("\n")
 print("=" * 70)
-print("Evaluation Report")
+print("PhoWhisper Evaluation Report")
 print("=" * 70)
 
 print(f"Total Files : {total}")
@@ -126,3 +127,4 @@ print(f"Recall   : {recall * 100:.2f}%")
 print(f"F1-score : {f1 * 100:.2f}%")
 
 print("=" * 70)
+print(f"Average Time : {total_time/total:.3f}s/file")

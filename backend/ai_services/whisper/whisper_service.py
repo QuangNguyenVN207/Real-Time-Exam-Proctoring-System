@@ -35,11 +35,15 @@ class WhisperService:
 
         segments, info = self.model.transcribe(
             audio,
-            beam_size=3,
-            language=WHISPER_LANGUAGE,
-            condition_on_previous_text=False,
+            language="vi",
+            beam_size=1,
+            temperature=0,
             vad_filter=False,
-            temperature=0.0
+            condition_on_previous_text=False,
+            no_speech_threshold=0.7,
+            compression_ratio_threshold=2.2,
+            log_prob_threshold=-0.7,
+            initial_prompt="Đây là hội thoại tiếng Việt trong kỳ thi trực tuyến."
         )
 
         results = []

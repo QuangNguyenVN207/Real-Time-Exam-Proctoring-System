@@ -11,7 +11,7 @@ numpy>=1.26,<3.0
 opencv-python>=4.10,<5.0
 ultralytics>=8.3,<9.0
 config
-
+numpy
 ctranslate2
 av
 rapidfuzz
@@ -24,3 +24,8 @@ librosa
 numba>=0.59.0
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
+websockets
+transformers
+accelerate 
+sentencepiece 
+huggingface_hub

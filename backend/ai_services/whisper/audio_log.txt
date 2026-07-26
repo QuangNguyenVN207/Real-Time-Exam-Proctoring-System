@@ -294,3 +294,151 @@ Text: Bắt đầu làm bài
 Keyword:
  - bài làm (score=100.0)
 
+[2026-07-26 10:19:32]
+Text: Cảm ơn các bạn đã chào tạm biệt và hẹn gặp lại trong video tiếp theo.
+Keyword:
+ - đáp án (score=83.3)
+ - đáp án câu (score=80.0)
+
+[2026-07-26 10:20:28]
+Text: Chẳng biết không? Một hai bộ bộ?
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:21:04]
+Text: và một cái nặng đặc biệt  nè  vui rồi
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:21:07]
+Text: Một, hai, tự nhiên kêu nóng
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:21:37]
+Text: Chúng ta đã tìm thấy bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn bọn b
+Keyword:
+ - tìm đáp án (score=84.2)
+
+[2026-07-26 10:22:03]
+Text: Một cái nhé nào
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:24:08]
+Text: Cảm ơn các bạn đã đón xem video này, hãy subscribe cho kênh Ghiền Mì Gõ Để không bỏ lỡ những video hấp dẫn
+Keyword:
+ - đáp án (score=83.3)
+ - đọc đáp án (score=80.0)
+ - đọc đáp án (score=80.0)
+ - đáp án câu (score=80.0)
+
+[2026-07-26 10:30:53]
+Text: Má, ngù quá, ngù.  Còn gì đây? Phở hả?  Chưa có chuyển qua, nên nó mà ngù quá.  Hại vì nó muốn chuyển qua, xong mà nó giống sợ đen.  Má, chuyển, mệt, ngứa, lắm hả?  Má, nghe, chuyển, phở, bớt, bớt, bớt, bớt, bớt, bớt, bớt, bớt.
+Keyword:
+ - làm hộ (score=83.3)
+
+[2026-07-26 10:31:29]
+Text: Đi qua một cái cao chung xíu  À, bớt bớt, bớt bớt  Và chưa bao giờ ăn cao luôn đó
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:32:26]
+Text: Cảm ơn các bạn.  Xin chào tạm biệt và hẹn gặp lại trong video tiếp theo.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.  Xin chào tạm biệt.
+Keyword:
+ - xin bài (score=85.7)
+
+[2026-07-26 10:33:17]
+Text: Một cái các quán, một cái sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch sạch.
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:34:11]
+Text: 2 con spade khu khả  Mùa hình cô em muốn trả về spade này  Nhưng mà thay trả về spade này xong mình không trả về số dài
+Keyword:
+ - cho xem (score=83.3)
+
+[2026-07-26 10:35:19]
+Text: Mình không thể mà dẻo một cách đánh mà đã chia sẻ  Bởi vì thì mình có thể tạo ra một cái xa hoàn hát
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:35:37]
+Text: Chí này mình sẽ làm sao?  Chí này mình sẽ dùng cái chiếc hộp  là cái MPM này để mà chảy quyết  của cái bà tóm với cái mơ  hình hộp này là cộng xuyên tích
+Keyword:
+ - mở ai (score=90.9)
+ - làm hộ (score=83.3)
+
+[2026-07-26 10:35:39]
+Text: Chúng ta đã được tìm ra một phần xếp
+Keyword:
+ - đọc đáp án (score=80.0)
+ - đọc đáp án (score=80.0)
+
+[2026-07-26 10:39:04]
+Text: Cảm ơn các bạn.  Xin chào tất cả các bạn.
+Keyword:
+ - xin bài (score=85.7)
+
+[2026-07-26 10:40:09]
+Text: và sẽ tóc đến về một cái màn tọt của mọi người dù bị tác tỉnh, bán xác, tìm cái mồm màn tọt.
+Keyword:
+ - mở ai (score=83.3)
+
+[2026-07-26 10:41:16]
+Text: Tự nhiên, thật sự không có sạch đoàn tương diện bị ổn, nếu hiểu thì không biết.  Thì cái tổng khốn tâm lợi tí dậy hơn là Ấn sạch, cái giữ biểu đang một chiều công viên khác.  Thật sự không có giữ biểu giữ biểu giữ biểu.
+Keyword:
+ - coi giúp (score=85.7)
+ - làm hộ (score=83.3)
+
+[2026-07-26 10:42:25]
+Text: Còn mọi người nghĩ sao, nếu phải đủ mắc tư em cho bài tóc không khỏi ra lắm
+Keyword:
+ - cho xem (score=92.3)
+ - cho xem bài (score=95.2)
+
+[2026-07-26 10:42:44]
+Text: Tại nãy giờ mình học là chỉ dân rau bao nhiêu  Cả lạc, chỉ dân rau bao nhiêu  Cả sở dân bao nhiêu
+Keyword:
+ - làm hộ (score=83.3)
+
+[2026-07-26 23:27:47]
+Text: đáp án.
+Keyword:
+ - đáp án (score=100.0)
+
+[2026-07-26 23:27:52]
+Text: được nhé đáp án nó ghi ra nhé.
+Keyword:
+ - đáp án (score=100.0)
+ - đọc đáp án (score=81.8)
+ - xem đáp án (score=80.0)
+ - đọc đáp án (score=81.8)
+
+[2026-07-26 23:28:03]
+Text: thành tựu mình ở đại quán làm cái gì là trung quốc.
+Keyword:
+ - bài làm (score=85.7)
+ - mở ai (score=80.0)
+
+[2026-07-26 23:28:47]
+Text: google google.
+Keyword:
+ - google (score=100.0)
+
+[2026-07-26 23:28:58]
+Text: điều này đã tăng lên rất nhiều lần và phần mở bài.
+Keyword:
+ - mở ai (score=90.9)
+
+[2026-07-26 23:33:49]
+Text: huỳnh sình ơi quân thị ngu mà ai cầm rào.
+Keyword:
+ - mở ai (score=80.0)
+
+[2026-07-26 23:34:29]
+Text: đáp án là trâu bờ.
+Keyword:
+ - đáp án (score=100.0)
+ - đáp án câu (score=84.2)
+

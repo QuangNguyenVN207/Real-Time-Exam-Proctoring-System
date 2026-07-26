@@ -1,3 +1,7 @@
+SPEECH_MODEL  = "phowhisper"
+
+PHOWHISPER_MODEL = r"D:\AI\Models\PhoWhisper-small"
+
 WHISPER_MODEL = "small"
 WHISPER_LANGUAGE = "vi"
 WHISPER_DEVICE = "auto"

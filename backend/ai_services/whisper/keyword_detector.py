@@ -1,5 +1,4 @@
 import json
-
 from pathlib import Path
 
 from rapidfuzz import fuzz
@@ -9,19 +8,14 @@ from whisper.text_utils import (
     generate_ngrams
 )
 
-SAFE_SENTENCES = [
-    "thay cho em hoi",
-    "bat dau lam bai",
-    "em xin phep",
-    "em nop bai",
-    "em lam xong roi",
-    "cam on thay",
-    "chao",
-    "chao thay"
-]
+from whisper.rules import RULES
+from whisper.negative_rules import NEGATIVE_RULES
+from whisper.context_words import CONTEXT_WORDS
 
 
 class KeywordDetector:
+
+    KEYWORD_THRESHOLD = 80
 
     def __init__(self):
 
@@ -34,23 +28,9 @@ class KeywordDetector:
 
             self.keywords = json.load(f)
 
-    def token_similarity(self, keyword, candidate):
-
-        keyword_tokens = keyword.split()
-        candidate_tokens = candidate.split()
-
-        if len(keyword_tokens) != len(candidate_tokens):
-            return 0
-
-        scores = []
-
-        for kw, cd in zip(keyword_tokens, candidate_tokens):
-
-            scores.append(
-                fuzz.ratio(kw, cd)
-            )
-
-        return sum(scores) / len(scores)
+    # =======================================================
+    # Keyword Matching
+    # =======================================================
 
     def find_best_match(self, keyword, ngram_dict):
 
@@ -59,14 +39,18 @@ class KeywordDetector:
         candidates = ngram_dict.get(token_count, [])
 
         best_candidate = ""
-
         best_score = 0
 
         for gram in candidates:
 
             score = max(
+
                 fuzz.ratio(keyword, gram),
+
+                fuzz.partial_ratio(keyword, gram),
+
                 fuzz.token_sort_ratio(keyword, gram)
+
             )
 
             if score > best_score:
@@ -76,48 +60,153 @@ class KeywordDetector:
 
         return best_candidate, best_score
 
+    # =======================================================
+    # Rule Score
+    # =======================================================
+
+    def rule_score(self, text):
+
+        score = 0
+
+        matched_rules = []
+
+        for rule in RULES:
+
+            # contains_all
+
+            if "contains_all" in rule:
+
+                ok = True
+
+                for word in rule["contains_all"]:
+
+                    if word not in text:
+
+                        ok = False
+                        break
+
+                if ok:
+
+                    score += rule["score"]
+
+                    matched_rules.append(rule["name"])
+
+            # contains_any
+
+            elif "contains_any" in rule:
+
+                for word in rule["contains_any"]:
+
+                    if word in text:
+
+                        score += rule["score"]
+
+                        matched_rules.append(rule["name"])
+
+                        break
+
+        return score, matched_rules
+
+    # =======================================================
+    # Context Score
+    # =======================================================
+
+    def context_score(self, text):
+
+        score = 0
+
+        matched_context = []
+
+        for word, value in CONTEXT_WORDS.items():
+
+            if word in text:
+
+                score += value
+
+                matched_context.append(word)
+
+        return score, matched_context
+
+    # =======================================================
+    # Negative Rules
+    # =======================================================
+
+    def negative_score(self, text):
+
+        penalty = 0
+
+        matched_negative = []
+
+        for rule in NEGATIVE_RULES:
+
+            for sentence in rule["contains_any"]:
+
+                if sentence in text:
+
+                    penalty += rule["penalty"]
+
+                    matched_negative.append(rule["name"])
+
+                    break
+
+        return penalty, matched_negative
+
+    # =======================================================
+    # Risk
+    # =======================================================
+
+    def get_risk(self, confidence):
+
+        if confidence >= 90:
+
+            return "high"
+
+        if confidence >= 60:
+
+            return "medium"
+
+        if confidence >= 35:
+
+            return "low"
+
+        return "safe"
+
+    # =======================================================
+    # Detect
+    # =======================================================
+
     def detect(self, text: str):
 
         normalized_text = normalize_text(text)
-        # Kiểm tra các câu hợp lệ (whitelist)
-        if normalized_text in SAFE_SENTENCES:
-            return {
-                "alert": False,
-                "score": 0,
-                "matched": []
-            }
+
         tokens = normalized_text.split()
 
         ngram_dict = generate_ngrams(tokens)
 
-        matched = []
+        matched_keywords = []
 
-        best_score = 0
+        keyword_score = 0
+
+        # ------------------------------------------
 
         for item in self.keywords:
 
-            keyword = normalize_text(
-                item["keyword"]
-            )
+            keyword = normalize_text(item["keyword"])
 
             candidate, score = self.find_best_match(
                 keyword,
                 ngram_dict
             )
 
-            if score >= 80:
+            if score >= self.KEYWORD_THRESHOLD:
 
-                print(
-                    f"[MATCH] '{candidate}' -> '{item['keyword']}' ({score:.1f})"
-                )
-
-                matched.append({
+                matched_keywords.append({
 
                     "keyword": item["keyword"],
 
                     "candidate": candidate,
 
-                    "score": score,
+                    "score": round(score, 1),
 
                     "severity": item["severity"],
 
@@ -125,17 +214,65 @@ class KeywordDetector:
 
                 })
 
-                best_score = max(
-                    best_score,
+                keyword_score = max(
+                    keyword_score,
                     score
                 )
 
+        # ------------------------------------------
+
+        rule_bonus, matched_rules = self.rule_score(
+            normalized_text
+        )
+
+        context_bonus, matched_context = self.context_score(
+            normalized_text
+        )
+
+        penalty, matched_negative = self.negative_score(
+            normalized_text
+        )
+
+        # ------------------------------------------
+
+        confidence = (
+            keyword_score
+            + rule_bonus
+            + context_bonus
+            - penalty
+        )
+
+        confidence = max(
+            0,
+            min(100, int(confidence))
+        )
+
+        risk = self.get_risk(
+            confidence
+        )
+
         return {
 
-            "alert": len(matched) > 0,
+            "alert": confidence >= 60,
 
-            "score": best_score,
+            "confidence": confidence,
 
-            "matched": matched
+            "risk": risk,
+
+            "keyword_score": round(keyword_score, 1),
+
+            "rule_bonus": rule_bonus,
+
+            "context_bonus": context_bonus,
+
+            "penalty": penalty,
+
+            "matched": matched_keywords,
+
+            "matched_rules": matched_rules,
+
+            "matched_context": matched_context,
+
+            "matched_negative": matched_negative
 
         }
