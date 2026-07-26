@@ -11,7 +11,10 @@ venv/
 dist/
 build/
 .eggs/
+<<<<<<< HEAD
 
+=======
+>>>>>>> c9b607fdde7b409c6b9487683f1a2aa664322ffc
 # Ignore snapshot files
 snapshots/
 # Ignore test data tracking files
