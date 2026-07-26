@@ -11,7 +11,11 @@ venv/
 dist/
 build/
 .eggs/
+
+# Ignore snapshot files
 snapshots/
+# Ignore test data tracking files
+test_data_tracking/
 
 .ipynb_checkpoints/
 *.ipynb_metadata/
