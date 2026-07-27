@@ -81,35 +81,42 @@ Việc tiếp theo:
 - Cải thiện chất lượng nhận dạng của Whisper trên dữ liệu realtime (tối ưu buffer, VAD và tham số suy luận).
 - Tích hợp WebSocket với giao diện giám thị (Frontend).
 - Đồng bộ Audio AI với các module AI khác (Eye Tracking, Object Detection, Head Pose...) để tạo hệ thống giám sát thi hoàn chỉnh.
-[2026-07-27]
+[2026-07-25/26/27]
 
 Đã làm:
-
-Chuyển toàn bộ module Speech-to-Text từ Whisper sang PhoWhisper để tối ưu nhận dạng tiếng Việt.
-Hoàn thiện AudioPipeline theo luồng: VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON Output.
-Tối ưu PhoWhisperService hỗ trợ tự động sử dụng GPU (CUDA) khi có NVIDIA GPU và CPU khi không có GPU.
-Nâng cấp KeywordDetector bằng RapidFuzz, n-gram, whitelist, negative rules, context words và hệ thống chấm điểm (confidence/risk).
-Mở rộng bộ keywords/rules với nhiều câu gian lận thực tế của sinh viên Việt Nam.
-Cải tiến AudioLogger ghi log chi tiết hơn (timestamp, confidence, risk, matched rules...).
-Hoàn thiện bộ test và đánh giá trên tập dữ liệu mẫu.
+- Chuyển toàn bộ module Audio AI từ Whisper sang PhoWhisper-small để tối ưu nhận dạng tiếng Việt.
+- Chuẩn hóa AudioPipeline theo đúng kiến trúc: VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON.
+- Thiết kế lại PhoWhisperService theo hướng truyền model_path, phù hợp interface chung của nhóm.
+- Nâng cấp KeywordDetector với cơ chế Context Words, Negative Rules và Rule Engine để giảm False Positive.
+- Bổ sung Confidence Score, Risk Level (safe/low/medium/high) và cơ chế tổng hợp điểm đánh giá.
+- Chuẩn hóa JSON Output, bổ sung các trường confidence, risk, keyword_score, rule_bonus, context_bonus, penalty, matched_rules, matched_context và matched_negative.
+- Nâng cấp AudioLogger lưu log dưới định dạng JSONL, ghi đầy đủ thông tin nhận dạng và đánh giá.
+- Hoàn thiện LiveStreamService đồng bộ với JSON mới và hiển thị đầy đủ các chỉ số phân tích khi chạy realtime.
+- Mở rộng bộ từ khóa gian lận, xây dựng thêm Rule Engine, Context Words và Negative Rules phục vụ phát hiện theo ngữ cảnh.
+- Kiểm thử trên toàn bộ tập dữ liệu samples, benchmark Accuracy, Precision, Recall, F1-score và Average Time.
+- Phân tích nguyên nhân False Positive và xây dựng kế hoạch tối ưu Threshold, Noise Reduction và Time Window.
+- Xây dựng kế hoạch Fine-tune PhoWhisper trên dữ liệu thi cử để nâng cao độ chính xác trong tương lai.
 
 Kết quả:
-
-PhoWhisper đã chạy ổn định trên GPU.
-Pipeline nhận dạng và phát hiện từ khóa gian lận hoạt động hoàn chỉnh.
-Giảm đáng kể cảnh báo giả nhờ whitelist và context rules.
-JSON đầu ra đầy đủ, sẵn sàng tích hợp với các module AI khác.
+- Hệ thống đã sử dụng hoàn toàn PhoWhisper thay cho Whisper.
+- AudioPipeline hoạt động ổn định với kiến trúc VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON.
+- JSON trả về chi tiết hơn, hỗ trợ đánh giá mức độ rủi ro thay vì chỉ cảnh báo True/False.
+- KeywordDetector đã hỗ trợ chấm điểm theo từ khóa, ngữ cảnh và luật suy luận, giảm đáng kể các cảnh báo sai so với phiên bản ban đầu.
+- AudioLogger lưu đầy đủ lịch sử phát hiện phục vụ đánh giá và huấn luyện mô hình.
+- Hoàn thành benchmark trên tập samples và xác định được các trường hợp nhận dạng sai cần tiếp tục tối ưu.
 
 Khó khăn:
-
-PhoWhisper vẫn nhận dạng sai ở một số câu ngắn hoặc phát âm không rõ.
-Cần tiếp tục tinh chỉnh VAD, bộ luật và ngưỡng phát hiện để tăng độ chính xác.
+- PhoWhisper vẫn nhận nhầm một số từ gần âm (ví dụ: "giờ" → "google", "chào" → "chatgpt"), dẫn đến False Positive.
+- Chất lượng thu âm từ microphone laptop còn nhiều nhiễu, ảnh hưởng trực tiếp đến kết quả Speech-to-Text.
+- Bộ Rule Engine và Threshold vẫn cần tinh chỉnh để cân bằng giữa Recall và Precision.
+- Chưa có bộ dữ liệu chuyên biệt đủ lớn cho bài toán giám sát thi cử để Fine-tune mô hình.
 
 Việc tiếp theo:
-
-Tối ưu thêm độ chính xác của PhoWhisper trên dữ liệu thực tế.
-Hoàn thiện kết nối WebSocket với frontend.
-Đồng bộ Audio AI với các module Eye Tracking, Object Detection và Head Pose để hoàn thiện hệ thống giám sát thi.
+- Tối ưu Threshold Tuning, Time Window Logic và Noise Reduction nhằm giảm False Positive.
+- Cải thiện chất lượng thu âm và tiền xử lý âm thanh trước khi đưa vào PhoWhisper.
+- Thu thập và xây dựng dataset hội thoại trong phòng thi để Fine-tune PhoWhisper.
+- Huấn luyện (Fine-tune) PhoWhisper và xuất trọng số mới vào thư mục weights/phowhisper-exam.
+- Đánh giá mô hình sau Fine-tune bằng Accuracy, Precision, Recall, F1-score và WER trước khi tích hợp vào hệ thống chính.
 
                     AUDIO AI DEVELOPMENT                    
 

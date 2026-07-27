@@ -14,8 +14,11 @@ class AudioWhisper:
         print("[AudioWhisper] Ready!")
 
     def process_audio(self, audio_chunk, timestamp):
-
-        result = self.pipeline.process_audio(audio_chunk)
+        result = self.pipeline.process_audio(
+            audio_chunk,
+            timestamp=timestamp,
+            source="audio_whisper"
+        )
 
         if result is None:
             return None
@@ -23,7 +26,7 @@ class AudioWhisper:
         return {
             "module": "audio_whisper",
             "status": result["status"],
-            "timestamp": timestamp,
+            "timestamp": float(timestamp),
             "transcription": result["transcription"],
             "keyword_detected": result["keyword_detected"]
         }

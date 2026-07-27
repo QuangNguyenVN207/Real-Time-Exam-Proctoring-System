@@ -1,35 +1,43 @@
-from faster_whisper import WhisperModel
+import numpy as np
 import torch
+import librosa
 
-from whisper.config import (
-    WHISPER_MODEL,
-    WHISPER_LANGUAGE,
-)
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+
+from whisper.config import PHOWHISPER_MODEL
 
 
-class WhisperService:
+class PhoWhisperService:
+    TARGET_SR = 16000
 
-    def __init__(self):
+    def __init__(self, model_path=None):
+        print("[PhoWhisper] Loading model...")
 
-        print("[Whisper] Loading model...")
+        self.model_path = model_path or PHOWHISPER_MODEL
 
-        if torch.cuda.is_available():
-            device = "cuda"
-            compute_type = "float16"
-        else:
-            device = "cpu"
-            compute_type = "int8"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
 
-        print(f"[Whisper] Device: {device}")
-        print(f"[Whisper] Compute: {compute_type}")
+        print(f"[PhoWhisper] Device: {self.device}")
 
-        self.model = WhisperModel(
-            WHISPER_MODEL,
-            device=device,
-            compute_type=compute_type,
-        )
+        self.processor = AutoProcessor.from_pretrained(self.model_path)
 
-        print("[Whisper] Model loaded!")
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            self.model_path,
+            torch_dtype=self.dtype,
+        ).to(self.device)
+
+        self.model.eval()
+
+        try:
+            self.forced_decoder_ids = self.processor.get_decoder_prompt_ids(
+                language="vi",
+                task="transcribe",
+            )
+        except Exception:
+            self.forced_decoder_ids = None
+
+        print("[PhoWhisper] Model loaded!")
 
     def transcribe(self, audio):
 
