@@ -1,5 +1,5 @@
 from pathlib import Path
-BASE_DIR = Path(__file__).resolve().parent  # thư mục YOLOv8/ hiện tại
+BASE_DIR = Path(__file__).resolve().parent.parent.parent # thư mục YOLOv8/ hiện tại
 class Settings:
     yolo_model_path: str = str(BASE_DIR / "weights" / "yolov8_finetuned.pt")
     yolo_confidence_threshold: float = 0.5

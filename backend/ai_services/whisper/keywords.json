@@ -1,0 +1,192 @@
+[
+    {
+        "keyword": "đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đọc đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "cho xem",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gợi ý",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "google",
+        "severity": 2,
+        "category": "internet"
+    },
+    {
+        "keyword": "chatgpt",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "copy",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "làm giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+    "keyword": "cho xem bài",
+    "severity": 3,
+    "category": "cheating"
+    },
+    {
+        "keyword": "xem bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "cho xem đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xem đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gửi đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gửi bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xin bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xin bài làm",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "bài làm",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "coi giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "giải giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "giải câu này",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gợi ý",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đọc câu trả lời",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "tra google",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "google giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "mở google",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "mở ai",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "mở chatgpt",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "chat gpt",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "gemini",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "copilot",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "claude",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "deepseek",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "perplexity",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "làm hộ",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "giúp tao",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đọc đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "tìm đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đáp án câu",
+        "severity": 3,
+        "category": "cheating"
+    }
+]
