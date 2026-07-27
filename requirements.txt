@@ -7,10 +7,18 @@
 # torchaudio==2.11.0
 # torchvision==0.28.0
 faster_whisper
-numpy
-opencv-python
-ultralytics
+numpy>=1.26,<3.0
+opencv-python>=4.10,<5.0
+ultralytics>=8.3,<9.0
 config
+
+# face_verify: RetinaFace (detection) + ArcFace (recognition), chạy qua onnxruntime.
+# Model pack "buffalo_l" (~280MB) sẽ tự động tải về ~/.insightface/models khi
+# FaceVerifier khởi tạo lần đầu (cần internet).
+insightface>=0.7,<1.0
+# faiss-cpu: tùy chọn, tăng tốc tìm kiếm cosine similarity khi DB có nhiều sinh viên.
+# uv pip install faiss-cpu
+
 
 ctranslate2
 av
@@ -19,3 +27,8 @@ silero-vad
 sounddevice
 scipy
 onnxruntime
+soundfile
+librosa
+numba>=0.59.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
