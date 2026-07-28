@@ -24,6 +24,7 @@ librosa
 numba>=0.59.0
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
+<<<<<<< HEAD
 noisereduce
 <<<<<<< HEAD
 websockets
@@ -33,3 +34,12 @@ sentencepiece
 huggingface_hub
 =======
 >>>>>>> c9b607fdde7b409c6b9487683f1a2aa664322ffc
+=======
+
+webrtcvad==2.0.10
+transformers==5.14.1
+pyvi==0.1.1
+
+pandas==3.0.5
+datasets==5.0.0
+>>>>>>> 42962156238cddf9b35fab4c5e197c78a313f494
