@@ -12,6 +12,14 @@ opencv-python>=4.10,<5.0
 ultralytics>=8.3,<9.0
 config
 
+# face_verify: RetinaFace (detection) + ArcFace (recognition), chạy qua onnxruntime.
+# Model pack "buffalo_l" (~280MB) sẽ tự động tải về ~/.insightface/models khi
+# FaceVerifier khởi tạo lần đầu (cần internet).
+insightface>=0.7,<1.0
+# faiss-cpu: tùy chọn, tăng tốc tìm kiếm cosine similarity khi DB có nhiều sinh viên.
+# uv pip install faiss-cpu
+
+
 ctranslate2
 av
 rapidfuzz
