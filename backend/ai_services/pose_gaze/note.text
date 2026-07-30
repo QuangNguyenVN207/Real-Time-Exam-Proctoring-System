@@ -1,8 +1,104 @@
-## commit -m"Tracking and assign id forr student"
-    commit này để thực hiện tracking vị trí ban đầu của từng học sinh (đang set max tracking 10 học sinh)
-    test bằng python -m backend.ai_services.pose_gaze.tracking.test_webcam
-    trả về 2 file output json trong thư mục test_data_tracking
-    file pose_gaze_input.json là output test xác định vị trí cơ bản của từng học sinh, từ đó module 1 sẽ tiếp tục xử lý chụp lấy các thông số cơ bản làm baseline như vị trí ngồi, đầu, vai
-    21-07-2026
+# Ghi chú lần commit - 28/07/2026
 
-    
+Commit message đề xuất:
+
+    feat(pose-gaze): stabilize person tracking and add per-track holistic extraction
+
+## Nội dung hoàn thành
+
+### 1. Person detection và tracking
+
+- Khôi phục pipeline chỉ detect class `person`; không còn logic detect phone trong module `pose_gaze`.
+- Đóng gói YOLO + tracking thành `PersonTrackingModule` để có thể import và xử lý từng OpenCV BGR frame hoặc chạy webcam độc lập.
+- Sửa lỗi cắt detections theo confidence trước association. Tracker hiện associate toàn bộ person detections với track đang tồn tại trước, sau đó mới dùng detection chưa match để lấp slot còn trống. Người thứ ba confidence cao không còn làm hai sinh viên đang theo dõi biến mất chỉ vì bị cắt khỏi danh sách candidate.
+- Bổ sung `is_track_present()` và kiểm tra an toàn khi `remap_track()`.
+- Sửa re-tracking trong grace period: một track `is_present=false` không còn bị hiểu nhầm là sinh viên đang xuất hiện đồng thời; track mới có thể remap về ID cũ.
+
+### 2. Session, student ID và persistence
+
+- `tracking_state.json` lưu cả tracker state, `next_track_id`, bbox, confidence, tuổi track, missed frames, assignments, frame/timestamp cuối.
+- Có thể restore đúng session được chỉ định sau khi backend hoặc test process khởi động lại.
+- Tạo session mới và restore session cũ được tách rõ:
+  - Không truyền `--session-id`: sinh một session ID mới.
+  - Có truyền `--session-id`: chỉ restore đúng session đã lưu đó.
+- Không tự động nạp session cũ khi bắt đầu webcam test mới.
+- State được ghi dạng JSON UTF-8 có thụt dòng; ghi qua file tạm rồi replace để giảm nguy cơ file dở dang.
+- Gán ID, bỏ gán ID, remap ID và output cuối đều giữ `student_id`.
+
+### 3. Webcam person tracking
+
+- Hoàn chỉnh `tracking/test_webcam.py` thành CLI gọi `PersonTrackingModule`.
+- Giới hạn FPS áp dụng cho toàn vòng lặp capture → YOLO → tracking → draw → display, không chỉ giới hạn tần suất inference riêng lẻ.
+- Có thể tăng/giảm FPS khi đang chạy bằng `+`/`-`.
+- Khôi phục nhập ID không blocking bằng bàn phím ở cửa sổ OpenCV hoặc terminal: `A`, `U`, `R`, `F`, `Q`, `+`, `-`.
+- Khi thoát, luôn sinh `pose_gaze_input.json`.
+
+### 4. MediaPipe Holistic theo từng người
+
+- Thêm `HolisticLandmarkExtractor`.
+- Mỗi `track_id` có một MediaPipe context riêng; mọi bbox người đang `is_present=true` đều được đưa qua MediaPipe.
+- Giữ đầy đủ left hand và right hand.
+- Pose bỏ nửa thân dưới.
+- Face chỉ giữ lips, face oval, forehead và trục hỗ trợ suy ra hướng đầu.
+- Output luôn giữ mapping: `session_id → frame_id → track_id → student_id → bbox → landmarks`.
+- Hỗ trợ cả MediaPipe legacy `mp.solutions.holistic` và MediaPipe Tasks hiện tại.
+- Với Tasks API, mỗi crop người được letterbox về canvas vuông cố định. Landmark sau inference được map ngược về crop và frame gốc. Cách này tránh lỗi graph khi bbox thay đổi kích thước giữa các frame.
+- Tắt segmentation mask; MediaPipe hiện chạy CPU. YOLO vẫn có thể chạy GPU qua `--device 0`.
+
+### 5. Công cụ test
+
+- Webcam chỉ tracking:
+
+    python -m backend.ai_services.pose_gaze.tracking.test_webcam
+
+- Webcam tracking + Holistic:
+
+    python -m backend.ai_services.pose_gaze.test_holistic_webcam
+
+- Ảnh hoặc video tracking + Holistic:
+
+    python -m backend.ai_services.pose_gaze.test_holistic_media <input>
+
+- Media test tự gán ID tuần tự theo track: `student_01`, `student_02`, ...
+- Media test hỗ trợ chạy ảnh/video, chọn sample FPS theo timeline nguồn, chạy nhanh nhất hoặc realtime, tắt preview, giới hạn frame, chọn annotated output và tắt landmarks JSON bằng `--no-save-landmarks`.
+- Landmarks JSON được stream theo từng frame và định dạng nhiều dòng, không giữ toàn bộ video trong RAM.
+
+### 6. Unit tests
+
+- Bổ sung regression test cho outsider confidence cao, restore sau restart, remap trong grace period, state JSON cũ, module xử lý frame, FPS controller, định dạng landmark Tasks/legacy, letterbox, map tọa độ, timestamp theo track và vùng face được chọn.
+
+Lệnh chạy:
+
+    python -m unittest discover -s backend/ai_services/pose_gaze/tracking/tests -v
+    python -m unittest discover -s backend/ai_services/pose_gaze/tests -v
+
+Trạng thái kiểm tra ngày 28/07/2026:
+
+- Holistic: 6/6 test pass.
+- Tracking: 8/10 test pass, còn 2 test cũ gọi `create_session()` để restore
+  state. Session lifecycle mới yêu cầu `restore_session()` hoặc
+  `restore_existing=True`; cần cập nhật hai test này trong commit code tiếp
+  theo.
+
+## File output
+
+- Webcam/session:
+
+    test_data_tracking/<session_id>/tracking_state.json
+    test_data_tracking/<session_id>/pose_gaze_input.json
+
+- Media annotated mặc định:
+
+    test_data_tracking/media_outputs/<input_stem>_annotated.<ext>
+
+- Media landmarks mặc định:
+
+    test_data_tracking/media_outputs/<input_stem>_annotated_landmarks.json
+
+## Việc tiếp theo
+
+1. Hoàn thiện endpoint API restore/close/delete session để phản ánh đầy đủ các hàm đã có trong `TrackingManager`.
+2. Thêm feature engineering từ landmark: chuẩn hóa theo vai/thân người, head-pose proxy, góc thân, khoảng cách tay-mặt và feature tương tác cặp.
+3. Gán nhãn video theo khoảng thời gian và track/student ID.
+4. Tạo cửa sổ temporal, tổng hợp feature theo thời gian rồi train XGBoost.
+5. Đánh giá theo subject/session split, không chia ngẫu nhiên các frame từ cùng một video sang cả train và test.

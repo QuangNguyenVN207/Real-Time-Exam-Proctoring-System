@@ -7,7 +7,7 @@ YOLO/ByteTrack later without changing the packet passed to pose/gaze.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 from .schemas import BoundingBox, PersonDetection, TrackedPerson
 
@@ -33,8 +33,8 @@ class IoUPersonTracker:
         self,
         *,
         max_tracks: int = 2,
-        min_iou: float = 0.20,
-        max_missed_frames: int = 15,
+        min_iou: float = 0.10,
+        max_missed_frames: int = 60,
     ) -> None:
         if max_tracks < 1:
             raise ValueError("max_tracks must be at least 1")
@@ -54,8 +54,6 @@ class IoUPersonTracker:
             key=lambda detection: detection.confidence,
             reverse=True,
         )
-        # Extra people should not evict assigned students in this two-person MVP.
-        candidates = candidates[: self.max_tracks]
 
         track_ids = list(self._tracks)
         matched_track_ids: set[int] = set()
@@ -117,10 +115,85 @@ class IoUPersonTracker:
 
     def has_track(self, track_id: int) -> bool:
         return track_id in self._tracks
-    
+
+    def is_track_present(self, track_id: int) -> bool:
+        """Return whether a track is visible in the current frame."""
+
+        track = self._tracks.get(track_id)
+        return track is not None and track.is_present
+
     def remap_track(self, current_id: int, target_id: int) -> None:
-        """Đổi track_id mới về lại track_id cũ để phục vụ Re-tracking."""
-        if current_id in self._tracks:
-            track = self._tracks.pop(current_id)
-            track.track_id = target_id
-            self._tracks[target_id] = track
+        """Move a visible re-detected track onto a previous, non-visible ID."""
+
+        if current_id == target_id:
+            return
+        current = self._tracks.get(current_id)
+        if current is None:
+            raise KeyError(f"Unknown current track_id: {current_id}")
+        if not current.is_present:
+            raise ValueError(f"Current track_id {current_id} is not present")
+
+        target = self._tracks.get(target_id)
+        if target is not None and target.is_present:
+            raise ValueError(f"Target track_id {target_id} is already present")
+
+        self._tracks.pop(current_id)
+        self._tracks.pop(target_id, None)
+        current.track_id = target_id
+        self._tracks[target_id] = current
+        self._next_track_id = max(self._next_track_id, target_id + 1)
+
+    def export_state(self) -> dict[str, Any]:
+        """Return JSON-serializable state used for backend restart recovery."""
+
+        return {
+            "next_track_id": self._next_track_id,
+            "tracks": [
+                {
+                    "track_id": track.track_id,
+                    "bbox_xyxy": [
+                        track.bbox.x1,
+                        track.bbox.y1,
+                        track.bbox.x2,
+                        track.bbox.y2,
+                    ],
+                    "confidence": track.confidence,
+                    "age_frames": track.age_frames,
+                    "missed_frames": track.missed_frames,
+                    "is_present": track.is_present,
+                }
+                for track in sorted(self._tracks.values(), key=lambda value: value.track_id)
+            ],
+        }
+
+    def restore_state(self, payload: dict[str, Any]) -> None:
+        """Restore state produced by :meth:`export_state`."""
+
+        raw_tracks = payload.get("tracks", [])
+        if not isinstance(raw_tracks, list):
+            raise ValueError("tracker.tracks must be a list")
+        if len(raw_tracks) > self.max_tracks:
+            raise ValueError("Persisted tracker state exceeds max_tracks")
+
+        restored: dict[int, _TrackState] = {}
+        for item in raw_tracks:
+            if not isinstance(item, dict):
+                raise ValueError("Each persisted track must be an object")
+            track_id = int(item["track_id"])
+            if track_id < 1 or track_id in restored:
+                raise ValueError(f"Invalid persisted track_id: {track_id}")
+            restored[track_id] = _TrackState(
+                track_id=track_id,
+                bbox=BoundingBox.from_xyxy(item["bbox_xyxy"]),
+                confidence=float(item["confidence"]),
+                age_frames=max(1, int(item.get("age_frames", 1))),
+                missed_frames=max(0, int(item.get("missed_frames", 0))),
+                # A persisted bbox is useful for re-association, but nobody is
+                # present in a newly restored runtime until a fresh frame says
+                # so. This prevents stale people from appearing at startup.
+                is_present=False,
+            )
+
+        minimum_next_id = max(restored, default=0) + 1
+        self._tracks = restored
+        self._next_track_id = max(minimum_next_id, int(payload.get("next_track_id", minimum_next_id)))
