@@ -32,6 +32,12 @@ class Settings:
 
     object_class_display_names: dict[str, str] = {}
 
+    # --- Face Verify ---
+    face_db_path: str = str(BASE_DIR / "data" / "student_faces")
+    face_similarity_threshold: float = 0.4  # Cosine similarity (ArcFace); < ngưỡng này -> người lạ
+    face_model_name: str = "buffalo_l"       # Model pack của insightface (RetinaFace + ArcFace)
+    face_det_size: tuple[int, int] = (640, 640)
+
     # --- Storage ---
     session_log_dir: Path = BASE_DIR / "data" / "sessions"
 
