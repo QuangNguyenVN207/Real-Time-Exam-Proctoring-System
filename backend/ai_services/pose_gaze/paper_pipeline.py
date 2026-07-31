@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from backend.core.config import settings
+from backend.ai_services.face_verify.identity_guard import IdentityGuard
 
 from .tracking.manager import TrackingManager
 from .tracking.paper_tracking import (
@@ -33,6 +34,11 @@ class PoseGazePaperPipeline:
         max_people: int = 2,
         capture_evidence: bool = True,
         person_detect_every_n_frames: int = 1,
+        face_verifier: Any | None = None,
+        identity_guard: IdentityGuard | None = None,
+        identity_scan_every_n_frames: int = 5,
+        identity_assignment_confirmations: int = 3,
+        identity_mismatch_confirmations: int = 3,
     ) -> None:
         if person_detect_every_n_frames < 1:
             raise ValueError(
@@ -56,12 +62,31 @@ class PoseGazePaperPipeline:
             ),
         )
         self.capture_evidence = capture_evidence
+        if face_verifier is not None and identity_guard is not None:
+            raise ValueError("Pass face_verifier or identity_guard, not both")
+        self.identity_guard = identity_guard
+        if face_verifier is not None:
+            self.identity_guard = IdentityGuard(
+                face_verifier,
+                self.manager,
+                scan_every_n_frames=identity_scan_every_n_frames,
+                assignment_confirmations=identity_assignment_confirmations,
+                mismatch_confirmations=identity_mismatch_confirmations,
+            )
         self._active_paper_alerts: dict[str, set[int]] = {}
         self._person_frames_seen: dict[str, int] = {}
         self._cached_person_detections: dict[str, list[Any]] = {}
 
-    def create_session(self, session_id: str) -> None:
-        self.manager.create_session(session_id)
+    def create_session(
+        self,
+        session_id: str,
+        *,
+        restore_existing: bool = False,
+    ) -> None:
+        self.manager.create_session(
+            session_id,
+            restore_existing=restore_existing,
+        )
 
     def process_frame(
         self,
@@ -110,6 +135,16 @@ class PoseGazePaperPipeline:
             timestamp_ms=resolved_timestamp_ms,
             detections=person_detections,
         )
+        identity_alerts: list[dict[str, Any]] = []
+        if self.identity_guard is not None:
+            identity_alerts = self.identity_guard.sync(
+                session_id,
+                frame,
+                resolved_timestamp_ms / 1000.0,
+            )
+            # Auto-assignment may have remapped a temporary track onto an old,
+            # stable ID. Always build downstream ROIs from the refreshed packet.
+            people_packet = self.manager.get_packet(session_id)
 
         person_rois = [
             {
@@ -160,6 +195,10 @@ class PoseGazePaperPipeline:
             else None
         )
         alerts: list[dict[str, Any]] = []
+        for identity_alert in identity_alerts:
+            identity_alert.setdefault("source", "face_verify")
+            identity_alert.setdefault("risk_score", 1.0)
+            alerts.append(identity_alert)
         if direct_object_alert is not None:
             alerts.append(
                 {
@@ -237,6 +276,8 @@ class PoseGazePaperPipeline:
 
     def cleanup_session(self, session_id: str) -> None:
         self.object_detector.cleanup_session(session_id)
+        if self.identity_guard is not None:
+            self.identity_guard.cleanup_session(session_id)
         self._active_paper_alerts.pop(session_id, None)
         self._person_frames_seen.pop(session_id, None)
         self._cached_person_detections.pop(session_id, None)

@@ -438,3 +438,28 @@ Model khong detect duoc object:
 
     - Confidence thap hon chi nen dung de phan tich model; contract server chinh
       van nen giu confidence > 0.5.
+
+
+19. TEST MEMORY PERSON_ID BANG FACE VERIFICATION
+------------------------------------------------
+
+Dat anh tham chieu vao data/student_faces. Ten file chinh la person_id, vi du:
+
+    data/student_faces/SV001.jpg
+    data/student_faces/SV002.jpg
+
+Chay webcam voi face identity:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source 0 --session-id exam_room_01 --enable-face-identity
+
+Hoac chi dinh thu muc anh khac:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source 0 --session-id exam_room_01 --enable-face-identity --face-db "data/student_faces"
+
+Co che:
+
+    - Face phai khop 3 lan quet moi duoc tu dong gan person_id.
+    - Face chi quet moi 5 frame de giam tai CPU/GPU.
+    - Nguoi di ra va quay lai se duoc dua ve track_id/person_id cu.
+    - Sai danh tinh 3 lan quet lien tiep moi phat identity_mismatch.
+    - Session cu duoc restore tu data/sessions hoac storage_root cua test.

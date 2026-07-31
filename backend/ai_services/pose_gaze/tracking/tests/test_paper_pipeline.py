@@ -57,7 +57,47 @@ class _FakeObjectDetector:
         return None
 
 
+class _AssigningIdentityGuard:
+    def __init__(self, manager: TrackingManager) -> None:
+        self.manager = manager
+
+    def sync(self, session_id: str, _frame, _timestamp: float):
+        packet = self.manager.get_packet(session_id)
+        track = next(item for item in packet.tracks if item.is_present)
+        if track.student_id is None:
+            self.manager.assign_student(
+                session_id,
+                track_id=track.track_id,
+                student_id="SV_FACE",
+            )
+        return []
+
+    def cleanup_session(self, _session_id: str) -> None:
+        return None
+
+
 class PoseGazePaperPipelineTests(unittest.TestCase):
+    def test_identity_assignment_is_refreshed_before_object_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manager = TrackingManager(Path(directory), max_tracks=1)
+            objects = _FakeObjectDetector()
+            pipeline = PoseGazePaperPipeline(
+                person_detector=_FakePersonDetector(),
+                object_detector=objects,
+                tracking_manager=manager,
+                identity_guard=_AssigningIdentityGuard(manager),
+                capture_evidence=False,
+            )
+
+            result = pipeline.process_frame(
+                np.zeros((720, 480, 3), dtype=np.uint8),
+                session_id="identity_room",
+                frame_id=1,
+            )
+
+            self.assertEqual(result["people"][0]["student_id"], "SV_FACE")
+            self.assertEqual(objects.person_rois[0]["person_id"], "SV_FACE")
+
     def test_live_mode_reuses_person_detection_between_inferences(
         self,
     ) -> None:
