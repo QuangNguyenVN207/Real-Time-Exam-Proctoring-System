@@ -167,7 +167,9 @@ def io_audio_thread():
     while True:
         time.sleep(3.0)  # Cứ 3 giây cắt 1 đoạn âm thanh giả lập
         if not AUDIO_QUEUE.full():
-            dummy_audio_chunk = b'\x00\x00\x00' 
+            # dummy_audio_chunk = b'\x00\x00\x00' 
+            # Tạo 3 giây âm thanh im lặng chuẩn (16000 sample/s * 3s * 2 bytes/sample)
+            dummy_audio_chunk = b'\x00' * (16000 * 3 * 2)
             AUDIO_QUEUE.put((dummy_audio_chunk, time.time()))
 
 def vision_ai_thread():
