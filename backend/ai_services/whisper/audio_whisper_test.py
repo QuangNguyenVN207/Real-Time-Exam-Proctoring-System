@@ -19,6 +19,9 @@
 #             }
 #         return None # Im lặng hoặc tiếng ồn môi trường
 
+import os
+import sys
+
 import numpy as np
 import webrtcvad
 import string
@@ -35,7 +38,22 @@ warnings.filterwarnings("ignore")
 
 # Ép thư viện transformers chỉ in ra lỗi (Error), ẩn đi các Cảnh báo (Warning)
 transformers.logging.set_verbosity_error()
+from contextlib import contextmanager
 
+# Tạo một "hố đen" để hút sạch các log rác của ALSA/Jack (Linux)
+@contextmanager
+def suppress_alsa_logs():
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    old_stderr = os.dup(2) # Lấy luồng báo lỗi tiêu chuẩn (stderr)
+    sys.stderr.flush()
+    os.dup2(devnull, 2)    # Trỏ luồng báo lỗi vào hố đen
+    try:
+        yield
+    finally:
+        os.dup2(old_stderr, 2) # Trả lại luồng báo lỗi bình thường
+        os.close(devnull)
+        os.close(old_stderr)
+        
 class AudioWhisper:
     def __init__(self, phowhisper_model="vinai/PhoWhisper-tiny", phobert_model_path="data/phobert_gian_lan_final"):
         print("[INFO] Đang khởi tạo VAD, PhoWhisper và PhoBERT...")
@@ -161,11 +179,10 @@ class AudioWhisper:
             "ai_confidence": confidence
         }
 
-# Chạy thử nghiệm với Microphone thực tế
+# Chạy thử nghiệm với Microphone thực tế bằng PyAudio
 if __name__ == "__main__":
     import time
-    import sounddevice as sd
-    import json
+    import pyaudio
     import numpy as np
     import scipy.io.wavfile as wavfile 
     import scipy.signal 
@@ -180,44 +197,65 @@ if __name__ == "__main__":
     
     DURATION = 5  
     TARGET_RATE = 16000 
-    RECORD_RATE = 48000 
+    CHUNK = 1024
     
     print("\n" + "="*50)
-    print(f"🎤 BẮT ĐẦU TEST: Hệ thống sẽ ghi âm {DURATION} giây.")
+    print(f"🎤 BẮT ĐẦU TEST BẰNG PYAUDIO: Ghi âm {DURATION} giây.")
     print("="*50 + "\n")
     
-    # 2. BẬT MICRO (Gọi đích danh thiết bị 3, tần số 48k, và thêm blocking=True để chống treo)
+    # 2. BẬT MICRO 
     print("[HỆ THỐNG] Đang thu âm... (Hãy nói to và rõ!)")
+
+    # KHỞI TẠO PYAUDIO TRONG "HỐ ĐEN" ĐỂ ẨN LOG
+    with suppress_alsa_logs():
+        p = pyaudio.PyAudio()
     
-    # Thêm device=3 và blocking=True
-    audio_data = sd.rec(
-        int(DURATION * RECORD_RATE), 
-        samplerate=RECORD_RATE, 
-        channels=1, 
-        dtype='float32', 
-        device=3,           
-        blocking=True       
-    )
-    # sd.wait() 
-    
-    print("[HỆ THỐNG] Đã thu âm xong.")
-    
-    audio_chunk_48k = audio_data.flatten()
-    num_samples_16k = int(len(audio_chunk_48k) * (TARGET_RATE / RECORD_RATE))
-    audio_chunk = scipy.signal.resample(audio_chunk_48k, num_samples_16k)
+    try:
+        # Mở luồng thu âm mặc định của hệ thống (PulseAudio sẽ tự lo việc chọn Mic)
+        stream = p.open(format=pyaudio.paFloat32,
+                        channels=1,
+                        rate=TARGET_RATE,
+                        input=True,
+                        frames_per_buffer=CHUNK)
+        
+        print("[HỆ THỐNG] Đang thu âm... (Hãy nói to và rõ!)")
+        
+        frames = []
+        # Vòng lặp thu âm
+        for i in range(0, int(TARGET_RATE / CHUNK * DURATION)):
+            # exception_on_overflow=False giúp chống crash khi máy xử lý không kịp
+            data = stream.read(CHUNK, exception_on_overflow=False) 
+            frames.append(np.frombuffer(data, dtype=np.float32))
+            
+        print("[HỆ THỐNG] Đã thu âm xong.")
+        
+        # Dọn dẹp luồng
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        
+    except Exception as e:
+        print(f"\033[91m[LỖI PYAUDIO] Không thể thu âm: {e}\033[0m")
+        p.terminate()
+        exit()
+
+    # Gộp các chunk lại thành 1 mảng numpy duy nhất
+    audio_chunk = np.hstack(frames)
     
     max_amp = np.max(np.abs(audio_chunk))
     print(f"📊 Mức âm lượng cao nhất thu được: {max_amp:.5f}")
     
-    # Ép kiểu về int16 để đảm bảo file wav phát được trên mọi trình nghe nhạc của Ubuntu
+    if max_amp == 0.0:
+        print("\033[93m[CẢNH BÁO] Âm lượng bằng 0. Hãy kiểm tra lại Settings > Sound > Input của Ubuntu!\033[0m")
+    
+    # Ép kiểu về int16 để đảm bảo file wav phát được trên mọi trình nghe nhạc của Ubuntu và lưu file
     audio_chunk_int16 = (audio_chunk * 32767).astype(np.int16)
     wavfile.write("kiem_tra_micro.wav", TARGET_RATE, audio_chunk_int16)
     print("💾 Đã lưu file 'kiem_tra_micro.wav'.")
     
-    timestamp_now = time.time()
-    
+    # Chạy AI
     print("\n[HỆ THỐNG] Đang xử lý AI...")
-    result = detector.process_audio(audio_chunk, timestamp_now)
+    result = detector.process_audio(audio_chunk, time.time())
     
     # 3. SỬA LỖI KEYERROR: Kiểm tra an toàn trước khi in
     print("\n" + "="*20 + " KẾT QUẢ " + "="*20)
