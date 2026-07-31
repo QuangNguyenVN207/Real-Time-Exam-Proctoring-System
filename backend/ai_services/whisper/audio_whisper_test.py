@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # import random
 # import time
 
@@ -24,7 +22,6 @@
 import numpy as np
 import webrtcvad
 import string
->>>>>>> 42962156238cddf9b35fab4c5e197c78a313f494
 import time
 import torch
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
@@ -43,34 +40,6 @@ from whisper.audio_pipeline import AudioPipeline
 
 
 class AudioWhisper:
-<<<<<<< HEAD
-
-    def __init__(self, model_path=None):
-
-        print("[AudioWhisper] Loading Audio Pipeline...")
-
-        self.pipeline = AudioPipeline()
-
-        print("[AudioWhisper] Ready!")
-
-    def process_audio(self, audio_chunk, timestamp):
-        result = self.pipeline.process_audio(
-            audio_chunk,
-            timestamp=timestamp,
-            source="audio_whisper"
-        )
-
-        if result is None:
-            return None
-
-        return {
-            "module": "audio_whisper",
-            "status": result["status"],
-            "timestamp": float(timestamp),
-            "transcription": result["transcription"],
-            "keyword_detected": result["keyword_detected"]
-        }
-=======
     def __init__(self, phowhisper_model="vinai/PhoWhisper-tiny", phobert_model_path="data/phobert_gian_lan_final"):
         print("[INFO] Đang khởi tạo VAD, PhoWhisper và PhoBERT...")
         
@@ -215,6 +184,7 @@ if __name__ == "__main__":
     DURATION = 5  
     TARGET_RATE = 16000 
     RECORD_RATE = 48000 
+    DEVICE_ID = 3  # Đưa ID thiết bị ra thành biến để dễ quản lý
     
     print("\n" + "="*50)
     print(f"🎤 BẮT ĐẦU TEST: Hệ thống sẽ ghi âm {DURATION} giây.")
@@ -222,12 +192,19 @@ if __name__ == "__main__":
     
     # 2. BẬT MICRO (Gọi đích danh thiết bị 3, tần số 48k, và thêm blocking=True để chống treo)
     print("[HỆ THỐNG] Đang thu âm... (Hãy nói to và rõ!)")
-    
+    import sounddevice as sd
+
+    # 1. Tự động lấy thông tin cấu hình của microphone mặc định
+    device_info = sd.query_devices(DEVICE_ID)
+    auto_channels = device_info['max_input_channels']
+
+    print(f"[*] Đang dùng thiết bị: {device_info['name']}")
+    print(f"[*] Số kênh (channels) tự động nhận diện: {auto_channels}")
     # Thêm device=3 và blocking=True
     audio_data = sd.rec(
         int(DURATION * RECORD_RATE), 
         samplerate=RECORD_RATE, 
-        channels=1, 
+        channels=auto_channels, 
         dtype='float32', 
         device=3,           
         blocking=True       
@@ -271,4 +248,3 @@ if __name__ == "__main__":
     else:
         print("Trống. (VAD không phát hiện tiếng người, hoặc âm thanh quá ồn).")
     print("="*49 + "\n")
->>>>>>> 42962156238cddf9b35fab4c5e197c78a313f494

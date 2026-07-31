@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+import sys
 import json
 import time
 from datetime import datetime
 from pathlib import Path
 
+# =====================================================================
+# FIX LỖI IMPORT: Chỉ định rõ thư mục ai_services cho Python
+# =====================================================================
+# Lấy đường dẫn tuyệt đối lên 3 cấp: tests -> whisper -> ai_services
+AI_SERVICES_DIR = Path(__file__).resolve().parent.parent.parent
+if str(AI_SERVICES_DIR) not in sys.path:
+    sys.path.insert(0, str(AI_SERVICES_DIR))
+# =====================================================================
+
+# Lúc này Python đã biết thư mục phobert nằm ở đâu, sẽ không báo lỗi nữa
 from whisper.audio_pipeline import AudioPipeline
 
-
+# --- CÁC ĐƯỜNG DẪN BÊN DƯỚI GIỮ NGUYÊN CỦA BẠN ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 SAMPLES_DIR = BASE_DIR / "samples"
 OUTPUTS_DIR = BASE_DIR / "outputs"
@@ -24,24 +35,6 @@ def infer_label(audio_path: Path) -> str | None:
         if name in {"cheating", "normal"}:
             return name
     return None
-
-
-def format_segments(segments):
-    if not segments:
-        return "None"
-
-    lines = []
-    for seg in segments:
-        start = seg.get("start", 0)
-        end = seg.get("end", 0)
-        text = seg.get("text", "")
-
-        lines.append(
-            f"  - {start:.2f}s -> {end:.2f}s : {text}"
-            if isinstance(start, (int, float)) and isinstance(end, (int, float))
-            else f"  - {seg}"
-        )
-    return "\n".join(lines)
 
 
 def main():
@@ -61,7 +54,7 @@ def main():
     file_results = []
 
     report_lines.append("=" * 80)
-    report_lines.append("AUDIO PIPELINE EVALUATION REPORT")
+    report_lines.append("AUDIO PIPELINE EVALUATION REPORT (AI FUSION VERSION)")
     report_lines.append("=" * 80)
     report_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     report_lines.append(f"Samples dir : {SAMPLES_DIR}")
@@ -80,136 +73,111 @@ def main():
         elapsed = time.perf_counter() - start
         total_time += elapsed
 
-        prediction = bool(result.get("keyword_detected", False))
-        confidence = result.get("confidence", 0)
-        risk = result.get("risk", "safe")
+        # --- TRÍCH XUẤT DỮ LIỆU TỪ JSON MỚI ---
+        risk = result.get("risk", "Normal")
+        
+        # Đánh giá: Nếu hệ thống báo Cheating hoặc Suspicious thì coi là phát hiện có biến (True)
+        prediction = risk in ["Cheating", "Suspicious"] 
+        
         transcription = result.get("transcription", "")
-        matched = result.get("matched", [])
-        matched_rules = result.get("matched_rules", [])
-        matched_context = result.get("matched_context", [])
-        matched_negative = result.get("matched_negative", [])
+        confidence = result.get("confidence", 0.0)
+        
+        rule_label = result.get("rule_label", "Normal")
+        ai_label = result.get("ai_label", "Normal")
+        fusion_reason = result.get("fusion_reason", "")
+        matched_keywords = result.get("matched_keywords", [])
 
-        print("Language   :", result.get("language", ""))
+        # --- IN RA TERMINAL ---
         print("Transcript :", transcription)
         print(f"Time       : {elapsed:.3f}s")
-        print("Risk       :", risk)
-        print("Confidence :", confidence)
-        print("Keyword    :", result.get("keyword_score", 0))
-        print("Rule Bonus :", result.get("rule_bonus", 0))
-        print("Context    :", result.get("context_bonus", 0))
-        print("Penalty    :", result.get("penalty", 0))
+        print("-" * 30)
+        print("Rule-based :", rule_label)
+        print("PhoBERT AI :", f"{ai_label} (Conf: {confidence:.2f})")
+        print("Final Risk :", risk)
+        print("Reason     :", fusion_reason)
+        print("-" * 30)
 
-        print("\nSpeech Segments:")
-        for seg in result.get("speech_segments", []):
-            start_s = seg.get("start", 0) / 16000
-            end_s = seg.get("end", 0) / 16000
-            print(f"  - {start_s:.2f}s -> {end_s:.2f}s : {seg.get('text', '')}")
-
-        print("Alert     :", prediction)
-
-        if matched:
-            print("Matched:")
-            for item in matched:
-                print(
-                    f"  - {item['keyword']} "
-                    f"(candidate={item['candidate']}, "
-                    f"score={item['score']:.1f}, "
-                    f"severity={item['severity']}, "
-                    f"category={item['category']})"
-                )
+        if matched_keywords:
+            print("Matched Keywords:")
+            for item in matched_keywords:
+                # Tùy thuộc vào cấu trúc item của KeywordDetector, có thể điều chỉnh lại nếu cần
+                print(f"  - {item}") 
         else:
-            print("Matched: None")
-
-        print("Rules    :", matched_rules if matched_rules else "None")
-        print("Context  :", matched_context if matched_context else "None")
-        print("Negative :", matched_negative if matched_negative else "None")
+            print("Matched Keywords: None")
 
         # ==========================
-        # Evaluation
+        # Evaluation (Đánh giá TP, TN, FP, FN)
         # ==========================
         if actual_label == "cheating":
             if prediction:
                 TP += 1
-                eval_result = "TP"
+                eval_result = "TP (Bắt Trúng)"
             else:
                 FN += 1
-                eval_result = "FN"
-
+                eval_result = "FN (Bỏ Lọt)"
         elif actual_label == "normal":
             if prediction:
                 FP += 1
-                eval_result = "FP"
+                eval_result = "FP (Bắt Nhầm)"
             else:
                 TN += 1
-                eval_result = "TN"
+                eval_result = "TN (An Toàn)"
         else:
             eval_result = "SKIP"
 
-        print(f"Label     : {actual_label}")
-        print(f"Eval      : {eval_result}")
-        print()
+        print(f"Label Thực Tế : {actual_label.upper()}")
+        print(f"Đánh giá Eval : {eval_result}\n")
 
+        # --- ĐÓNG GÓI DỮ LIỆU BÁO CÁO ---
         file_results.append({
             "file": str(relative_name).replace("\\", "/"),
-            "label": actual_label,
-            "prediction": prediction,
-            "eval": eval_result,
+            "actual_label": actual_label,
+            "prediction_alert": prediction,
+            "eval_result": eval_result,
             "time_seconds": round(elapsed, 4),
-            "language": result.get("language", ""),
             "transcription": transcription,
-            "risk": risk,
-            "confidence": confidence,
-            "keyword_score": result.get("keyword_score", 0),
-            "rule_bonus": result.get("rule_bonus", 0),
-            "context_bonus": result.get("context_bonus", 0),
-            "penalty": result.get("penalty", 0),
-            "matched": matched,
-            "matched_rules": matched_rules,
-            "matched_context": matched_context,
-            "matched_negative": matched_negative,
+            "final_risk": risk,
+            "rule_label": rule_label,
+            "ai_label": ai_label,
+            "ai_confidence": confidence,
+            "fusion_reason": fusion_reason,
+            "matched_keywords": matched_keywords,
         })
 
         report_lines.append(f"File       : {relative_name}")
         report_lines.append(f"Label      : {actual_label}")
-        report_lines.append(f"Prediction : {prediction}")
-        report_lines.append(f"Eval       : {eval_result}")
-        report_lines.append(f"Time       : {elapsed:.3f}s")
-        report_lines.append(f"Risk       : {risk}")
-        report_lines.append(f"Confidence : {confidence}")
         report_lines.append(f"Transcript : {transcription}")
-        report_lines.append(f"Matched    : {matched if matched else 'None'}")
-        report_lines.append(f"Rules      : {matched_rules if matched_rules else 'None'}")
-        report_lines.append(f"Context    : {matched_context if matched_context else 'None'}")
-        report_lines.append(f"Negative   : {matched_negative if matched_negative else 'None'}")
+        report_lines.append(f"Rule-based : {rule_label}")
+        report_lines.append(f"PhoBERT AI : {ai_label} ({confidence:.2f})")
+        report_lines.append(f"Final Risk : {risk} -> Eval: {eval_result}")
+        report_lines.append(f"Reason     : {fusion_reason}")
         report_lines.append("-" * 80)
 
+    # --- TÍNH TOÁN METRICS TỔNG QUÁT ---
     total = TP + TN + FP + FN
     accuracy = (TP + TN) / total if total else 0
     precision = TP / (TP + FP) if (TP + FP) else 0
     recall = TP / (TP + FN) if (TP + FN) else 0
-    f1 = (
-        2 * precision * recall / (precision + recall)
-        if (precision + recall) else 0
-    )
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0
     avg_time = total_time / total if total else 0
 
     summary_lines = [
         "",
         "=" * 80,
-        "SUMMARY",
+        "SUMMARY (FUSION METRICS)",
         "=" * 80,
-        f"Total Files : {total}",
+        f"Total Files  : {total}",
         "",
-        f"TP : {TP}",
-        f"TN : {TN}",
-        f"FP : {FP}",
-        f"FN : {FN}",
+        f"True Positives  (TP) : {TP} (Gian lận -> Bắt trúng)",
+        f"True Negatives  (TN) : {TN} (Bình thường -> An toàn)",
+        f"False Positives (FP) : {FP} (Bình thường -> Báo động nhầm)",
+        f"False Negatives (FN) : {FN} (Gian lận -> Bỏ lọt)",
         "",
         f"Accuracy  : {accuracy * 100:.2f}%",
         f"Precision : {precision * 100:.2f}%",
         f"Recall    : {recall * 100:.2f}%",
-        f"F1-score   : {f1 * 100:.2f}%",
-        f"Average Time : {avg_time:.3f}s/file",
+        f"F1-score  : {f1 * 100:.2f}%",
+        f"Avg Time  : {avg_time:.3f}s / file",
         "=" * 80,
     ]
 
@@ -217,6 +185,7 @@ def main():
         print(line)
         report_lines.append(line)
 
+    # --- LƯU REPORT RA FILE ---
     report_text = "\n".join(report_lines)
 
     with open(REPORT_TXT, "w", encoding="utf-8") as f:
@@ -234,14 +203,14 @@ def main():
                     "accuracy": accuracy,
                     "precision": precision,
                     "recall": recall,
-                    "f1": f1,
+                    "f1_score": f1,
                     "average_time_seconds": avg_time,
                 },
                 "files": file_results,
             },
             f,
             ensure_ascii=False,
-            indent=2,
+            indent=4,
         )
 
     print(f"\nSaved report: {REPORT_TXT}")

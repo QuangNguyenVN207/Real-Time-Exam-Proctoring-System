@@ -71,11 +71,17 @@ class PhoWhisperService:
 
         generate_kwargs = dict(
             input_features=input_features,
-            do_sample=False,
-            num_beams=3,
+            do_sample=False,         # Giữ nguyên False để tránh tính ngẫu nhiên (chỉ dùng greedy/beam)
+            num_beams=3,             # Có thể cân nhắc giảm xuống 1 hoặc 2 nếu cần tốc độ realtime nhanh hơn, 3 là tốt cho độ chính xác
             temperature=0.0,
-            repetition_penalty=1.05,
+            repetition_penalty=1.1,  # Tăng nhẹ lên 1.1 để phạt gắt hơn các từ lặp lại
+            no_repeat_ngram_size=3,  # CỰC KỲ QUAN TRỌNG: Ngăn chặn lỗi lặp lại 1 cụm từ vô tận (bệnh phổ biến của Whisper)
+            early_stopping=True,     # Dừng sớm quá trình beam search khi đã tìm thấy sequence tốt nhất
             max_new_tokens=128,
+            
+            # (Tùy chọn nâng cao nếu HuggingFace version hỗ trợ) 
+            # Giúp bỏ qua các đoạn mà mô hình có độ tự tin cực thấp (thường là tiếng ồn)
+            # suppress_tokens=[...], 
         )
 
         if self.forced_decoder_ids is not None:

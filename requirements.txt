@@ -6,40 +6,32 @@
 # torch==2.13.0
 # torchaudio==2.11.0
 # torchvision==0.28.0
-faster_whisper
-numpy>=1.26,<3.0
-opencv-python>=4.10,<5.0
-ultralytics>=8.3,<9.0
-config
-numpy
-ctranslate2
+
+accelerate 
 av
+config
+ctranslate2
+datasets==5.0.0
+fastapi>=0.115,<1.0
+faster_whisper
+huggingface_hub
+librosa
+noisereduce
+numba>=0.59.0
+numpy>=1.26,<3.0
+onnxruntime
+opencv-python>=4.10,<5.0
+pandas==3.0.5
+pyvi==0.1.1
 rapidfuzz
+scipy
+sentencepiece 
 silero-vad
 sounddevice
-scipy
-onnxruntime
 soundfile
-librosa
-numba>=0.59.0
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.30,<1.0
-<<<<<<< HEAD
-noisereduce
-<<<<<<< HEAD
-websockets
-transformers
-accelerate 
-sentencepiece 
-huggingface_hub
-=======
->>>>>>> c9b607fdde7b409c6b9487683f1a2aa664322ffc
-=======
-
-webrtcvad==2.0.10
 transformers==5.14.1
-pyvi==0.1.1
-
-pandas==3.0.5
-datasets==5.0.0
->>>>>>> 42962156238cddf9b35fab4c5e197c78a313f494
+ultralytics>=8.3,<9.0
+uvicorn[standard]>=0.30,<1.0
+websockets
+pandas
+underthesea

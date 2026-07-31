@@ -1,8 +1,8 @@
 import json
+import re
 import time
 from collections import deque
 from pathlib import Path
-import re
 
 from rapidfuzz import fuzz
 
@@ -28,15 +28,19 @@ SAFE_SENTENCES = [
 
 
 class KeywordDetector:
-    # Keyword tuning
+    # ==========================================================
+    # Threshold tuning
+    # ==========================================================
     KEYWORD_THRESHOLD_SINGLE = 92
-    KEYWORD_THRESHOLD_MULTI = 85
+    KEYWORD_THRESHOLD_MULTI = 90
     KEYWORD_THRESHOLD_AI_INTERNET = 95
 
-    # Alert tuning
+    # ngưỡng alert sau khi cộng điểm
     ALERT_THRESHOLD = 85
 
+    # ==========================================================
     # Time-window logic
+    # ==========================================================
     WINDOW_SECONDS = 5.0
     WINDOW_MIN_HITS = 2
 
@@ -46,7 +50,7 @@ class KeywordDetector:
         with open(base_dir / "keywords.json", encoding="utf-8") as f:
             raw_keywords = json.load(f)
 
-        # deduplicate keywords (giữ keyword đầu tiên)
+        # deduplicate keywords
         seen = set()
         dedup = []
         for item in raw_keywords:
@@ -58,7 +62,6 @@ class KeywordDetector:
 
         self.keywords = dedup
 
-        # chống spam alert liên tục
         self.alert_window = deque()
         self.last_text = ""
 
@@ -74,6 +77,15 @@ class KeywordDetector:
             return "low"
 
         return str(severity).strip().lower()
+
+    def _regex_phrase_hit(self, text, phrase):
+        phrase = str(phrase).strip()
+        if not phrase:
+            return False
+
+        # text đã normalize => chỉ còn lowercase ASCII-ish + số + khoảng trắng
+        pattern = rf"(?<!\w){re.escape(phrase)}(?!\w)"
+        return re.search(pattern, text) is not None
 
     def _threshold_for_item(self, keyword, item):
         token_count = len(keyword.split())
@@ -147,8 +159,6 @@ class KeywordDetector:
         score = 0
         matched_rules = []
 
-        padded = f" {text} "
-
         for rule in RULES:
             rule_name = rule.get("name", "unknown")
             rule_score = int(rule.get("score", 0))
@@ -156,9 +166,10 @@ class KeywordDetector:
             if "contains_all" in rule:
                 ok = True
                 for phrase in rule["contains_all"]:
-                    if f" {phrase} " not in padded:
+                    if not self._regex_phrase_hit(text, phrase):
                         ok = False
                         break
+
                 if ok:
                     score += rule_score
                     matched_rules.append(rule_name)
@@ -166,9 +177,10 @@ class KeywordDetector:
             elif "contains_any" in rule:
                 ok = False
                 for phrase in rule["contains_any"]:
-                    if f" {phrase} " in padded or phrase in text:
+                    if self._regex_phrase_hit(text, phrase):
                         ok = True
                         break
+
                 if ok:
                     score += rule_score
                     matched_rules.append(rule_name)
@@ -176,9 +188,10 @@ class KeywordDetector:
             elif "contains" in rule:
                 ok = True
                 for phrase in rule["contains"]:
-                    if f" {phrase} " not in padded:
+                    if not self._regex_phrase_hit(text, phrase):
                         ok = False
                         break
+
                 if ok:
                     score += rule_score
                     matched_rules.append(rule_name)
@@ -192,10 +205,8 @@ class KeywordDetector:
         score = 0
         matched_context = []
 
-        padded = f" {text} "
-
         for word, value in CONTEXT_WORDS.items():
-            if f" {word} " in padded or word in text:
+            if self._regex_phrase_hit(text, word):
                 score += int(value)
                 matched_context.append(word)
 
@@ -208,21 +219,15 @@ class KeywordDetector:
         penalty = 0
         matched_negative = []
 
-        padded = f" {text} "
-
         for rule in NEGATIVE_RULES:
             rule_name = rule.get("name", "unknown")
             penalty_value = int(rule.get("penalty", 0))
 
-            phrases = (
-                rule.get("contains_any")
-                or rule.get("contains")
-                or []
-            )
+            phrases = rule.get("contains_any") or rule.get("contains") or []
 
             hit = False
             for phrase in phrases:
-                if f" {phrase} " in padded or phrase in text:
+                if self._regex_phrase_hit(text, phrase):
                     hit = True
                     break
 
@@ -270,6 +275,8 @@ class KeywordDetector:
                 "matched_rules": [],
                 "matched_context": [],
                 "matched_negative": [],
+                "window_hits": len(self.alert_window),
+                "window_seconds": self.WINDOW_SECONDS,
             }
 
         # chống lặp cùng một text liên tục
@@ -289,6 +296,8 @@ class KeywordDetector:
                 "matched_rules": [],
                 "matched_context": [],
                 "matched_negative": [],
+                "window_hits": len(self.alert_window),
+                "window_seconds": self.WINDOW_SECONDS,
             }
 
         self.last_text = normalized_text
@@ -311,6 +320,8 @@ class KeywordDetector:
                     "matched_rules": [],
                     "matched_context": [],
                     "matched_negative": [],
+                    "window_hits": len(self.alert_window),
+                    "window_seconds": self.WINDOW_SECONDS,
                 }
 
         tokens = normalized_text.split()
@@ -325,7 +336,12 @@ class KeywordDetector:
             if not keyword:
                 continue
 
-            candidate, score = self.find_best_match(keyword, ngram_dict)
+            # exact regex hit trước để giảm bắt nhầm
+            if self._regex_phrase_hit(normalized_text, keyword):
+                candidate, score = keyword, 100
+            else:
+                candidate, score = self.find_best_match(keyword, ngram_dict)
+
             threshold = self._threshold_for_item(keyword, item)
 
             if score < threshold:
@@ -358,7 +374,7 @@ class KeywordDetector:
 
         raw_alert = confidence >= self.ALERT_THRESHOLD
 
-        # time-window logic: chỉ alert nếu có ít nhất 2 lần trong 5 giây
+        # time-window logic: chỉ alert nếu có >= 2 lần trong 5 giây
         if raw_alert:
             alert = self._register_alert_hit(timestamp)
         else:
@@ -369,7 +385,7 @@ class KeywordDetector:
             "alert": alert,                 # confirmed alert (sau time-window)
             "raw_alert": raw_alert,         # alert thô trước time-window
             "confidence": confidence,
-            "score": confidence,           # alias để tương thích code cũ
+            "score": confidence,            # alias để tương thích code cũ
             "risk": risk,
             "keyword_score": round(keyword_score, 1),
             "rule_bonus": rule_bonus,

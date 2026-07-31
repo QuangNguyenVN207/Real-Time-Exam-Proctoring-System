@@ -1,6 +1,6 @@
 SPEECH_MODEL  = "phowhisper"
 
-PHOWHISPER_MODEL = r"D:\AI\Models\PhoWhisper-small"
+PHOWHISPER_MODEL = "vinai/PhoWhisper-small"
 
 WHISPER_MODEL = "small"
 WHISPER_LANGUAGE = "vi"

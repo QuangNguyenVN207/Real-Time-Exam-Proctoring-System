@@ -14,11 +14,10 @@ class RealtimeAudioWorker:
     TARGET_SR = 16000
     CHANNELS = 1
 
-    CHUNK_SECONDS = 0.2       # ~5 FPS
-    PROCESS_INTERVAL = 0.2    # ~5 lần/giây
-    BUFFER_SECONDS = 4.0
-    MIN_SECONDS = 2.5
-    MAX_SECONDS = 8.0
+    CHUNK_SECONDS = 0.5       # Ghi từng mảng 0.5s để queue chạy mượt
+    PROCESS_INTERVAL = 3.0    # Cứ đúng 3 giây thì kích hoạt AI 1 lần
+    BUFFER_SECONDS = 3.0      # Độ dài tối đa của file âm thanh đưa vào AI
+    MIN_SECONDS = 2.0         # Phải tích đủ 3 giây mới bắt đầu chạy
     NOISE_PROFILE_SECONDS = 1.0
 
     def __init__(self):
@@ -168,13 +167,19 @@ class RealtimeAudioWorker:
                 sr=sr,
                 y_noise=noise_profile,
                 stationary=False,
-                prop_decrease=0.85,
+                # 🔥 FIX: Hạ mức khử ồn từ 0.85 xuống 0.5 để không "ăn" mất giọng nói nhỏ
+                prop_decrease=0.5,
             ).astype(np.float32)
         except Exception:
             return audio
 
     def _preprocess_audio(self, audio, sr, noise_profile=None):
         audio = audio.astype(np.float32)
+
+        # 🔥 FIX: TĂNG GAIN NHƯ BẢN TEST (Để AI nghe rõ trước khi bị khử ồn)
+        VOLUME_MULTIPLIER = 4.0  # Tăng gấp 4 lần
+        audio = audio * VOLUME_MULTIPLIER
+        audio = np.clip(audio, -1.0, 1.0)
 
         audio = self._noise_reduce(audio, sr, noise_profile=noise_profile)
         audio = self._bandpass_filter(audio, sr)
@@ -214,8 +219,12 @@ class RealtimeAudioWorker:
 
             self.last_process_time = time.perf_counter()
 
-            # Lấy đoạn audio gần nhất (3-5 giây)
-            raw_audio = self.buffer_raw[-int(self.input_sr * 4.0):]
+            # Lấy ĐÚNG 3 giây audio (tránh lấy dư)
+            samples_to_take = int(self.input_sr * self.BUFFER_SECONDS)
+            raw_audio = self.buffer_raw[:samples_to_take]
+            
+            # QUAN TRỌNG: Cắt bỏ 3 giây vừa lấy ra khỏi bộ đệm để hứng 3 giây tiếp theo
+            self.buffer_raw = self.buffer_raw[samples_to_take:]
 
             audio_16k = self._resample_to_target(raw_audio)
             noise_16k = self._resample_to_target(self.noise_raw[: int(self.input_sr * self.NOISE_PROFILE_SECONDS)])
@@ -235,27 +244,44 @@ class RealtimeAudioWorker:
                 )
 
                 if result is None:
-                    print("[Realtime] silence / no speech")
+                    print("[Realtime] silence / no speech (Im lặng)")
                     continue
 
                 print("\n" + "=" * 70)
-                print(f"[{result['status'].upper()}]")
-                print(f"Module     : {result.get('module', '')}")
-                print(f"Transcript : {result.get('transcription', '')}")
-                print(f"Risk       : {result.get('risk', 'safe')}")
-                print(f"Confidence : {result.get('confidence', 0)}")
-                print(f"Keyword    : {result.get('keyword_score', 0)}")
-                print(f"Rule Bonus : {result.get('rule_bonus', 0)}")
-                print(f"Context    : {result.get('context_bonus', 0)}")
-                print(f"Penalty    : {result.get('penalty', 0)}")
-                print(f"Matched    : {result.get('matched', [])}")
-                print(f"Rules      : {result.get('matched_rules', [])}")
+                
+                # 🔥 FIX LOGIC IN KẾT QUẢ ĐÚNG VỚI FUSION AI MỚI
+                risk_final = str(result.get('risk', '')).lower()
+                status_final = str(result.get('status', '')).lower()
+                
+                is_alert = False
+                # Nếu Keyword chốt High/Medium/Cheating, HOẶC PhoBERT bật cờ Alert
+                if risk_final in ['cheating', 'high', 'medium'] or status_final == 'alert':
+                    is_alert = True
+                    reason_text = str(result.get('fusion_reason', '')).lower()
+                    if 'ai catch' in reason_text:
+                        nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)"
+                    else:
+                        nguoi_bat = "🔑 Keyword (Bộ luật cứng)"
+                        
+                    print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
+                else:
+                    print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
+                    
+                print(f"🗣️ Transcript : '{result.get('transcription', '')}'")
+                print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
+                
+                keywords = result.get('matched_keywords', [])
+                if keywords:
+                    print("🔑 Từ khóa bị bắt:")
+                    for kw in keywords:
+                        print(f"   - '{kw['keyword']}' (Mức độ: {kw['severity']})")
 
                 self.total_sent += 1
-                if result.get("keyword_detected"):
+                if is_alert:
                     self.total_alert += 1
 
-                print(f"Alerts     : {self.total_alert}/{self.total_sent}")
+                print(f"Thống kê Alert: {self.total_alert}/{self.total_sent}")
+                print("=" * 70)
 
             except Exception as e:
                 print(f"[Worker] Error: {e}")
