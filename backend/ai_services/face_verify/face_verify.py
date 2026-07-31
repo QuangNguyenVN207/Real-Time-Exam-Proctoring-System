@@ -1,8 +1,40 @@
 import os
+import sys
+import warnings
+
+# Tắt cảnh báo Python
+warnings.filterwarnings("ignore", category=UserWarning)
+
+class SuppressOutput:
+    """Bịt miệng log C++ ở tầng OS, tuyệt đối an toàn cho đa luồng."""
+    def __enter__(self):
+        self.devnull = open(os.devnull, 'w')
+        # Lưu lại File Descriptor gốc của hệ điều hành
+        self.old_stdout_fd = os.dup(sys.stdout.fileno())
+        self.old_stderr_fd = os.dup(sys.stderr.fileno())
+        
+        # Ép hệ điều hành trỏ luồng in vào hố đen
+        os.dup2(self.devnull.fileno(), sys.stdout.fileno())
+        os.dup2(self.devnull.fileno(), sys.stderr.fileno())
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Phục hồi lại File Descriptor gốc
+        os.dup2(self.old_stdout_fd, sys.stdout.fileno())
+        os.dup2(self.old_stderr_fd, sys.stderr.fileno())
+        
+        # Dọn dẹp RAM
+        os.close(self.old_stdout_fd)
+        os.close(self.old_stderr_fd)
+        self.devnull.close()
+
 
 import cv2
 import numpy as np
+import onnxruntime as ort
 from insightface.app import FaceAnalysis
+
+# Tắt log mức độ INFO/WARNING của ONNX Runtime ở tầng Python
+ort.set_default_logger_severity(3)
 
 from backend.core.config import settings
 
@@ -31,8 +63,13 @@ class FaceVerifier:
 
         # RetinaFace (detection) + ArcFace (recognition, 512D, đã L2-normalize)
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], providers=providers)
-        self._app.prepare(ctx_id=0, det_size=det_size)
+        
+        # ==========================================
+        # CHỖ NÀY ĐÃ ĐƯỢC SỬA: Đưa SuppressOutput vào đúng lúc nạp Model
+        # ==========================================
+        with SuppressOutput():
+            self._app = FaceAnalysis(name=model_name, allowed_modules=["detection", "recognition"], providers=providers)
+            self._app.prepare(ctx_id=0, det_size=det_size)
 
         self._known_names: list[str] = []
         self._known_vectors: np.ndarray = np.empty((0, 512), dtype=np.float32)

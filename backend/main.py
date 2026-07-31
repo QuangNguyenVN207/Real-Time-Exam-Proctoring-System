@@ -32,10 +32,25 @@
 # 3. An toàn đa luồng: Thao tác đọc/ghi vào ACTIVE_OVERLAYS được khóa cẩn thận bằng OVERLAY_LOCK tránh tình trạng đụng độ dữ liệu giữa luồng AI và luồng Camera.
 
 import os
-# --- ÉP TẮT CẢNH BÁO QUYỀN VÀ FONT CỦA OPENCV TRÊN LINUX ---
+import logging
+import warnings
+
+# ==========================================
+# KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
+# ==========================================
+# 1. Tắt cảnh báo Python (Bao gồm cả UserWarning và FutureWarning của InsightFace)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# 2. Tắt lời nhắc nhở HF_TOKEN của Hugging Face
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+# 3. Tắt cảnh báo Wayland/Gnome của Linux & log OpenCV
 os.environ["QT_QPA_PLATFORM"] = "xcb"
+os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
-os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # Thêm dòng này để tắt log lõi của OpenCV
+os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
+# --- SAU ĐÓ MỚI IMPORT CÁC THƯ VIỆN CHÍNH ---
 import cv2
 import threading
 import time
@@ -243,22 +258,32 @@ def main():
     """Nhận kết quả từ AI, cập nhật GUI và in Log."""
     print("=== HỆ THỐNG GIÁM SÁT PHÒNG THI AI ===")
     
-    t_camera = threading.Thread(target=io_camera_thread, daemon=True)
+    # Đã xóa t_camera vì luồng Camera giờ chạy trực tiếp trên Main Thread
     t_mic = threading.Thread(target=io_audio_thread, daemon=True)      # Luồng Micro mới
     t_vision = threading.Thread(target=vision_ai_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
     
-    t_camera.start()
     t_mic.start()
     t_vision.start()
     t_audio.start()
     
+    print("[INFO] Đang kết nối với Camera...")
+    cap = cv2.VideoCapture(CAMERA_ID)
+    frame_count = 0
+    
     print("[INFO] Toàn bộ hệ thống đang chạy. Nhấn 'q' trên cửa sổ Camera để thoát.")
     
     try:
-        while t_camera.is_alive():
-            if not RESULT_QUEUE.empty():
-                alert = RESULT_QUEUE.get()
+        # Thay vòng lặp is_alive() cũ bằng vòng lặp True trực tiếp đọc Camera
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("[LỖI] Camera bị ngắt kết nối.")
+                break
+
+            # Đổi từ 'if' sang 'while' để xử lý thật nhanh mọi cảnh báo kẹt trong Queue
+            while not RESULT_QUEUE.empty():
+                alert = RESULT_QUEUE.get_nowait()
                 
                 module_name = alert.get("module")
                 status = alert.get("status")
@@ -303,13 +328,39 @@ def main():
                 elif module_name == "audio_whisper" and status == "alert":
                     print(f"[{time_str}] ÂM THANH BẤT THƯỜNG: {details.get('transcription')}")
 
+            # --- VẼ GIAO DIỆN VÀ HIỂN THỊ ---
+            rendered_frame = draw_warning_overlays(frame.copy())
+            cv2.imshow("Exam Proctoring System", rendered_frame)
+            
+            # --- ĐẨY KHUNG HÌNH MỚI CHO AI ---
+            if frame_count % FPS_SKIP == 0:
+                if FRAME_QUEUE.full():
+                    try:
+                        FRAME_QUEUE.get_nowait() # Vứt ảnh cũ để nhường chỗ ảnh mới
+                    except queue.Empty:
+                        pass
+                FRAME_QUEUE.put((frame.copy(), time.time()))
+                
+            frame_count += 1
+
+            # Lắng nghe phím tắt 'q' để thoát. 
+            # cv2.waitKey(1) cũng đóng luôn vai trò nhường CPU (time.sleep) ở bản cũ.
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
             # Nhường CPU một nhịp để tránh luồng Main chiếm hết tài nguyên
-            time.sleep(0.01) 
+            # (Đã được comment lại vì cv2.waitKey(1) ở trên đã làm nhiệm vụ này rồi)
+            # time.sleep(0.01) 
                 
     except KeyboardInterrupt:
         print("\n[INFO] Đang tiến hành tắt hệ thống an toàn...")
         
     finally:
+        # Dọn dẹp tài nguyên Camera (Thay vì tắt luồng t_camera)
+        cap.release()
+        cv2.destroyAllWindows()
+        FRAME_QUEUE.put(None)
+        
         # Không dùng join(timeout=2) cho camera để tránh kẹt thread
         print("[INFO] Đã tắt máy chủ thành công.")
 

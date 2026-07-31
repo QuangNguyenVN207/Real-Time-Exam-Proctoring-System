@@ -1,4 +1,8 @@
 import random
+import onnxruntime as ort
+import logging
+ort.set_default_logger_severity(3)
+logging.getLogger('insightface').setLevel(logging.ERROR)
 
 class FaceVerifier:
     def __init__(self, db_path=None):
