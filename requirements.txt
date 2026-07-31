@@ -6,9 +6,25 @@
 # torch==2.13.0
 # torchaudio==2.11.0
 # torchvision==0.28.0
+
+accelerate 
+av
+config
+ctranslate2
+datasets==5.0.0
+fastapi>=0.115,<1.0
 faster_whisper
+huggingface_hub
+librosa
+noisereduce
+numba>=0.59.0
 numpy>=1.26,<3.0
+onnxruntime
 opencv-python>=4.10,<5.0
+
+pandas==3.0.5
+pyvi==0.1.1
+
 ultralytics>=8.3,<9.0
 config
 
@@ -22,23 +38,25 @@ insightface>=0.7,<1.0
 
 ctranslate2
 av
+
 rapidfuzz
+scipy
+sentencepiece 
 silero-vad
 sounddevice
-scipy
-onnxruntime
 soundfile
-librosa
-numba>=0.59.0
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.30,<1.0
-
-webrtcvad==2.0.10
 transformers==5.14.1
-pyvi==0.1.1
+
+ultralytics>=8.3,<9.0
+uvicorn[standard]>=0.30,<1.0
+websockets
+
+underthesea
+
 webrtcvad-wheel
 
 pandas==3.0.5
 datasets==5.0.0
 # sudo apt-get install portaudio19-dev python3-pyaudio
 pyaudio
+

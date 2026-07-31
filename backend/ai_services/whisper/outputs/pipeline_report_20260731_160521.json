@@ -1,0 +1,617 @@
+{
+    "summary": {
+        "total_files": 23,
+        "tp": 11,
+        "tn": 9,
+        "fp": 2,
+        "fn": 1,
+        "accuracy": 0.8695652173913043,
+        "precision": 0.8461538461538461,
+        "recall": 0.9166666666666666,
+        "f1_score": 0.8799999999999999,
+        "average_time_seconds": 0.7417906217388404
+    },
+    "files": [
+        {
+            "file": "cheating/cheat1.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 8.4725,
+            "transcription": "đáp án là cầu bê.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5128,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "đáp án",
+                    "candidate": "đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án là",
+                    "candidate": "đap an la",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án là gì",
+                    "candidate": "đap an la cau",
+                    "score": 90.9,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu",
+                    "candidate": "đap an la",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu này",
+                    "candidate": "đap an la cau",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat10.wav",
+            "actual_label": "cheating",
+            "prediction_alert": false,
+            "eval_result": "FN (Bỏ Lọt)",
+            "time_seconds": 0.4996,
+            "transcription": "cho sẽ màn hình.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5019,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "cheating/cheat11.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3876,
+            "transcription": "cầu mấy.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.554,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "câu mấy",
+                    "candidate": "cau may",
+                    "score": 100,
+                    "severity": "medium",
+                    "category": "question"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat2.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.5528,
+            "transcription": "đáp án câu một là a.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5141,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "đáp án",
+                    "candidate": "đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu",
+                    "candidate": "đap an cau",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu này",
+                    "candidate": "đap an cau 1",
+                    "score": 95.7,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu kia",
+                    "candidate": "đap an cau 1",
+                    "score": 95.7,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án là",
+                    "candidate": "đap an cau",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat3.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3984,
+            "transcription": "cho tao xem bài.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.52,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "cho tao xem",
+                    "candidate": "cho tao xem",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "xem bài",
+                    "candidate": "xem bai",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "cho xem bài",
+                    "candidate": "tao xem bai",
+                    "score": 90.0,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "chỉ tao",
+                    "candidate": "cho tao",
+                    "score": 85.7,
+                    "severity": "high",
+                    "category": "help"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat4.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3801,
+            "transcription": "mở ai ai đây.",
+            "final_risk": "Cheating",
+            "rule_label": "Medium",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5275,
+            "fusion_reason": "Rule-based Triggered (Mức độ: Medium).",
+            "matched_keywords": [
+                {
+                    "keyword": "đưa bài đây",
+                    "candidate": "ai ai đay",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "sharing"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat5.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3719,
+            "transcription": "đọc đáp án.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5062,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "đáp án",
+                    "candidate": "đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đọc đáp án",
+                    "candidate": "đoc đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đọc đi",
+                    "candidate": "đoc đap",
+                    "score": 90.9,
+                    "severity": "medium",
+                    "category": "help"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat6.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.4206,
+            "transcription": "làm giúp tao.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5167,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "giúp tao",
+                    "candidate": "giup tao",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "help"
+                },
+                {
+                    "keyword": "làm giúp",
+                    "candidate": "lam giup",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "help"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat7.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3623,
+            "transcription": "khi google câu này.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Cheating",
+            "ai_confidence": 0.5131,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "google",
+                    "candidate": "google",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "internet"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat8.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.3682,
+            "transcription": "cho xem bài làm.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Cheating",
+            "ai_confidence": 0.5005,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "cho xem bài",
+                    "candidate": "cho xem bai",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "xem bài",
+                    "candidate": "xem bai",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "bài làm",
+                    "candidate": "bai lam",
+                    "score": 100,
+                    "severity": "medium",
+                    "category": "question"
+                },
+                {
+                    "keyword": "cho xem tí",
+                    "candidate": "cho xem bai",
+                    "score": 88.9,
+                    "severity": "medium",
+                    "category": "sharing"
+                }
+            ]
+        },
+        {
+            "file": "cheating/cheat9.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.5141,
+            "transcription": "tìm đáp án trên mạng.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Cheating",
+            "ai_confidence": 0.5002,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "đáp án",
+                    "candidate": "đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "tìm đáp án",
+                    "candidate": "tim đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "nói đáp án",
+                    "candidate": "tim đap an",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "gửi đáp án",
+                    "candidate": "tim đap an",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "sharing"
+                },
+                {
+                    "keyword": "xem đáp án",
+                    "candidate": "tim đap an",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "sharing"
+                }
+            ]
+        },
+        {
+            "file": "cheating/input1.wav",
+            "actual_label": "cheating",
+            "prediction_alert": true,
+            "eval_result": "TP (Bắt Trúng)",
+            "time_seconds": 0.4466,
+            "transcription": "đáp án là cầu bê.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5128,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "đáp án",
+                    "candidate": "đap an",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án là",
+                    "candidate": "đap an la",
+                    "score": 100,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án là gì",
+                    "candidate": "đap an la cau",
+                    "score": 90.9,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu",
+                    "candidate": "đap an la",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                },
+                {
+                    "keyword": "đáp án câu này",
+                    "candidate": "đap an la cau",
+                    "score": 88.9,
+                    "severity": "high",
+                    "category": "answer"
+                }
+            ]
+        },
+        {
+            "file": "normal/nor1.wav",
+            "actual_label": "normal",
+            "prediction_alert": true,
+            "eval_result": "FP (Bắt Nhầm)",
+            "time_seconds": 0.3152,
+            "transcription": "đầu làm bài.",
+            "final_risk": "Cheating",
+            "rule_label": "High",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5038,
+            "fusion_reason": "Rule-based Triggered (Mức độ: High).",
+            "matched_keywords": [
+                {
+                    "keyword": "bài làm",
+                    "candidate": "lam bai",
+                    "score": 100.0,
+                    "severity": "medium",
+                    "category": "question"
+                }
+            ]
+        },
+        {
+            "file": "normal/nor10.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.2316,
+            "transcription": "ngầu.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5173,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor2.wav",
+            "actual_label": "normal",
+            "prediction_alert": true,
+            "eval_result": "FP (Bắt Nhầm)",
+            "time_seconds": 0.3652,
+            "transcription": "em đã nộp bài.",
+            "final_risk": "Cheating",
+            "rule_label": "Medium",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5349,
+            "fusion_reason": "Rule-based Triggered (Mức độ: Medium).",
+            "matched_keywords": [
+                {
+                    "keyword": "copy bài",
+                    "candidate": "nop bai",
+                    "score": 85.7,
+                    "severity": "high",
+                    "category": "cheating"
+                }
+            ]
+        },
+        {
+            "file": "normal/nor3.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.3782,
+            "transcription": "thầy cho em hỏi.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5215,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor4.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.4286,
+            "transcription": "em xin phép ra ngoài.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.538,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor5.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.3289,
+            "transcription": "em làm xong rồi.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5276,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor6.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.4744,
+            "transcription": "hôm nay em hơi mệt.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5072,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor7.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.407,
+            "transcription": "cảm ơn thầy.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5161,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor8.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.4229,
+            "transcription": "chúc mọi người may mắn.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5176,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/nor9.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.3089,
+            "transcription": "mấy giờ rồi ạ.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5435,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        },
+        {
+            "file": "normal/test.wav",
+            "actual_label": "normal",
+            "prediction_alert": false,
+            "eval_result": "TN (An Toàn)",
+            "time_seconds": 0.2257,
+            "transcription": "ngầu.",
+            "final_risk": "Normal",
+            "rule_label": "Safe",
+            "ai_label": "Normal",
+            "ai_confidence": 0.5173,
+            "fusion_reason": "Đồng thuận an toàn.",
+            "matched_keywords": []
+        }
+    ]
+}

@@ -1,0 +1,323 @@
+================================================================================
+AUDIO PIPELINE EVALUATION REPORT
+================================================================================
+Generated at: 2026-07-27 20:38:38
+Samples dir : D:\AI\Real-Time-Exam-Proctoring-System\backend\ai_services\whisper\samples
+Total files : 23
+
+File       : cheating\cheat1.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 5.690s
+Risk       : high
+Confidence : 100
+Transcript : đáp án là câu b.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an la', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án là', 'candidate': 'đap an la', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'tìm đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an la', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'nói đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'là a hả', 'candidate': 'an la', 'score': 80.0, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'là b hả', 'candidate': 'la cau b', 'score': 80.0, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'là c hả', 'candidate': 'la cau b', 'score': 83.3, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'đưa đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'câu mấy', 'candidate': 'cau b', 'score': 88.9, 'severity': 'medium', 'category': 'question'}, {'keyword': 'câu số', 'candidate': 'cau b', 'score': 88.9, 'severity': 'medium', 'category': 'question'}, {'keyword': 'bài làm', 'candidate': 'an la', 'score': 80.0, 'severity': 'medium', 'category': 'question'}, {'keyword': 'copy đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['a', 'b', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat10.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.563s
+Risk       : high
+Confidence : 100
+Transcript : cho xem màn hình.
+Matched    : [{'keyword': 'cho xem bài', 'candidate': 'cho xem man', 'score': 85.7, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho tao xem', 'candidate': 'cho xem man', 'score': 81.8, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho xem xíu', 'candidate': 'cho xem man', 'score': 84.2, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem tí', 'candidate': 'cho xem man', 'score': 88.9, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem bài', 'candidate': 'cho xem man', 'score': 85.7, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copy', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['xem', 'cho', 'a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat11.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.403s
+Risk       : high
+Confidence : 100
+Transcript : cầu máy.
+Matched    : [{'keyword': 'câu mấy', 'candidate': 'cau may', 'score': 100.0, 'severity': 'medium', 'category': 'question'}, {'keyword': 'câu số', 'candidate': 'cau may', 'score': 80.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat2.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.648s
+Risk       : high
+Confidence : 100
+Transcript : đáp án câu một là a.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an cau', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án là', 'candidate': 'đap an cau', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an cau', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an cau', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an cau', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'câu mấy', 'candidate': 'cau 1', 'score': 88.9, 'severity': 'medium', 'category': 'question'}, {'keyword': 'câu số', 'candidate': 'cau 1', 'score': 88.9, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat3.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.547s
+Risk       : high
+Confidence : 100
+Transcript : cho tao xem bài.
+Matched    : [{'keyword': 'cho xem bài', 'candidate': 'tao xem bai', 'score': 90.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho tao xem', 'candidate': 'cho tao xem', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho tao coi', 'candidate': 'cho tao xem', 'score': 84.2, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho xem tí', 'candidate': 'cho tao xem', 'score': 85.7, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem bài', 'candidate': 'tao xem bai', 'score': 90.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'chỉ tao', 'candidate': 'cho tao', 'score': 85.7, 'severity': 'high', 'category': 'help'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copy', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : ['casual_cheating']
+Context    : ['tao', 'xem', 'cho', 'a', 'b', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat4.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.449s
+Risk       : high
+Confidence : 90
+Transcript : mở ai ai đây.
+Matched    : [{'keyword': 'đưa bài đây', 'candidate': 'ai ai đay', 'score': 88.9, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi bài', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'mo ai', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'coi bài', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'mo ai', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'đưa bài đây', 'candidate': 'ai ai đay', 'score': 88.9, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi bài', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'giải giúp', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'giải giúp', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'bài làm', 'candidate': 'ai ai', 'score': 80.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat5.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.599s
+Risk       : high
+Confidence : 100
+Transcript : đọc đáp án.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án là', 'candidate': 'đoc đap an', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đoc đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'tìm đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đoc đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'nói đáp án', 'candidate': 'đoc đap an', 'score': 84.2, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đưa đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'đọc đi', 'candidate': 'đoc đap', 'score': 90.9, 'severity': 'medium', 'category': 'help'}, {'keyword': 'copy đáp án', 'candidate': 'đoc đap an', 'score': 82.4, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat6.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.494s
+Risk       : high
+Confidence : 100
+Transcript : làm giúp tao.
+Matched    : [{'keyword': 'giúp tao', 'candidate': 'giup tao', 'score': 100.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'giải giúp', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm giúp', 'candidate': 'lam giup', 'score': 100.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'giải giúp', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm giúp', 'candidate': 'lam giup', 'score': 100.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'giúp tao', 'candidate': 'giup tao', 'score': 100.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'google giúp', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'google giúp', 'candidate': 'lam giup', 'score': 80.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'tìm giúp', 'candidate': 'lam giup', 'score': 85.7, 'severity': 'medium', 'category': 'internet'}]
+Rules      : None
+Context    : ['tao', 'a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat7.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.468s
+Risk       : high
+Confidence : 100
+Transcript : google câu này.
+Matched    : [{'keyword': 'chỉ câu này', 'candidate': 'google cau nay', 'score': 84.2, 'severity': 'high', 'category': 'help'}, {'keyword': 'giải câu này', 'candidate': 'google cau nay', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'google', 'candidate': 'google', 'score': 100.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'google giúp', 'candidate': 'google cau', 'score': 82.4, 'severity': 'high', 'category': 'internet'}, {'keyword': 'mở google', 'candidate': 'google cau', 'score': 80.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'google', 'candidate': 'google', 'score': 100.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'google giúp', 'candidate': 'google cau', 'score': 82.4, 'severity': 'high', 'category': 'internet'}, {'keyword': 'mở google', 'candidate': 'google cau', 'score': 80.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'câu mấy', 'candidate': 'cau nay', 'score': 85.7, 'severity': 'medium', 'category': 'question'}, {'keyword': 'câu số', 'candidate': 'cau nay', 'score': 80.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : ['google']
+Context    : ['google', 'a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat8.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.515s
+Risk       : high
+Confidence : 100
+Transcript : cho xem bài làm.
+Matched    : [{'keyword': 'cho xem bài', 'candidate': 'cho xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'cho xem xíu', 'candidate': 'cho xem bai', 'score': 85.7, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem tí', 'candidate': 'cho xem bai', 'score': 88.9, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem bài', 'candidate': 'cho xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'xem bai', 'score': 100.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xin bài làm', 'candidate': 'xem bai lam', 'score': 84.2, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'bài làm', 'candidate': 'bai lam', 'score': 100.0, 'severity': 'medium', 'category': 'question'}, {'keyword': 'copy', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['xem', 'cho', 'a', 'b', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\cheat9.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.797s
+Risk       : high
+Confidence : 100
+Transcript : tìm đáp án trên mạng.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an tren', 'score': 82.4, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án là', 'candidate': 'đap an tren', 'score': 87.5, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'tim đap an', 'score': 82.4, 'severity': 'high', 'category': 'answer'}, {'keyword': 'tìm đáp án', 'candidate': 'tim đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an tren', 'score': 82.4, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'tim đap an', 'score': 82.4, 'severity': 'high', 'category': 'answer'}, {'keyword': 'nói đáp án', 'candidate': 'tim đap an', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đưa đáp án', 'candidate': 'tim đap an', 'score': 82.4, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'tim đap an', 'score': 88.9, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'tim đap an', 'score': 88.9, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem đáp án', 'candidate': 'tim đap an', 'score': 88.9, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'copy đáp án', 'candidate': 'tim đap an', 'score': 82.4, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : cheating\input1.wav
+Label      : cheating
+Prediction : True
+Eval       : TP
+Time       : 0.589s
+Risk       : high
+Confidence : 100
+Transcript : đáp án là câu b.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an la', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án là', 'candidate': 'đap an la', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'tìm đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đap an', 'score': 100.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án câu', 'candidate': 'đap an la', 'score': 88.9, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đọc đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'nói đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'là a hả', 'candidate': 'an la', 'score': 80.0, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'là b hả', 'candidate': 'la cau b', 'score': 80.0, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'là c hả', 'candidate': 'la cau b', 'score': 83.3, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'đưa đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gửi đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'claude', 'candidate': 'la', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'câu mấy', 'candidate': 'cau b', 'score': 88.9, 'severity': 'medium', 'category': 'question'}, {'keyword': 'câu số', 'candidate': 'cau b', 'score': 88.9, 'severity': 'medium', 'category': 'question'}, {'keyword': 'bài làm', 'candidate': 'an la', 'score': 80.0, 'severity': 'medium', 'category': 'question'}, {'keyword': 'copy đáp án', 'candidate': 'đap an la', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['a', 'b', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor1.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.597s
+Risk       : high
+Confidence : 100
+Transcript : bắt đầu làm bài.
+Matched    : [{'keyword': 'xem bài', 'candidate': 'lam bai', 'score': 83.3, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'lam bai', 'score': 83.3, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'làm hộ', 'candidate': 'lam bai', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'lam bai', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'bài làm', 'candidate': 'lam bai', 'score': 100.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a', 'b']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor10.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.290s
+Risk       : medium
+Confidence : 89
+Transcript : chào.
+Matched    : [{'keyword': 'chatgpt', 'candidate': 'chao', 'score': 85.7, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'chao', 'score': 85.7, 'severity': 'high', 'category': 'ai'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor2.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.540s
+Risk       : high
+Confidence : 100
+Transcript : em đã nộp bài.
+Matched    : [{'keyword': 'đáp án', 'candidate': 'đa nop', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'đáp án', 'candidate': 'đa nop', 'score': 80.0, 'severity': 'high', 'category': 'answer'}, {'keyword': 'xem bài', 'candidate': 'em đa', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xem bài', 'candidate': 'em đa', 'score': 80.0, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'xin bài', 'candidate': 'nop bai', 'score': 83.3, 'severity': 'high', 'category': 'sharing'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copy bài', 'candidate': 'nop bai', 'score': 85.7, 'severity': 'high', 'category': 'cheating'}, {'keyword': 'chép bài', 'candidate': 'nop bai', 'score': 83.3, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['a', 'b']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor3.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.526s
+Risk       : high
+Confidence : 100
+Transcript : thầy cho em hỏi.
+Matched    : [{'keyword': 'a hay b', 'candidate': 'thay cho', 'score': 80.0, 'severity': 'medium', 'category': 'answer'}, {'keyword': 'cho xem xíu', 'candidate': 'cho em hoi', 'score': 80.0, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'cho xem tí', 'candidate': 'cho em hoi', 'score': 82.4, 'severity': 'medium', 'category': 'sharing'}, {'keyword': 'làm hộ', 'candidate': 'em hoi', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'em hoi', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copilot', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'copy', 'candidate': 'cho', 'score': 80.0, 'severity': 'high', 'category': 'cheating'}]
+Rules      : None
+Context    : ['cho', 'a', 'c', 'hay']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor4.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.631s
+Risk       : high
+Confidence : 100
+Transcript : unk em xin phép ra ngoài.
+Matched    : [{'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor5.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.515s
+Risk       : high
+Confidence : 100
+Transcript : unk em làm xong rồi.
+Matched    : [{'keyword': 'làm hộ', 'candidate': 'lam xong', 'score': 83.3, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'lam xong', 'score': 83.3, 'severity': 'high', 'category': 'help'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'bài làm', 'candidate': 'em lam', 'score': 80.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor6.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.593s
+Risk       : high
+Confidence : 100
+Transcript : hôm nay em hơi mệt.
+Matched    : [{'keyword': 'làm hộ', 'candidate': 'em hoi', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'làm hộ', 'candidate': 'em hoi', 'score': 80.0, 'severity': 'high', 'category': 'help'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}, {'keyword': 'gemini', 'candidate': 'em', 'score': 100.0, 'severity': 'high', 'category': 'ai'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor7.wav
+Label      : normal
+Prediction : False
+Eval       : TN
+Time       : 0.545s
+Risk       : safe
+Confidence : 9
+Transcript : cám ơn thầy.
+Matched    : None
+Rules      : None
+Context    : ['a', 'c', 'hay']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor8.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.588s
+Risk       : medium
+Confidence : 84
+Transcript : chúc mọi người may mắn.
+Matched    : [{'keyword': 'gợi ý', 'candidate': 'nguoi may', 'score': 80.0, 'severity': 'medium', 'category': 'help'}, {'keyword': 'gợi ý', 'candidate': 'nguoi may', 'score': 80.0, 'severity': 'medium', 'category': 'question'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\nor9.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.495s
+Risk       : medium
+Confidence : 82
+Transcript : mấy giờ rồi ạ.
+Matched    : [{'keyword': 'google', 'candidate': 'gio', 'score': 80.0, 'severity': 'high', 'category': 'internet'}, {'keyword': 'google', 'candidate': 'gio', 'score': 80.0, 'severity': 'high', 'category': 'internet'}]
+Rules      : None
+Context    : ['a']
+Negative   : None
+--------------------------------------------------------------------------------
+File       : normal\test.wav
+Label      : normal
+Prediction : True
+Eval       : FP
+Time       : 0.284s
+Risk       : medium
+Confidence : 89
+Transcript : chào.
+Matched    : [{'keyword': 'chatgpt', 'candidate': 'chao', 'score': 85.7, 'severity': 'high', 'category': 'ai'}, {'keyword': 'chatgpt', 'candidate': 'chao', 'score': 85.7, 'severity': 'high', 'category': 'ai'}]
+Rules      : None
+Context    : ['a', 'c']
+Negative   : None
+--------------------------------------------------------------------------------
+
+================================================================================
+SUMMARY
+================================================================================
+Total Files : 23
+
+TP : 12
+TN : 1
+FP : 10
+FN : 0
+
+Accuracy  : 56.52%
+Precision : 54.55%
+Recall    : 100.00%
+F1-score   : 70.59%
+Average Time : 0.755s/file
+================================================================================

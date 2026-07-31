@@ -81,8 +81,44 @@ Việc tiếp theo:
 - Cải thiện chất lượng nhận dạng của Whisper trên dữ liệu realtime (tối ưu buffer, VAD và tham số suy luận).
 - Tích hợp WebSocket với giao diện giám thị (Frontend).
 - Đồng bộ Audio AI với các module AI khác (Eye Tracking, Object Detection, Head Pose...) để tạo hệ thống giám sát thi hoàn chỉnh.
+[2026-07-25/26/27]
 
-                    AUDIO AI DEVELOPMENT
+Đã làm:
+- Chuyển toàn bộ module Audio AI từ Whisper sang PhoWhisper-small để tối ưu nhận dạng tiếng Việt.
+- Chuẩn hóa AudioPipeline theo đúng kiến trúc: VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON.
+- Thiết kế lại PhoWhisperService theo hướng truyền model_path, phù hợp interface chung của nhóm.
+- Nâng cấp KeywordDetector với cơ chế Context Words, Negative Rules và Rule Engine để giảm False Positive.
+- Bổ sung Confidence Score, Risk Level (safe/low/medium/high) và cơ chế tổng hợp điểm đánh giá.
+- Chuẩn hóa JSON Output, bổ sung các trường confidence, risk, keyword_score, rule_bonus, context_bonus, penalty, matched_rules, matched_context và matched_negative.
+- Nâng cấp AudioLogger lưu log dưới định dạng JSONL, ghi đầy đủ thông tin nhận dạng và đánh giá.
+- Hoàn thiện LiveStreamService đồng bộ với JSON mới và hiển thị đầy đủ các chỉ số phân tích khi chạy realtime.
+- Mở rộng bộ từ khóa gian lận, xây dựng thêm Rule Engine, Context Words và Negative Rules phục vụ phát hiện theo ngữ cảnh.
+- Kiểm thử trên toàn bộ tập dữ liệu samples, benchmark Accuracy, Precision, Recall, F1-score và Average Time.
+- Phân tích nguyên nhân False Positive và xây dựng kế hoạch tối ưu Threshold, Noise Reduction và Time Window.
+- Xây dựng kế hoạch Fine-tune PhoWhisper trên dữ liệu thi cử để nâng cao độ chính xác trong tương lai.
+
+Kết quả:
+- Hệ thống đã sử dụng hoàn toàn PhoWhisper thay cho Whisper.
+- AudioPipeline hoạt động ổn định với kiến trúc VAD → PhoWhisper → KeywordDetector → AudioLogger → JSON.
+- JSON trả về chi tiết hơn, hỗ trợ đánh giá mức độ rủi ro thay vì chỉ cảnh báo True/False.
+- KeywordDetector đã hỗ trợ chấm điểm theo từ khóa, ngữ cảnh và luật suy luận, giảm đáng kể các cảnh báo sai so với phiên bản ban đầu.
+- AudioLogger lưu đầy đủ lịch sử phát hiện phục vụ đánh giá và huấn luyện mô hình.
+- Hoàn thành benchmark trên tập samples và xác định được các trường hợp nhận dạng sai cần tiếp tục tối ưu.
+
+Khó khăn:
+- PhoWhisper vẫn nhận nhầm một số từ gần âm (ví dụ: "giờ" → "google", "chào" → "chatgpt"), dẫn đến False Positive.
+- Chất lượng thu âm từ microphone laptop còn nhiều nhiễu, ảnh hưởng trực tiếp đến kết quả Speech-to-Text.
+- Bộ Rule Engine và Threshold vẫn cần tinh chỉnh để cân bằng giữa Recall và Precision.
+- Chưa có bộ dữ liệu chuyên biệt đủ lớn cho bài toán giám sát thi cử để Fine-tune mô hình.
+
+Việc tiếp theo:
+- Tối ưu Threshold Tuning, Time Window Logic và Noise Reduction nhằm giảm False Positive.
+- Cải thiện chất lượng thu âm và tiền xử lý âm thanh trước khi đưa vào PhoWhisper.
+- Thu thập và xây dựng dataset hội thoại trong phòng thi để Fine-tune PhoWhisper.
+- Huấn luyện (Fine-tune) PhoWhisper và xuất trọng số mới vào thư mục weights/phowhisper-exam.
+- Đánh giá mô hình sau Fine-tune bằng Accuracy, Precision, Recall, F1-score và WER trước khi tích hợp vào hệ thống chính.
+
+                    AUDIO AI DEVELOPMENT                    
 
                              │
         ┌────────────────────┼────────────────────┐
@@ -114,7 +150,45 @@ Việc tiếp theo:
                                                ▼
                                           Test Client
 
+                  AUDIO AI DEVELOPMENT
 
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+   23/07                25/07               27/07
+        │                    │                    │
+        ▼                    ▼                    ▼
+
+ Realtime Audio        PhoWhisper CUDA      Audio Intelligence
+        │                    │                    │
+        ▼                    ▼                    ▼
+ LiveStream          GPU Auto Detect       Text Normalize
+        │                    │                    │
+        ▼                    ▼                    ▼
+ Silero VAD          PhoWhisper STT        RapidFuzz
+        │                    │                    │
+        ▼                    ▼                    ▼
+ WebSocket          Audio Pipeline      Keyword Detector V2
+                                             │
+                                             ▼
+                                      Context Words
+                                             │
+                                             ▼
+                                      Negative Rules
+                                             │
+                                             ▼
+                                      Confidence Score
+                                             │
+                                             ▼
+                                          Risk Level
+                                             │
+                                             ▼
+                                         Audio Logger
+                                             │
+                                             ▼
+                                        JSON Output V2
 mục tiêu hiện tại 
                     Audio
 
@@ -152,3 +226,38 @@ mục tiêu hiện tại
 
                Final Alert
                                           Test Client
+
+Audio AI
+│
+├── Keyword Detection
+│   ├── RapidFuzz
+│   ├── N-gram
+│   ├── Keywords Dataset
+│   ├── Rules Engine
+│   ├── Negative Rules
+│   ├── Context Words
+│   └── Confidence + Risk Score
+│
+├── Speech Recognition
+│   ├── PhoWhisper
+│   ├── CUDA Support
+│   ├── Auto GPU / CPU
+│   └── Vietnamese ASR
+│
+├── Audio Processing
+│   ├── Microphone Service
+│   ├── Silero VAD
+│   ├── Audio Pipeline
+│   ├── Live Stream Service
+│   └── JSON Output
+│
+├── Logging & Evaluation
+│   ├── Audio Logger
+│   ├── Evaluation Dataset
+│   ├── Accuracy / Precision / Recall
+│   └── Runtime Benchmark
+│
+└── Integration
+    ├── WebSocket
+    ├── Frontend
+    └── AI Proctoring System
