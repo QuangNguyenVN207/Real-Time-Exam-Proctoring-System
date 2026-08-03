@@ -1,4 +1,4 @@
-"""Tracking and assignment foundation for the pose/gaze module."""
+"""Person tracking and per-track holistic extraction for pose/gaze analysis."""
 
 from .tracking.manager import AssignmentError, SessionNotFoundError, TrackingManager
 from .tracking.schemas import BoundingBox, PersonDetection, TrackPacket, TrackedPerson

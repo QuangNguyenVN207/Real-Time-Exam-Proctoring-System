@@ -47,8 +47,13 @@ Thumbs.db
 *.log
 
 data/
+!backend/ai_services/pose_gaze/holistic/batch_dataset/data/
+backend/ai_services/pose_gaze/holistic/batch_dataset/data/*
+!backend/ai_services/pose_gaze/holistic/batch_dataset/data/README.md
 test_data_tracking/
 test_image/
+!backend/ai_services/pose_gaze/tracking/test_image/
+!backend/ai_services/pose_gaze/tracking/test_image/**
 models/
 checkpoints/
 wandb/
@@ -60,6 +65,9 @@ mlruns/
 *.bin
 *.h5
 *.task
+backend/ai_services/pose_gaze/main/model/*
+!backend/ai_services/pose_gaze/main/model/README.md
+!backend/ai_services/pose_gaze/main/model/*.example.json
 .gstack/
 
 .link-cache.json
