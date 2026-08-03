@@ -26,3 +26,10 @@ librosa
 numba>=0.59.0
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
+
+webrtcvad==2.0.10
+transformers==5.14.1
+pyvi==0.1.1
+
+pandas==3.0.5
+datasets==5.0.0

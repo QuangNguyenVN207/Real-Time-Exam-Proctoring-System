@@ -31,10 +31,10 @@ exam_proctoring_system/
 │   │   ├── endpoints_webrtc.py  
 │   │   └── endpoints_ws.py      
 │   ├── ai_services/             
-│   │   ├── pose_gaze.py         
-│   │   ├── object_detect.py     
-│   │   ├── face_verify.py       
-│   │   └── audio_whisper.py     
+│   │   ├── pose_gaze/    
+│   │   ├── object_detect/    
+│   │   ├── face_verify/      
+│   │   └── audio_whisper/    
 │   └── core/                    
 │       └── config.py            
 ├── frontend/
@@ -74,3 +74,8 @@ exam_proctoring_system/
 | `.env` | [cite_start]Tệp tin ẩn dùng để lưu trữ các biến môi trường bảo mật (Mật khẩu, Port, API Key)[cite: 287]. |
 | `requirements.txt` | [cite_start]Danh sách liệt kê các thư viện Python (dependencies) cần thiết để chạy dự án[cite: 288]. |
 | `README.md` | [cite_start]Tệp tài liệu hiện tại chứa mô tả và hướng dẫn về dự án[cite: 289]. |
+
+## Cách chạy Pipeline mẫu
+```bash 
+uv run -m backend.main
+```
