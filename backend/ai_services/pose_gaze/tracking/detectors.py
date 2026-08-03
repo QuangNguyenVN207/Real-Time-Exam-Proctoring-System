@@ -16,7 +16,7 @@ class PersonDetector(Protocol):
 class OpenCVHOGPersonDetector:
     """CPU-only fallback detector; use YOLO in production when available."""
 
-    def __init__(self, *, confidence_threshold: float = 0.75) -> None:
+    def __init__(self, *, confidence_threshold: float = 0.35) -> None:
         try:
             import cv2
         except ImportError as error:  # pragma: no cover - environment dependent
@@ -39,7 +39,7 @@ class OpenCVHOGPersonDetector:
 class UltralyticsPersonDetector:
     """YOLO adapter. The supplied model must expose a class named ``person``."""
 
-    def __init__(self, model_path: str | Path, *, confidence_threshold: float = 0.75, device: str | None = None) -> None:
+    def __init__(self, model_path: str | Path, *, confidence_threshold: float = 0.35, device: str | None = None) -> None:
         try:
             from ultralytics import YOLO
         except ImportError as error:  # pragma: no cover - environment dependent

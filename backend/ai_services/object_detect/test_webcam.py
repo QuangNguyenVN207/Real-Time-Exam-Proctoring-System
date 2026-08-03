@@ -1,140 +1,75 @@
-"""Visual smoke test for raw object detections.
+"""
+Test object detection module bằng webcam thật — có vẽ bounding box
+trực tiếp lên cửa sổ live để xem trực quan model detect gì.
 
-For identity-aware test-paper/cheat-sheet decisions, run:
-    python -m backend.ai_services.object_detect.test_paper_tracking_webcam
-
-The source can also be a video:
-    python -m backend.ai_services.object_detect.test_webcam \
-        --source data/smartphone.mp4
+Chạy từ trong thư mục YOLOv8/ (cùng cấp với config.py, object_detect.py):
+    python test_webcam.py
 """
 
-from __future__ import annotations
-
-import argparse
 import cv2
-from pathlib import Path
 
 from backend.ai_services.object_detect.object_detect import ObjectDetectModule
-from backend.ai_services.webcam_utils import (
-    configure_webcam_capture,
-    resize_live_frame,
-)
-from backend.core.config import settings
 
 
-def draw_objects(
-    frame,
-    raw_objects: list[dict],
-    confirmed_classes: list[str],
-) -> None:
-    for item in raw_objects:
-        x1, y1, x2, y2 = item["bbox_xyxy"]
-        display_name = item["display_name"]
-        confidence = item["confidence"]
-        if item["is_paper_candidate"]:
-            color = (255, 255, 0)
-            suffix = " [PAPER -> TRACKER]"
-        elif display_name in confirmed_classes:
-            color = (0, 0, 255)
-            suffix = " [CONFIRMED]"
-        else:
-            color = (0, 255, 255)
-            suffix = ""
+def draw_boxes(frame, raw_boxes: dict, raw_detections: dict, confirmed_classes: list):
+    """Vẽ box lên frame — đỏ nếu class đã được confirm (đủ ngưỡng
+    frame liên tiếp), vàng nếu chỉ mới detect thoáng qua (chưa đủ
+    ngưỡng confirm)."""
+    for class_name, bbox in raw_boxes.items():
+        x1, y1, x2, y2 = bbox
+        confidence = raw_detections.get(class_name, 0.0)
+        is_confirmed = class_name in confirmed_classes
+        color = (0, 0, 255) if is_confirmed else (0, 255, 255)  # đỏ / vàng
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(
-            frame,
-            f"{display_name} {confidence:.2f}{suffix}",
-            (x1, max(y1 - 8, 15)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
-            color,
-            2,
-        )
+        label = f"{class_name} {confidence:.2f}" + (" [CONFIRMED]" if is_confirmed else "")
+        cv2.putText(frame, label, (x1, max(y1 - 8, 15)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
 
-def _arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--source",
-        default="0",
-        help="Webcam index or path to an MP4/video file.",
-    )
-    parser.add_argument("--session-id", default=None)
-    return parser.parse_args()
+def main():
+    module = ObjectDetectModule()
 
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise RuntimeError("Không mở được webcam")
 
-def _capture_source(value: str) -> int | str:
-    return int(value) if value.isdigit() else value
-
-
-def main() -> None:
-    args = _arguments()
-    source = _capture_source(args.source)
-    is_live_webcam = isinstance(source, int)
-    module = ObjectDetectModule(
-        detect_every_n_frames=(
-            settings.webcam_object_detect_every_n_frames
-            if is_live_webcam
-            else None
-        ),
-        phone_confidence_floor=(
-            settings.webcam_phone_confidence_floor
-            if is_live_webcam
-            else None
-        ),
-    )
-    capture = cv2.VideoCapture(source)
-    if is_live_webcam:
-        configure_webcam_capture(capture)
-    if not capture.isOpened():
-        raise RuntimeError(f"Could not open source: {args.source}")
-
-    source_stem = (
-        "webcam"
-        if isinstance(source, int)
-        else Path(str(source)).stem
-    )
-    session_id = args.session_id or f"manual_object_test_{source_stem}"
-    playback_delay = (
-        1
-        if isinstance(source, int)
-        else max(1, round(1000 / max(capture.get(cv2.CAP_PROP_FPS), 1.0)))
-    )
+    session_id = "manual_test_session"
     frame_id = 0
-    last_objects: list[dict] = []
-    last_confirmed: list[str] = []
-    print(
-        "Q: quit. Cyan=paper candidate routed to paper tracker; "
-        "red=confirmed prohibited non-paper object."
-    )
 
-    try:
-        while True:
-            ok, frame = capture.read()
-            if not ok:
-                break
-            if is_live_webcam:
-                frame = resize_live_frame(frame)
-            frame_id += 1
-            result = module.process(frame, session_id, frame_id)
-            if result is not None:
-                last_objects = result.get("raw_objects", last_objects)
-                last_confirmed = result.get(
-                    "confirmed_classes",
-                    last_confirmed,
-                )
-                if result["label"] != "clear" and frame_id % 15 == 0:
-                    print(f"[frame {frame_id}] {result['label']}")
+    # Vì model chỉ chạy inference mỗi N frame (xem
+    # object_detect_every_n_frames trong config.py), giữ lại box của
+    # lần inference gần nhất để vẽ liên tục — không thì box sẽ
+    # nhấp nháy ẩn/hiện mỗi N frame, nhìn giật.
+    last_boxes = {}
+    last_detections = {}
+    last_confirmed = []
 
-            draw_objects(frame, last_objects, last_confirmed)
-            cv2.imshow("Raw object detection", frame)
-            if cv2.waitKey(playback_delay) & 0xFF in (ord("q"), ord("Q")):
-                break
-    finally:
-        capture.release()
-        cv2.destroyAllWindows()
-        module.cleanup_session(session_id)
+    print("Nhấn 'q' để thoát. Box đỏ = đã confirm (đủ frame liên tiếp), vàng = mới detect thoáng qua.")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame_id += 1
+
+        result = module.process(frame, session_id, frame_id)
+        if result is not None:
+            last_boxes = result.get("raw_boxes", last_boxes)
+            last_detections = result.get("raw_detections", last_detections)
+            last_confirmed = result.get("confirmed_classes", last_confirmed)
+            if result["label"] != "clear":
+                # Cứ mỗi 15 frame (~0.5 giây) mới in log ra một lần
+                if frame_id % 15 == 0: 
+                    print(f"[frame {frame_id}] {result}")
+
+        draw_boxes(frame, last_boxes, last_detections, last_confirmed)
+        cv2.imshow("Test object detect - press q to quit", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+    module.cleanup_session(session_id)
 
 
 if __name__ == "__main__":
