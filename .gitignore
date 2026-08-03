@@ -53,7 +53,9 @@ backend/ai_services/pose_gaze/holistic/batch_dataset/data/*
 test_data_tracking/
 test_image/
 !backend/ai_services/pose_gaze/tracking/test_image/
-!backend/ai_services/pose_gaze/tracking/test_image/**
+!backend/ai_services/pose_gaze/tracking/test_image/*.py
+!backend/ai_services/pose_gaze/tracking/test_image/README.md
+!backend/ai_services/pose_gaze/tracking/test_image/image.png
 models/
 checkpoints/
 wandb/
