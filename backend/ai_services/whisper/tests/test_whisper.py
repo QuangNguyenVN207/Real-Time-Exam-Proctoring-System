@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from whisper.audio_pipeline import AudioPipeline
 from whisper.whisper_service import WhisperService
 
 BASE_DIR = Path(__file__).resolve().parent.parent

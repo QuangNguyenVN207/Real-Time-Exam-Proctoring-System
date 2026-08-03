@@ -1,0 +1,761 @@
+{
+  "summary": {
+    "total_files": 23,
+    "tp": 11,
+    "tn": 11,
+    "fp": 0,
+    "fn": 1,
+    "accuracy": 0.9565217391304348,
+    "precision": 1.0,
+    "recall": 0.9166666666666666,
+    "f1": 0.9565217391304348,
+    "average_time_seconds": 0.5153067869478432
+  },
+  "files": [
+    {
+      "file": "cheating/cheat1.wav",
+      "label": "cheating",
+      "prediction": false,
+      "eval": "FN",
+      "time_seconds": 5.6417,
+      "language": "vi",
+      "transcription": "đáp án là câu b.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 2,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là",
+          "candidate": "đap an la",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là gì",
+          "candidate": "đap an la cau",
+          "score": 90.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu",
+          "candidate": "đap an la",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu này",
+          "candidate": "đap an la cau",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [
+        "b"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat10.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2801,
+      "language": "vi",
+      "transcription": "cho xem màn hình.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 88.9,
+      "rule_bonus": 0,
+      "context_bonus": 16,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "cho xem tí",
+          "candidate": "cho xem man",
+          "score": 88.9,
+          "severity": "medium",
+          "category": "sharing"
+        },
+        {
+          "keyword": "cho xem bài",
+          "candidate": "cho xem man",
+          "score": 85.7,
+          "severity": "high",
+          "category": "sharing"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [
+        "xem",
+        "cho"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat11.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2124,
+      "language": "vi",
+      "transcription": "cầu máy.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "câu mấy",
+          "candidate": "cau may",
+          "score": 100,
+          "severity": "medium",
+          "category": "question"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat2.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.3347,
+      "language": "vi",
+      "transcription": "đáp án câu một là a.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu",
+          "candidate": "đap an cau",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu này",
+          "candidate": "đap an cau 1",
+          "score": 95.7,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu kia",
+          "candidate": "đap an cau 1",
+          "score": 95.7,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là",
+          "candidate": "đap an cau",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat3.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2675,
+      "language": "vi",
+      "transcription": "cho tao xem bài.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 15,
+      "context_bonus": 21,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "cho tao xem",
+          "candidate": "cho tao xem",
+          "score": 100,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "xem bài",
+          "candidate": "xem bai",
+          "score": 100,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "cho xem bài",
+          "candidate": "tao xem bai",
+          "score": 90.0,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "chỉ tao",
+          "candidate": "cho tao",
+          "score": 85.7,
+          "severity": "high",
+          "category": "help"
+        }
+      ],
+      "matched_rules": [
+        "casual_cheating"
+      ],
+      "matched_context": [
+        "tao",
+        "xem",
+        "cho"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat4.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2524,
+      "language": "vi",
+      "transcription": "mở ai ai đây.",
+      "risk": "medium",
+      "confidence": 88,
+      "keyword_score": 88.9,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đưa bài đây",
+          "candidate": "ai ai đay",
+          "score": 88.9,
+          "severity": "high",
+          "category": "sharing"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat5.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.3023,
+      "language": "vi",
+      "transcription": "đọc đáp án.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đọc đáp án",
+          "candidate": "đoc đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đọc đi",
+          "candidate": "đoc đap",
+          "score": 90.9,
+          "severity": "medium",
+          "category": "help"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat6.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2572,
+      "language": "vi",
+      "transcription": "làm giúp tao.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 5,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "giúp tao",
+          "candidate": "giup tao",
+          "score": 100,
+          "severity": "high",
+          "category": "help"
+        },
+        {
+          "keyword": "làm giúp",
+          "candidate": "lam giup",
+          "score": 100,
+          "severity": "high",
+          "category": "help"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [
+        "tao"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat7.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.2471,
+      "language": "vi",
+      "transcription": "google câu này.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 60,
+      "context_bonus": 20,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "google",
+          "candidate": "google",
+          "score": 100,
+          "severity": "high",
+          "category": "internet"
+        }
+      ],
+      "matched_rules": [
+        "google"
+      ],
+      "matched_context": [
+        "google"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat8.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.3118,
+      "language": "vi",
+      "transcription": "cho xem bài làm.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 16,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "cho xem bài",
+          "candidate": "cho xem bai",
+          "score": 100,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "xem bài",
+          "candidate": "xem bai",
+          "score": 100,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "bài làm",
+          "candidate": "bai lam",
+          "score": 100,
+          "severity": "medium",
+          "category": "question"
+        },
+        {
+          "keyword": "cho xem tí",
+          "candidate": "cho xem bai",
+          "score": 88.9,
+          "severity": "medium",
+          "category": "sharing"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [
+        "xem",
+        "cho"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/cheat9.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.4305,
+      "language": "vi",
+      "transcription": "tìm đáp án trên mạng.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "tìm đáp án",
+          "candidate": "tim đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "nói đáp án",
+          "candidate": "tim đap an",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "gửi đáp án",
+          "candidate": "tim đap an",
+          "score": 88.9,
+          "severity": "high",
+          "category": "sharing"
+        },
+        {
+          "keyword": "xem đáp án",
+          "candidate": "tim đap an",
+          "score": 88.9,
+          "severity": "high",
+          "category": "sharing"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "cheating/input1.wav",
+      "label": "cheating",
+      "prediction": true,
+      "eval": "TP",
+      "time_seconds": 0.3459,
+      "language": "vi",
+      "transcription": "đáp án là câu b.",
+      "risk": "high",
+      "confidence": 100,
+      "keyword_score": 100,
+      "rule_bonus": 0,
+      "context_bonus": 2,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là",
+          "candidate": "đap an la",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là gì",
+          "candidate": "đap an la cau",
+          "score": 90.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu",
+          "candidate": "đap an la",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án câu này",
+          "candidate": "đap an la cau",
+          "score": 88.9,
+          "severity": "high",
+          "category": "answer"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [
+        "b"
+      ],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor1.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.283,
+      "language": "vi",
+      "transcription": "bắt đầu làm bài.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor10.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.1557,
+      "language": "vi",
+      "transcription": "chào.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor2.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.2868,
+      "language": "vi",
+      "transcription": "em đã nộp bài.",
+      "risk": "medium",
+      "confidence": 85,
+      "keyword_score": 85.7,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [
+        {
+          "keyword": "copy bài",
+          "candidate": "nop bai",
+          "score": 85.7,
+          "severity": "high",
+          "category": "cheating"
+        }
+      ],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor3.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.2686,
+      "language": "vi",
+      "transcription": "thầy cho em hỏi.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor4.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.3365,
+      "language": "vi",
+      "transcription": "unk em xin phép ra ngoài.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor5.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.2692,
+      "language": "vi",
+      "transcription": "unk em làm xong rồi.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor6.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.3134,
+      "language": "vi",
+      "transcription": "hôm nay em hơi mệt.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor7.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.3029,
+      "language": "vi",
+      "transcription": "cám ơn thầy.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor8.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.3278,
+      "language": "vi",
+      "transcription": "chúc mọi người may mắn.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/nor9.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.275,
+      "language": "vi",
+      "transcription": "mấy giờ rồi ạ.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    },
+    {
+      "file": "normal/test.wav",
+      "label": "normal",
+      "prediction": false,
+      "eval": "TN",
+      "time_seconds": 0.1495,
+      "language": "vi",
+      "transcription": "chào.",
+      "risk": "safe",
+      "confidence": 0,
+      "keyword_score": 0,
+      "rule_bonus": 0,
+      "context_bonus": 0,
+      "penalty": 0,
+      "matched": [],
+      "matched_rules": [],
+      "matched_context": [],
+      "matched_negative": []
+    }
+  ]
+}
