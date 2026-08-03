@@ -75,7 +75,7 @@ OVERLAY_LOCK = threading.Lock()
 OVERLAY_TTL = 1  # Thời gian sống (giây): Khung cảnh báo sẽ hiển thị mượt mà trong 1.5s
 
 # Giả lập import các module AI (bạn sẽ liên kết với code của cộng sự sau)
-from backend.ai_services.object_detect.object_detect_test import ObjectDetector
+from backend.ai_services.object_detect.object_detect import ObjectDetector
 from backend.ai_services.pose_gaze.pose_gaze_test import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 from backend.ai_services.whisper.audio_whisper_test import AudioWhisper

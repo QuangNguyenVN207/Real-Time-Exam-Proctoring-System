@@ -1,0 +1,440 @@
+HUONG DAN CHAY TOAN BO TEST
+===========================
+
+Tat ca lenh ben duoi chay bang PowerShell, tai thu muc goc cua du an:
+
+    C:\Users\Admin\Desktop\develop
+
+
+0. CHUAN BI TERMINAL
+--------------------
+
+Mo PowerShell/Terminal cua VS Code va chay:
+
+    Set-Location "C:\Users\Admin\Desktop\develop"
+    $env:PYTHONIOENCODING = "utf-8"
+
+Kiem tra Python va cac thu vien chinh:
+
+    python --version
+    python -c "import cv2, numpy, torch, ultralytics; print('Dependencies OK'); print('CUDA:', torch.cuda.is_available())"
+
+Neu CUDA = False, chuong trinh van chay binh thuong bang CPU nhung xu ly video
+se cham hon.
+
+
+1. CHAY UNIT TEST OBJECT DETECTION
+---------------------------------
+
+Lenh:
+
+    python -m unittest discover -s backend/ai_services/object_detect/tests -p "test_*.py" -v
+
+Nhom test nay kiem tra:
+
+    - Class ObjectDetector va BANNED_ITEMS.
+    - Resize frame ve 640x640.
+    - Scale bbox tu 640x640 ve kich thuoc frame goc.
+    - Confidence phai lon hon 0.5.
+    - Chi tra cheat_sheet, earphone, smartwatch, smartphone.
+    - Chuan hoa book thanh cheat_sheet.
+    - Frame hong tra ve None.
+    - Model loi tra ve None thay vi lam sap server.
+    - YOLO duoc goi voi verbose=False.
+    - Cac tinh nang fallback smartphone/book va person ROI.
+
+Ket qua mong doi hien tai:
+
+    Ran 22 tests
+    OK
+
+
+2. CHAY UNIT TEST PERSON VA PAPER TRACKING
+-----------------------------------------
+
+Lenh:
+
+    python -m unittest discover -s backend/ai_services/pose_gaze/tracking/tests -p "test_*.py" -v
+
+Nhom test nay kiem tra:
+
+    - Gan person_id thu cong.
+    - Nho person_id bang appearance fingerprint.
+    - Nguoi ra khoi camera roi quay lai van khoi phuc person_id cu.
+    - Gan paper_id thu cong.
+    - Nho to de thi da dang ky.
+    - Moi thi sinh chi co mot to de thi hop le.
+    - Giay la xuat hien sau khi ARM se tao alert.
+    - Khoi phuc paper_id khi to giay cu xuat hien lai.
+
+Ket qua mong doi hien tai:
+
+    Ran 33 tests
+    OK
+
+
+3. CHAY NHANH TOAN BO 55 UNIT TEST DA LAM
+----------------------------------------
+
+Chay lan luot hai lenh:
+
+    python -m unittest discover -s backend/ai_services/object_detect/tests -p "test_*.py"
+    python -m unittest discover -s backend/ai_services/pose_gaze/tracking/tests -p "test_*.py"
+
+Ket qua mong doi:
+
+    Object detection: 22 tests OK
+    Person/paper tracking: 33 tests OK
+    Tong cong: 55 tests
+
+Co the kiem tra them loi cu phap:
+
+    python -m compileall -q backend/ai_services/object_detect backend/ai_services/pose_gaze
+
+
+4. TEST OBJECTDETECTOR MOI BANG WEBCAM
+-------------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.object_detect.object_detect_test --source 0 --model "weights/best (1).pt" --confidence 0.5
+
+Ket qua:
+
+    - Mo cua so camera.
+    - Chi ve bbox khi vat nam trong BANNED_ITEMS va confidence > 0.5.
+    - Nhan Q, ESC hoac dong cua so de thoat.
+
+Luu y: day la test truc quan cua API ObjectDetector moi. Test nay khong ghi
+file video output.
+
+
+5. TEST OBJECTDETECTOR MOI BANG FILE VIDEO
+-----------------------------------------
+
+Smartphone:
+
+    python -m backend.ai_services.object_detect.object_detect_test --source "data/smartphone.mp4" --model "weights/best (1).pt" --confidence 0.5
+
+Cheat sheet:
+
+    python -m backend.ai_services.object_detect.object_detect_test --source "data/cheatsheet.mp4" --model "weights/best (1).pt" --confidence 0.5
+
+Video v_c1_s1_s2:
+
+    python -m backend.ai_services.object_detect.object_detect_test --source "data/v_c1_s1_s2.mov" --model "weights/best (1).pt" --confidence 0.5
+
+Video v_c4_s7:
+
+    python -m backend.ai_services.object_detect.object_detect_test --source "data/v_c4_s7.mov" --model "weights/best (1).pt" --confidence 0.5
+
+Nhan Q hoac ESC de thoat.
+
+Luu y: cac lenh trong muc nay chi hien thi cua so ket qua, khong tao MP4.
+
+
+6. TEST RAW OBJECT DETECTION VOI WEBCAM
+--------------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.object_detect.test_webcam --source 0
+
+Test nay dung ObjectDetectModule day du:
+
+    - Model chinh trong backend/core/config.py.
+    - COCO fallback cho smartphone.
+    - Chuan hoa book thanh cheat_sheet.
+    - Cua so xac nhan detection theo nhieu frame.
+
+Mau hien thi:
+
+    - Cyan: paper candidate, se chuyen sang paper tracker.
+    - Vang: thay object nhung chua du frame xac nhan.
+    - Do: vat cam da du frame xac nhan.
+
+Nhan Q de thoat.
+
+
+8. TEST RAW OBJECT DETECTION VOI VIDEO
+-------------------------------------
+
+Smartphone:
+
+    python -m backend.ai_services.object_detect.test_webcam --source "data/smartphone.mp4"
+
+Cheat sheet:
+
+    python -m backend.ai_services.object_detect.test_webcam --source "data/cheatsheet.mp4"
+
+Hai video moi:
+
+    python -m backend.ai_services.object_detect.test_webcam --source "data/v_c1_s1_s2.mov"
+    python -m backend.ai_services.object_detect.test_webcam --source "data/v_c4_s7.mov"
+
+Nhan Q de thoat. Cac lenh muc 8 chi hien thi, khong ghi MP4 output.
+
+
+9. TEST PERSON_ID RIENG BANG WEBCAM
+----------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.pose_gaze.tracking.test_webcam
+
+Cach test:
+
+    1. Dung truoc camera.
+    2. Terminal hoi ID cho temporary track moi.
+    3. Nhap ID, vi du STUDENT_01, roi nhan ENTER.
+    4. Di ra khoi camera.
+    5. Quay lai camera va kiem tra ID co duoc khoi phuc hay khong.
+
+Gia tri co the nhap trong Terminal:
+
+    - STUDENT_01: gan person_id.
+    - no: bo qua temporary track hien tai.
+    - full: ket thuc va xuat JSON.
+
+Nhan Q trong cua so camera de thoat.
+
+Du lieu tracking duoc luu trong:
+
+    test_data_tracking
+
+
+10. TEST PERSON_ID + PAPER_ID + ALERT BANG WEBCAM
+------------------------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source 0
+
+Lenh nay tu dong bat che do webcam toi uu:
+
+    - Ha frame Full HD ve toi da 960x540 va giu dung ti le.
+    - Camera buffer = 1 de khong doc cac frame cu bi ton.
+    - Person YOLO chay moi 2 frame, frame giua dung detection cache.
+    - Object hybrid chay moi 4 frame.
+    - best (1).pt phat hien object chuyen biet cua bai toan.
+    - yolov8n.pt pretrained phat hien person, cell phone, book va remote.
+    - Confidence smartphone tren webcam co san toi thieu 0.50.
+    - Neu pretrained thay remote trung voi phone, ung vien phone bi loai.
+    - Neu crop co luoi nut bam vat ly it nhat 3 hang x 3 cot, no duoc xem
+      la calculator va khong tao smartphone alert.
+
+Lan inference dau tien co the dung 1-2 giay de warm-up model. Tu frame sau,
+thoi gian object inference CPU thuong con khoang 0.16-0.30 giay va chi chay
+moi 4 frame.
+
+Quy trinh test dung:
+
+    1. Dua nguoi vao camera.
+    2. Khi hien ASSIGN PERSON, go ID ngay trong cua so camera.
+       Vi du: STUDENT_01, sau do nhan ENTER.
+    3. Dua to de thi hop le vao camera.
+    4. Khi hien ASSIGN PAPER, nhap paper ID dang so duong.
+       Vi du: 101, sau do nhan ENTER.
+    5. Cho den khi person va paper deu hien memory=on.
+    6. Nhan A de ARM/khoa dang ky.
+    7. Dua to de cu ra ngoai roi dua lai:
+       he thong phai khoi phuc dung paper_id=101 va khong alert.
+    8. Dua mot to giay/quyen tap khac vao:
+       he thong phai tao paper_id khac va alert cho dung thi sinh.
+
+Phim dieu khien:
+
+    - ENTER: luu ID dang nhap.
+    - BACKSPACE: xoa ky tu.
+    - ESC khi dang nhap: bo qua temporary ID hien tai.
+    - A: ARM, khoa dang ky de thi.
+    - D: mo lai che do dang ky.
+    - Q hoac ESC khi khong dang nhap: thoat.
+
+Khong the ARM neu:
+
+    - Con person/paper chua duoc gan ID.
+    - Person fingerprint chua tao duoc.
+    - Paper fingerprint chua tao duoc.
+
+Khi do can de mat, than nguoi va to giay ro hon, du sang hon.
+
+
+11. TEST PERSON/PAPER TRACKING VOI FILE VIDEO
+--------------------------------------------
+
+Cheat sheet:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source "data/cheatsheet.mp4"
+
+Smartphone:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source "data/smartphone.mp4"
+
+Hai video moi:
+
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source "data/v_c1_s1_s2.mov"
+    python -m backend.ai_services.object_detect.test_paper_tracking_webcam --source "data/v_c4_s7.mov"
+
+Day la che do tuong tac. Van phai gan person ID, paper ID va nhan A de ARM
+trong cua so video.
+
+
+12. XUAT SMARTPHONE_OUTPUT.MP4 VA CHEATSHEET_OUTPUT.MP4
+------------------------------------------------------
+
+Lenh tao dung profile day du giong bo output tham chieu:
+
+    python -m backend.ai_services.object_detect.test_video_scenarios "data/smartphone.mp4" "data/cheatsheet.mp4" --setup-seconds 5 --frame-stride 3
+
+Chuong trinh chay headless, khong mo cua so. Sau khi hoan tat se tao:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>/smartphone_output.mp4
+    data/video_test_results/<YYYYMMDD_HHMMSS>/cheatsheet_output.mp4
+
+Report tung video:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>/smartphone/report.json
+    data/video_test_results/<YYYYMMDD_HHMMSS>/cheatsheet/report.json
+
+File tong hop:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>/reports.json
+
+Bon file moi nhat cung duoc tu dong copy ve dung thu muc giong anh:
+
+    data/video_test_results/outputs/smartphone_output.mp4
+    data/video_test_results/outputs/smartphone_report.json
+    data/video_test_results/outputs/cheatsheet_output.mp4
+    data/video_test_results/outputs/cheatsheet_report.json
+
+Quan trong:
+
+    - Khong them --no-annotated-video neu muon co file MP4.
+    - Tren CPU, khong nen dung --frame-stride 1 cho video Full HD.
+    - Profile nay giu Full HD, person ROI, paper ROI va xac nhan 3/5.
+    - Report tham chieu cu mat khoang 115 giay cho smartphone va 177 giay
+      cho cheatsheet tren CPU; tong thoi gian khoang 5 phut la binh thuong.
+    - Terminal chi tra ve prompt sau khi ca hai video xu ly xong.
+
+
+13. XUAT OUTPUT CHO HAI VIDEO V_C1 VA V_C4
+-----------------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.object_detect.test_video_scenarios "data/v_c1_s1_s2.mov" "data/v_c4_s7.mov" --setup-seconds 5 --frame-stride 3
+
+Output:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>/v_c1_s1_s2_output.mp4
+    data/video_test_results/<YYYYMMDD_HHMMSS>/v_c4_s7_output.mp4
+
+Report:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>/v_c1_s1_s2/report.json
+    data/video_test_results/<YYYYMMDD_HHMMSS>/v_c4_s7/report.json
+
+
+14. XUAT OUTPUT CHO CA BON VIDEO
+-------------------------------
+
+Lenh:
+
+    python -m backend.ai_services.object_detect.test_video_scenarios "data/smartphone.mp4" "data/cheatsheet.mp4" "data/v_c1_s1_s2.mov" "data/v_c4_s7.mov" --setup-seconds 5 --frame-stride 3
+
+Tat ca MP4 output nam chung trong mot thu muc timestamp:
+
+    data/video_test_results/<YYYYMMDD_HHMMSS>
+
+
+15. TEST NHANH 10 GIAY DAU CUA VIDEO
+-----------------------------------
+
+Dung de kiem tra code/model co chay duoc truoc khi test toan bo video:
+
+    python -m backend.ai_services.object_detect.test_video_scenarios "data/smartphone.mp4" "data/cheatsheet.mp4" --setup-seconds 5 --frame-stride 3 --max-seconds 10
+
+Neu chi muon report JSON, khong can video:
+
+    python -m backend.ai_services.object_detect.test_video_scenarios "data/smartphone.mp4" "data/cheatsheet.mp4" --setup-seconds 5 --frame-stride 3 --max-seconds 10 --no-annotated-video
+
+
+16. TIM NHANH CAC FILE OUTPUT MOI NHAT
+-------------------------------------
+
+Tim 10 video output moi nhat:
+
+    Get-ChildItem "data/video_test_results" -Recurse -Filter "*_output.mp4" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 10 FullName, LastWriteTime, Length
+
+Tim 10 report moi nhat:
+
+    Get-ChildItem "data/video_test_results" -Recurse -Filter "report.json" |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 10 FullName, LastWriteTime
+
+Mo thu muc output:
+
+    explorer "C:\Users\Admin\Desktop\develop\data\video_test_results"
+
+
+17. MODEL NAO DUOC DUNG TRONG TUNG LENH
+--------------------------------------
+
+object_detect_test:
+
+    - Dung dung model truyen qua --model.
+    - Khong co COCO fallback.
+    - Khong co person/paper tracking.
+    - Phu hop de so sanh rieng best (1).pt va best (4).pt.
+
+test_webcam, test_paper_tracking_webcam va test_video_scenarios:
+
+    - Dung model chinh khai bao trong backend/core/config.py.
+    - Hien tai model chinh la weights/best (1).pt.
+    - Co them weights/yolov8n.pt lam fallback cho cell phone va book.
+    - Co person ROI, paper identity va person identity.
+
+
+18. XU LY MOT SO LOI THUONG GAP
+------------------------------
+
+Loi khong tim thay module backend:
+
+    - Phai Set-Location ve C:\Users\Admin\Desktop\develop truoc khi chay.
+
+Loi UnicodeEncodeError tren Windows:
+
+    $env:PYTHONIOENCODING = "utf-8"
+
+Khong co file output MP4:
+
+    - Kiem tra khong su dung --no-annotated-video.
+    - Kiem tra terminal da hien "[video-test] Complete".
+    - Tim trong thu muc timestamp moi nhat, khong tim truc tiep trong data.
+    - Dung lenh tai muc 16 de tim file.
+
+Video output khong mo duoc khi chuong trinh van dang chay:
+
+    - Cho den khi terminal tra lai dau nhac PowerShell.
+    - VideoWriter chi dong va hoan tat file khi xu ly video xong.
+
+Chay qua cham:
+
+    - Dung --frame-stride 3 thay vi --frame-stride 1.
+    - Dung --max-seconds 10 de smoke test.
+    - Kiem tra torch.cuda.is_available().
+    - Neu muon ket qua giong bo output tham chieu thi can cho profile day du
+      chay xong; tren CPU khoang 5 phut cho hai video la binh thuong.
+
+Model khong detect duoc object:
+
+    - Kiem tra dung model path.
+    - Thu confidence thap hon khi test truc quan, vi du:
+
+      python -m backend.ai_services.object_detect.object_detect_test --source "data/v_c1_s1_s2.mov" --model "weights/best (4).pt" --confidence 0.3
+
+    - Confidence thap hon chi nen dung de phan tich model; contract server chinh
+      van nen giu confidence > 0.5.
