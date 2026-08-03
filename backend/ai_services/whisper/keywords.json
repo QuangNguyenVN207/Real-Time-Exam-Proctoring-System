@@ -1,494 +1,192 @@
 [
     {
         "keyword": "đáp án",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đáp án câu",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đáp án là",
-        "severity": "high",
-        "category": "answer"
+        "severity": 3,
+        "category": "cheating"
     },
     {
         "keyword": "đọc đáp án",
-        "severity": "high",
-        "category": "answer"
+        "severity": 3,
+        "category": "cheating"
     },
     {
-        "keyword": "đọc câu trả lời",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "tìm đáp án",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-    "keyword": "đáp án",
-    "severity": "high",
-    "category": "answer"
-    },
-    {
-        "keyword": "đáp án câu",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đáp án là gì",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đọc đáp án",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "nói đáp án",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đọc câu trả lời",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đáp án câu này",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đáp án câu kia",
-        "severity": "high",
-        "category": "answer"
-    },
-    {
-        "keyword": "đúng không",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "đúng chưa",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "là a hả",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "là b hả",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "là c hả",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "là d hả",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "a hay b",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "b hay c",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-        "keyword": "c hay d",
-        "severity": "medium",
-        "category": "answer"
-    },
-    {
-    "keyword": "cho xem bài",
-    "severity": "high",
-    "category": "sharing"
-    },
-    {
-        "keyword": "cho tao xem",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho coi bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho tao coi",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "đưa bài đây",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "nghiêng bài qua",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "đưa đáp án",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "gửi đáp án",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "gửi bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "xem bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "coi bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho nhìn xíu",
-        "severity": "medium",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho xem xíu",
-        "severity": "medium",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho xem tí",
-        "severity": "medium",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho xem bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "xem bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho coi bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "đưa bài đây",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "gửi bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "gửi đáp án",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "cho xem đáp án",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "xem đáp án",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "xin bài",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-        "keyword": "xin bài làm",
-        "severity": "high",
-        "category": "sharing"
-    },
-    {
-    "keyword": "giúp tao",
-    "severity": "high",
-    "category": "help"
-    },
-    {
-        "keyword": "giải giúp",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "làm giúp",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "làm hộ",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "chỉ tao",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "chỉ câu này",
-        "severity": "high",
-        "category": "help"
+        "keyword": "cho xem",
+        "severity": 2,
+        "category": "cheating"
     },
     {
         "keyword": "gợi ý",
-        "severity": "medium",
-        "category": "help"
-    },
-    {
-        "keyword": "gợi ý đi",
-        "severity": "medium",
-        "category": "help"
-    },
-    {
-        "keyword": "nói đi",
-        "severity": "medium",
-        "category": "help"
-    },
-    {
-        "keyword": "đọc đi",
-        "severity": "medium",
-        "category": "help"
-    },
-    {
-        "keyword": "giải giúp",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "làm giúp",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "làm hộ",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "coi giúp",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "giúp tao",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-        "keyword": "giải câu này",
-        "severity": "high",
-        "category": "help"
-    },
-    {
-    "keyword": "chatgpt",
-    "severity": "high",
-    "category": "ai"
-    },
-    {
-        "keyword": "chat gpt",
-        "severity": "high",
-        "category": "ai"
-    },
-    {
-        "keyword": "gemini",
-        "severity": "high",
-        "category": "ai"
-    },
-    {
-        "keyword": "copilot",
-        "severity": "high",
-        "category": "ai"
-    },
-    {
-        "keyword": "claude",
-        "severity": "high",
-        "category": "ai"
-    },
-    {
-        "keyword": "deepseek",
-        "severity": "high",
-        "category": "ai"
-    },
-    {
-        "keyword": "perplexity",
-        "severity": "high",
-        "category": "ai"
+        "severity": 2,
+        "category": "cheating"
     },
     {
         "keyword": "google",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "tra google",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "google giúp",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "mở google",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-    "keyword": "google",
-    "severity": "high",
-    "category": "internet"
-    },
-    {
-        "keyword": "tra google",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "google giúp",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "mở google",
-        "severity": "high",
-        "category": "internet"
-    },
-    {
-        "keyword": "tìm giúp",
-        "severity": "medium",
-        "category": "internet"
-    },
-    {
-        "keyword": "tra hộ",
-        "severity": "medium",
+        "severity": 2,
         "category": "internet"
     },
     {
         "keyword": "chatgpt",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
     {
-        "keyword": "chat gpt",
-        "severity": "high",
+        "keyword": "copy",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "làm giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+    "keyword": "cho xem bài",
+    "severity": 3,
+    "category": "cheating"
+    },
+    {
+        "keyword": "xem bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "cho xem đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xem đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gửi đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gửi bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xin bài",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "xin bài làm",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "bài làm",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "coi giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "giải giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "giải câu này",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "gợi ý",
+        "severity": 2,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đọc câu trả lời",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "tra google",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "google giúp",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "mở google",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "mở ai",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "mở chatgpt",
-        "severity": "high",
+        "severity": 3,
+        "category": "ai"
+    },
+    {
+        "keyword": "chat gpt",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "gemini",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "copilot",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "claude",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "deepseek",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
     {
         "keyword": "perplexity",
-        "severity": "high",
+        "severity": 3,
         "category": "ai"
     },
-
     {
-        "keyword": "câu mấy",
-        "severity": "medium",
-        "category": "question"
-    },
-    {
-        "keyword": "câu số",
-        "severity": "medium",
-        "category": "question"
-    },
-    {
-        "keyword": "câu bao nhiêu",
-        "severity": "medium",
-        "category": "question"
-    },
-    {
-        "keyword": "làm tới đâu",
-        "severity": "medium",
-        "category": "question"
-    },
-    {
-        "keyword": "gợi ý",
-        "severity": "medium",
-        "category": "question"
-    },
-    {
-        "keyword": "bài làm",
-        "severity": "medium",
-        "category": "question"
-    },
-
-    {
-        "keyword": "copy",
-        "severity": "high",
+        "keyword": "làm hộ",
+        "severity": 3,
         "category": "cheating"
     },
     {
-        "keyword": "copy bài",
-        "severity": "high",
+        "keyword": "giúp tao",
+        "severity": 3,
         "category": "cheating"
     },
     {
-        "keyword": "chép bài",
-        "severity": "high",
+        "keyword": "đọc đáp án",
+        "severity": 3,
         "category": "cheating"
     },
     {
-        "keyword": "copy đáp án",
-        "severity": "high",
+        "keyword": "tìm đáp án",
+        "severity": 3,
+        "category": "cheating"
+    },
+    {
+        "keyword": "đáp án câu",
+        "severity": 3,
         "category": "cheating"
     }
 ]

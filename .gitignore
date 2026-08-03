@@ -48,8 +48,6 @@ Thumbs.db
 *.log
 
 data/
-test_data_tracking/
-test_image/
 models/
 checkpoints/
 wandb/
@@ -60,7 +58,6 @@ mlruns/
 *.safetensors
 *.bin
 *.h5
-*.task
 .gstack/
 
 .link-cache.json

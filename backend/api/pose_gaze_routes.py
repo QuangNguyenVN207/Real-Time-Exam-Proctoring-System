@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.ai_services.pose_gaze.tracking.manager import AssignmentError, SessionNotFoundError, TrackingManager
-from backend.ai_services.pose_gaze.tracking.paper_tracking import paper_detection_from_dict
 from backend.ai_services.pose_gaze.tracking.schemas import detection_from_dict
 
 
@@ -26,11 +25,6 @@ class DetectionRequest(BaseModel):
     bbox_xyxy: list[float] = Field(min_length=4, max_length=4)
     confidence: float = Field(ge=0.0, le=1.0)
     class_name: str = "person"
-    appearance_fingerprint: list[float] | None = Field(
-        default=None,
-        min_length=8,
-        max_length=512,
-    )
 
 
 class ProcessDetectionsRequest(BaseModel):
@@ -40,42 +34,7 @@ class ProcessDetectionsRequest(BaseModel):
 
 
 class AssignmentRequest(BaseModel):
-    person_id: str | None = Field(default=None, min_length=1, max_length=128)
-    # Backward-compatible input name used by the original pose/gaze contract.
-    student_id: str | None = Field(default=None, min_length=1, max_length=128)
-
-    def resolved_person_id(self) -> str:
-        if self.person_id and self.student_id and self.person_id != self.student_id:
-            raise AssignmentError("person_id and student_id must match when both are provided")
-        person_id = self.person_id or self.student_id
-        if person_id is None:
-            raise AssignmentError("person_id is required")
-        return person_id
-
-
-class PaperDetectionRequest(BaseModel):
-    bbox_xyxy: list[float] = Field(min_length=4, max_length=4)
-    confidence: float = Field(ge=0.0, le=1.0)
-    class_name: str = Field(pattern=r"^(cheat_sheet|test_paper|paper_unknown)$")
-    appearance_fingerprint: list[float] | None = Field(
-        default=None,
-        min_length=8,
-        max_length=512,
-    )
-
-
-class ProcessPaperDetectionsRequest(BaseModel):
-    supports_test_paper: bool = False
-    detections: list[PaperDetectionRequest]
-
-
-class PaperIdAssignmentRequest(BaseModel):
-    stable_paper_id: int = Field(ge=1)
-
-
-class PaperAuthorizationRequest(BaseModel):
-    owner_track_id: int = Field(ge=1)
-    replace_existing: bool = False
+    student_id: str = Field(min_length=1, max_length=128)
 
 
 def _packet_response(packet) -> dict:
@@ -123,11 +82,7 @@ def get_tracks(session_id: str) -> dict:
 def assign_student(session_id: str, track_id: int, request: AssignmentRequest) -> dict:
     try:
         return _packet_response(
-            _TRACKING_MANAGER.assign_student(
-                session_id,
-                track_id=track_id,
-                student_id=request.resolved_person_id(),
-            )
+            _TRACKING_MANAGER.assign_student(session_id, track_id=track_id, student_id=request.student_id)
         )
     except (SessionNotFoundError, AssignmentError) as error:
         raise _translate_error(error) from error
@@ -145,93 +100,5 @@ def unassign_student(session_id: str, track_id: int) -> dict:
 def get_pose_gaze_input(session_id: str) -> dict:
     try:
         return _TRACKING_MANAGER.get_pose_gaze_input(session_id)
-    except SessionNotFoundError as error:
-        raise _translate_error(error) from error
-
-
-@router.post("/sessions/{session_id}/paper-detections")
-def process_paper_detections(
-    session_id: str,
-    request: ProcessPaperDetectionsRequest,
-) -> dict:
-    """Receive paper boxes only on frames where object inference actually ran."""
-
-    try:
-        return _TRACKING_MANAGER.process_paper_detections(
-            session_id,
-            detections=[
-                paper_detection_from_dict(detection.model_dump())
-                for detection in request.detections
-            ],
-            supports_test_paper=request.supports_test_paper,
-        )
-    except (SessionNotFoundError, ValueError) as error:
-        raise _translate_error(error) from error
-
-
-@router.get("/sessions/{session_id}/papers")
-def get_papers(session_id: str) -> dict:
-    try:
-        return _TRACKING_MANAGER.get_paper_state(session_id)
-    except SessionNotFoundError as error:
-        raise _translate_error(error) from error
-
-
-@router.put("/sessions/{session_id}/papers/{current_paper_id}/identity")
-def assign_paper_id(
-    session_id: str,
-    current_paper_id: int,
-    request: PaperIdAssignmentRequest,
-) -> dict:
-    try:
-        return _TRACKING_MANAGER.assign_paper_id(
-            session_id,
-            current_paper_id=current_paper_id,
-            stable_paper_id=request.stable_paper_id,
-        )
-    except (SessionNotFoundError, AssignmentError) as error:
-        raise _translate_error(error) from error
-
-
-@router.put("/sessions/{session_id}/papers/{paper_id}/authorization")
-def authorize_exam_paper(
-    session_id: str,
-    paper_id: int,
-    request: PaperAuthorizationRequest,
-) -> dict:
-    try:
-        return _TRACKING_MANAGER.register_exam_paper(
-            session_id,
-            owner_track_id=request.owner_track_id,
-            paper_id=paper_id,
-            replace=request.replace_existing,
-        )
-    except (SessionNotFoundError, AssignmentError, ValueError) as error:
-        raise _translate_error(error) from error
-
-
-@router.delete("/sessions/{session_id}/papers/{paper_id}/authorization")
-def unauthorize_exam_paper(session_id: str, paper_id: int) -> dict:
-    try:
-        return _TRACKING_MANAGER.unregister_exam_paper(
-            session_id,
-            paper_id=paper_id,
-        )
-    except SessionNotFoundError as error:
-        raise _translate_error(error) from error
-
-
-@router.post("/sessions/{session_id}/paper-monitoring/arm")
-def arm_paper_monitoring(session_id: str) -> dict:
-    try:
-        return _TRACKING_MANAGER.arm_paper_monitoring(session_id)
-    except SessionNotFoundError as error:
-        raise _translate_error(error) from error
-
-
-@router.post("/sessions/{session_id}/paper-monitoring/disarm")
-def disarm_paper_monitoring(session_id: str) -> dict:
-    try:
-        return _TRACKING_MANAGER.disarm_paper_monitoring(session_id)
     except SessionNotFoundError as error:
         raise _translate_error(error) from error

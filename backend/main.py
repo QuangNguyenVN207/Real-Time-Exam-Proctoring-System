@@ -32,25 +32,10 @@
 # 3. An toàn đa luồng: Thao tác đọc/ghi vào ACTIVE_OVERLAYS được khóa cẩn thận bằng OVERLAY_LOCK tránh tình trạng đụng độ dữ liệu giữa luồng AI và luồng Camera.
 
 import os
-import logging
-import warnings
-
-# ==========================================
-# KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
-# ==========================================
-# 1. Tắt cảnh báo Python (Bao gồm cả UserWarning và FutureWarning của InsightFace)
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-# 2. Tắt lời nhắc nhở HF_TOKEN của Hugging Face
-logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-
-# 3. Tắt cảnh báo Wayland/Gnome của Linux & log OpenCV
+# --- ÉP TẮT CẢNH BÁO QUYỀN VÀ FONT CỦA OPENCV TRÊN LINUX ---
 os.environ["QT_QPA_PLATFORM"] = "xcb"
-os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
-os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
-# --- SAU ĐÓ MỚI IMPORT CÁC THƯ VIỆN CHÍNH ---
+os.environ["OPENCV_LOG_LEVEL"] = "FATAL" # Thêm dòng này để tắt log lõi của OpenCV
 import cv2
 import threading
 import time
@@ -59,9 +44,7 @@ import queue
 # ==========================================
 # 1. CẤU HÌNH HỆ THỐNG & HÀNG ĐỢI (QUEUES)
 # ==========================================
-# FIX LỖI 2: Giảm maxsize xuống 2. Nếu AI xử lý chậm, nó sẽ tự động bỏ qua các khung hình cũ
-# giúp cảnh báo luôn bám sát thời gian thực (Real-time)
-FRAME_QUEUE = queue.Queue(maxsize=2) 
+FRAME_QUEUE = queue.Queue(maxsize=30)
 AUDIO_QUEUE = queue.Queue(maxsize=50)
 RESULT_QUEUE = queue.Queue(maxsize=100)
 FPS_SKIP = 5
@@ -72,12 +55,12 @@ CAMERA_ID = 0
 # ==========================================
 ACTIVE_OVERLAYS = []
 OVERLAY_LOCK = threading.Lock()
-OVERLAY_TTL = 1  # Thời gian sống (giây): Khung cảnh báo sẽ hiển thị mượt mà trong 1.5s
+OVERLAY_TTL = 1.5  # Thời gian sống (giây): Khung cảnh báo sẽ hiển thị mượt mà trong 1.5s
 
 # Giả lập import các module AI (bạn sẽ liên kết với code của cộng sự sau)
-from backend.ai_services.object_detect.object_detect import ObjectDetector
+from backend.ai_services.object_detect.object_detect_test import ObjectDetector
 from backend.ai_services.pose_gaze.pose_gaze_test import PoseGazeDetector
-from backend.ai_services.face_verify.face_verify import FaceVerifier
+from backend.ai_services.face_verify.face_verify_test import FaceVerifier
 from backend.ai_services.whisper.audio_whisper_test import AudioWhisper
 
 # ==========================================
@@ -88,10 +71,10 @@ def draw_warning_overlays(frame):
     current_time = time.time()
     
     with OVERLAY_LOCK:
-        # FIX LỖI 1: Dùng 'display_timestamp' (lúc nhận được) thay vì 'timestamp' (lúc chụp ảnh)
+        # Lọc bỏ các cảnh báo đã quá hạn (TTL) để tránh rác màn hình
         valid_overlays = [
             item for item in ACTIVE_OVERLAYS 
-            if current_time - item.get('display_timestamp', current_time) <= OVERLAY_TTL
+            if current_time - item.get('timestamp', current_time) <= OVERLAY_TTL
         ]
         ACTIVE_OVERLAYS.clear()
         ACTIVE_OVERLAYS.extend(valid_overlays)
@@ -105,11 +88,11 @@ def draw_warning_overlays(frame):
                 detections = alert.get("detections", [])
                 for det in detections:
                     bbox = det.get("bbox")
-                    label = det.get("label", "Vat cam").upper()
+                    label = det.get("label", "Vật cấm").upper()
                     conf = det.get("confidence", 0.0)
                     
                     if bbox and len(bbox) == 4:
-                        x1, y1, x2, y2 = map(int, bbox) # Ép kiểu int để tránh lỗi float
+                        x1, y1, x2, y2 = bbox
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                         text = f"{label} ({conf*100:.0f}%)"
                         (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
@@ -120,9 +103,9 @@ def draw_warning_overlays(frame):
             elif module == "face_verify":
                 bbox = details.get("unauthorized_bbox")
                 if bbox and len(bbox) == 4:
-                    x1, y1, x2, y2 = map(int, bbox)
+                    x1, y1, x2, y2 = bbox
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 140, 255), 2)
-                    text = "NGUOI LA"
+                    text = "NGUOI LA / UNAUTHORIZED"
                     (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
                     cv2.rectangle(frame, (x1, y1 - 25), (x1 + w + 10, y1), (0, 140, 255), -1)
                     cv2.putText(frame, text, (x1 + 5, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -165,15 +148,9 @@ def io_camera_thread():
             
         # 3. Áp dụng Frame Skipping: Lấy khung hình đẩy vào AI
         if frame_count % FPS_SKIP == 0:
-            # FIX LỖI DELAY: Rút frame cũ ra vứt đi nếu Queue bị đầy, ép AI phải lấy frame mới nhất
-            if FRAME_QUEUE.full():
-                try:
-                    FRAME_QUEUE.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            FRAME_QUEUE.put((frame.copy(), time.time()))
-
+            if not FRAME_QUEUE.full():
+                FRAME_QUEUE.put((frame.copy(), time.time()))
+                
         frame_count += 1
         
         # Nhấn 'q' trên cửa sổ video để thoát
@@ -190,9 +167,7 @@ def io_audio_thread():
     while True:
         time.sleep(3.0)  # Cứ 3 giây cắt 1 đoạn âm thanh giả lập
         if not AUDIO_QUEUE.full():
-            # dummy_audio_chunk = b'\x00\x00\x00' 
-            # Tạo 3 giây âm thanh im lặng chuẩn (16000 sample/s * 3s * 2 bytes/sample)
-            dummy_audio_chunk = b'\x00' * (16000 * 3 * 2)
+            dummy_audio_chunk = b'\x00\x00\x00' 
             AUDIO_QUEUE.put((dummy_audio_chunk, time.time()))
 
 def vision_ai_thread():
@@ -258,64 +233,39 @@ def main():
     """Nhận kết quả từ AI, cập nhật GUI và in Log."""
     print("=== HỆ THỐNG GIÁM SÁT PHÒNG THI AI ===")
     
-    # Đã xóa t_camera vì luồng Camera giờ chạy trực tiếp trên Main Thread
+    t_camera = threading.Thread(target=io_camera_thread, daemon=True)
     t_mic = threading.Thread(target=io_audio_thread, daemon=True)      # Luồng Micro mới
     t_vision = threading.Thread(target=vision_ai_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
     
+    t_camera.start()
     t_mic.start()
     t_vision.start()
     t_audio.start()
     
-    print("[INFO] Đang kết nối với Camera...")
-    cap = cv2.VideoCapture(CAMERA_ID)
-    frame_count = 0
-    
     print("[INFO] Toàn bộ hệ thống đang chạy. Nhấn 'q' trên cửa sổ Camera để thoát.")
     
     try:
-        # Thay vòng lặp is_alive() cũ bằng vòng lặp True trực tiếp đọc Camera
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("[LỖI] Camera bị ngắt kết nối.")
-                break
-
-            # Đổi từ 'if' sang 'while' để xử lý thật nhanh mọi cảnh báo kẹt trong Queue
-            while not RESULT_QUEUE.empty():
-                alert = RESULT_QUEUE.get_nowait()
+        while t_camera.is_alive():
+            if not RESULT_QUEUE.empty():
+                alert = RESULT_QUEUE.get()
                 
                 module_name = alert.get("module")
                 status = alert.get("status")
                 timestamp = alert.get("timestamp", time.time())
                 details = alert.get("details", {})
                 
-                # CẬP NHẬT FIX: Đóng dấu thời gian lúc luồng main NHẬN ĐƯỢC cảnh báo
-                alert['display_timestamp'] = time.time()
-                
                 # --- A. ĐẨY VÀO ACTIVE_OVERLAYS ĐỂ VẼ LÊN GUI ---
                 with OVERLAY_LOCK:
-                    # 1. Lọc và xóa các Bounding Box cũ của CÙNG MỘT module
-                    # (Chỉ giữ lại nếu nó là của module khác, hoặc có cùng timestamp với alert hiện tại)
-                    filtered_overlays = [
-                        a for a in ACTIVE_OVERLAYS 
-                        if not (a.get("module") == module_name and a.get("timestamp", 0) < timestamp)
-                    ]
-                    
-                    # 2. Cập nhật lại danh sách và thêm cảnh báo mới nhất
-                    ACTIVE_OVERLAYS.clear()
-                    ACTIVE_OVERLAYS.extend(filtered_overlays)
                     ACTIVE_OVERLAYS.append(alert)
                 
                 # --- B. IN LOG CHI TIẾT RA TERMINAL ---
-                module_name = alert.get("module")
-                details = alert.get("details", {})
-                time_str = time.strftime('%H:%M:%S', time.localtime(alert.get("timestamp", time.time())))
+                time_str = time.strftime('%H:%M:%S', time.localtime(timestamp))
                 
                 if module_name == "face_verify" and status == "alert":
                     score = details.get("similarity_score")
                     bbox = details.get("unauthorized_bbox")
-                    print(f"[{time_str}] PHÁT HIỆN NGƯỜI LẠ! Độ tương đồng: {score}. Tọa độ: {details.get('unauthorized_bbox')}")
+                    print(f"[{time_str}] PHÁT HIỆN NGƯỜI LẠ! Độ tương đồng: {score}. Tọa độ: {bbox}")
                     
                 elif module_name == "object_detect" and status == "alert":
                     detections = alert.get("detections", [])
@@ -328,40 +278,16 @@ def main():
                 elif module_name == "audio_whisper" and status == "alert":
                     print(f"[{time_str}] ÂM THANH BẤT THƯỜNG: {details.get('transcription')}")
 
-            # --- VẼ GIAO DIỆN VÀ HIỂN THỊ ---
-            rendered_frame = draw_warning_overlays(frame.copy())
-            cv2.imshow("Exam Proctoring System", rendered_frame)
-            
-            # --- ĐẨY KHUNG HÌNH MỚI CHO AI ---
-            if frame_count % FPS_SKIP == 0:
-                if FRAME_QUEUE.full():
-                    try:
-                        FRAME_QUEUE.get_nowait() # Vứt ảnh cũ để nhường chỗ ảnh mới
-                    except queue.Empty:
-                        pass
-                FRAME_QUEUE.put((frame.copy(), time.time()))
-                
-            frame_count += 1
-
-            # Lắng nghe phím tắt 'q' để thoát. 
-            # cv2.waitKey(1) cũng đóng luôn vai trò nhường CPU (time.sleep) ở bản cũ.
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
             # Nhường CPU một nhịp để tránh luồng Main chiếm hết tài nguyên
-            # (Đã được comment lại vì cv2.waitKey(1) ở trên đã làm nhiệm vụ này rồi)
-            # time.sleep(0.01) 
+            time.sleep(0.01) 
                 
     except KeyboardInterrupt:
         print("\n[INFO] Đang tiến hành tắt hệ thống an toàn...")
         
     finally:
-        # Dọn dẹp tài nguyên Camera (Thay vì tắt luồng t_camera)
-        cap.release()
-        cv2.destroyAllWindows()
-        FRAME_QUEUE.put(None)
-        
-        # Không dùng join(timeout=2) cho camera để tránh kẹt thread
+        t_camera.join(timeout=2)
+        t_vision.join(timeout=2)
+        t_audio.join(timeout=2)
         print("[INFO] Đã tắt máy chủ thành công.")
 
 if __name__ == "__main__":
