@@ -1,0 +1,2 @@
+filename	sequence_id	recording_session	actor_ids	action_actor_ids	class_code	label	observed_looking	observed_talking	observed_looking_down	observed_body_turn	observed_hand_reach	observed_sign_code	observed_banned_object	layout	action_start_s	action_end_s	reviewed	duration_s	split_group	split	exclude_from_training	quality	note
+frames/video_001/frame_000001.jpg	video_001	session_01	["s9", "s10"]	["s10"]	c2	hand_reach_toward_friend	TRUE	FALSE	FALSE	TRUE	TRUE	FALSE	FALSE	different_row_nearby	8	15	TRUE	19	group_01	train	FALSE	normal	""
