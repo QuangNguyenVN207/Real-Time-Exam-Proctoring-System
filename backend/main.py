@@ -71,6 +71,15 @@ CAMERA_ID = 0
 VISION_READY = threading.Event()
 AUDIO_READY = threading.Event()
 
+# --- CỜ VÀ BIẾN ĐỂ CHỤP ẢNH ĐĂNG KÝ ---
+REGISTER_FACE_EVENT = threading.Event()
+REGISTER_FRAME = None
+
+# --- BỔ SUNG KHAI BÁO BIẾN TOÀN CỤC CHO CÁC MODEL AI ---
+face_model = None
+yolo_model = None
+gaze_model = None
+
 # ==========================================
 # 2. CẤU HÌNH HIỂN THỊ (GUI OVERLAYS)
 # ==========================================
@@ -206,7 +215,10 @@ def io_audio_thread():
 def vision_ai_thread():
     """Luồng 2: Lấy khung hình từ bộ đệm và chạy các mô hình AI thị giác."""
     print("[INFO] Đang khởi động luồng AI Thị giác...")
-    
+
+    # KÉO BIẾN TOÀN CỤC VÀO TRONG HÀM NÀY
+    global face_model, yolo_model, gaze_model, REGISTER_FRAME
+
     # Khởi tạo các module (Bỏ comment khi ráp code thật của cộng sự)
     yolo_model = ObjectDetector(model_path="weights/yolov8_finetuned.pt")
     face_model = FaceVerifier(db_path="data/student_faces/")
@@ -217,6 +229,39 @@ def vision_ai_thread():
     print("[INFO] ✅ AI Thị giác đã nạp xong!")
 
     while True:
+        # --- 1. KIỂM TRA XEM LUỒNG MAIN CÓ YÊU CẦU CHỤP ẢNH KHÔNG ---
+        if REGISTER_FACE_EVENT.is_set():
+            if REGISTER_FRAME is not None:
+                try:
+                    # Gọi trực tiếp hàm _detect_faces() từ code của cộng sự
+                    faces = face_model._detect_faces(REGISTER_FRAME)
+                    
+                    if faces:
+                        # Lấy khuôn mặt to nhất (cộng sự bạn cũng dùng logic này)
+                        face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+                        x1, y1, x2, y2 = map(int, face.bbox)
+                        
+                        # Tạo bản sao, vẽ khung và lưu
+                        save_frame = REGISTER_FRAME.copy()
+                        cv2.rectangle(save_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        cv2.putText(save_frame, "REGISTERED", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        file_name = f"data/student_faces/you_{int(time.time())}.jpg"
+                        cv2.imwrite(file_name, save_frame)
+                        print(f"[INFO] Đã vẽ khung xanh và lưu ảnh thành công: {file_name}")
+                        
+                        # Cập nhật lại Database
+                        face_model._load_database()
+                    else:
+                        print("[WARNING] Không tìm thấy khuôn mặt nào! Hãy nhìn thẳng vào camera và bấm 's' thử lại.")
+                except Exception as e:
+                    print(f"[LỖI KHI CHỤP ẢNH] {e}")
+            
+            # Xong việc thì tắt đèn tín hiệu và xóa ảnh đệm
+            REGISTER_FACE_EVENT.clear()
+            REGISTER_FRAME = None
+
+        # --- 2. XỬ LÝ KHUNG HÌNH GIÁM SÁT BÌNH THƯỜNG ---
         data = FRAME_QUEUE.get()
         if data is None: 
             break
@@ -384,13 +429,29 @@ def main():
 
             # Lắng nghe phím tắt 'q' để thoát. 
             # cv2.waitKey(1) cũng đóng luôn vai trò nhường CPU (time.sleep) ở bản cũ.
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+                        
+            if key == ord('q'):
                 break
 
             # Nhường CPU một nhịp để tránh luồng Main chiếm hết tài nguyên
             # (Đã được comment lại vì cv2.waitKey(1) ở trên đã làm nhiệm vụ này rồi)
             # time.sleep(0.01) 
+            # Lắng nghe phím tắt điều khiển
                 
+            # --- TÍCH HỢP: NHẤN 'S' ĐỂ ĐĂNG KÝ KHUÔN MẶT CÓ VẼ KHUNG ---
+            elif key == ord('s'):
+                if face_model is None:
+                    print("[WARNING] AI Thị giác chưa khởi tạo xong, không thể chụp! Vui lòng đợi...")
+                    continue
+
+                print("\n[INFO] Đã gửi lệnh chụp ảnh đến luồng AI. Đang xử lý...")
+                
+                # Lưu tạm frame hiện tại và bật cờ cho luồng Vision tự xử lý
+                global REGISTER_FRAME
+                REGISTER_FRAME = frame.copy()
+                REGISTER_FACE_EVENT.set()
+
     except KeyboardInterrupt:
         print("\n[INFO] Đang tiến hành tắt hệ thống an toàn...")
         
