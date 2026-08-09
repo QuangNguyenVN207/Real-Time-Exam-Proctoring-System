@@ -64,8 +64,12 @@ import queue
 FRAME_QUEUE = queue.Queue(maxsize=2) 
 AUDIO_QUEUE = queue.Queue(maxsize=50)
 RESULT_QUEUE = queue.Queue(maxsize=100)
-FPS_SKIP = 5
+FPS_SKIP = 8
 CAMERA_ID = 0
+
+# --- THÊM 2 ĐÈN TÍN HIỆU ĐỒNG BỘ LUỒNG ---
+VISION_READY = threading.Event()
+AUDIO_READY = threading.Event()
 
 # ==========================================
 # 2. CẤU HÌNH HIỂN THỊ (GUI OVERLAYS)
@@ -86,6 +90,10 @@ from backend.ai_services.whisper.audio_whisper_test import AudioWhisper
 def draw_warning_overlays(frame):
     """Vẽ các Bounding Box, nhãn vi phạm và bảng cảnh báo lên khung hình."""
     current_time = time.time()
+    
+    # TỐI ƯU: Nếu không có cảnh báo nào, trả về ảnh gốc ngay lập tức
+    if not ACTIVE_OVERLAYS:
+        return frame
     
     with OVERLAY_LOCK:
         # FIX LỖI 1: Dùng 'display_timestamp' (lúc nhận được) thay vì 'timestamp' (lúc chụp ảnh)
@@ -203,7 +211,11 @@ def vision_ai_thread():
     yolo_model = ObjectDetector(model_path="weights/yolov8_finetuned.pt")
     face_model = FaceVerifier(db_path="data/student_faces/")
     gaze_model = PoseGazeDetector()
-    
+
+    # Bật đèn xanh báo hiệu Thị giác đã tải xong
+    VISION_READY.set()
+    print("[INFO] ✅ AI Thị giác đã nạp xong!")
+
     while True:
         data = FRAME_QUEUE.get()
         if data is None: 
@@ -235,6 +247,10 @@ def audio_ai_thread():
     
     # Khởi tạo mô hình Whisper (Mock)
     audio_model = AudioWhisper()
+
+    # Bật đèn xanh báo hiệu Âm thanh đã tải xong
+    AUDIO_READY.set()
+    print("[INFO] ✅ AI Âm thanh đã nạp xong!")
     
     while True:
         data = AUDIO_QUEUE.get()
@@ -266,10 +282,33 @@ def main():
     t_mic.start()
     t_vision.start()
     t_audio.start()
+
+    # --- CHỜ MÔ HÌNH NẠP XONG RỒI MỚI CHẠY TIẾP ---
+    print("[INFO] Hệ thống đang nạp mô hình AI vào bộ nhớ. Vui lòng đợi 1-2 phút...")
+    VISION_READY.wait()
+    AUDIO_READY.wait()
+    print("[INFO] 🚀 TOÀN BỘ MÔ HÌNH ĐÃ SẴN SÀNG! Đang bật Camera...")
     
-    print("[INFO] Đang kết nối với Camera...")
     cap = cv2.VideoCapture(CAMERA_ID)
+
+    # 1. Ép định dạng nén MJPG để luồng video truyền qua USB nhẹ và nhanh hơn
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    
+    # 2. Thiết lập độ phân giải HD
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    
+    # 3. Ép phần cứng Camera chạy ở tốc độ 30 FPS
+    cap.set(cv2.CAP_PROP_FPS, 30)
+
     frame_count = 0
+
+    # --- BỔ SUNG CẤU HÌNH CỬA SỔ OPENCV ---
+    # 1. Bật chế độ WINDOW_NORMAL cho phép dùng chuột kéo giãn/thu nhỏ cửa sổ tự do
+    cv2.namedWindow("Exam Proctoring System", cv2.WINDOW_NORMAL)
+    
+    # 2. (Tùy chọn) Ép kích thước hiển thị mặc định to lên ngay khi vừa mở (Ví dụ: 1024x768)
+    cv2.resizeWindow("Exam Proctoring System", 1024, 768)
     
     print("[INFO] Toàn bộ hệ thống đang chạy. Nhấn 'q' trên cửa sổ Camera để thoát.")
     
@@ -356,13 +395,15 @@ def main():
         print("\n[INFO] Đang tiến hành tắt hệ thống an toàn...")
         
     finally:
-        # Dọn dẹp tài nguyên Camera (Thay vì tắt luồng t_camera)
+        # Dọn dẹp tài nguyên Camera
         cap.release()
         cv2.destroyAllWindows()
-        FRAME_QUEUE.put(None)
-        
-        # Không dùng join(timeout=2) cho camera để tránh kẹt thread
         print("[INFO] Đã tắt máy chủ thành công.")
+        
+        # FIX LỖI CRASH UBUNTU: Ép hệ điều hành đóng băng và hủy ngay lập tức 
+        # toàn bộ tiến trình C++ đang chạy ngầm mà không kích hoạt quy trình dọn dẹp (destructor).
+        import os
+        os._exit(0)
 
 if __name__ == "__main__":
     main()
