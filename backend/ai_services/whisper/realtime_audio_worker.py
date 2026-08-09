@@ -259,20 +259,22 @@ class RealtimeAudioWorker:
                     is_alert = True
                     reason_text = str(result.get('fusion_reason', '')).lower()
                     if 'ai catch' in reason_text:
-                        nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)"
+
+                        nguoi_bat = " AI PhoBERT (Bọc lót Keyword)"
                     else:
-                        nguoi_bat = "🔑 Keyword (Bộ luật cứng)"
+                        nguoi_bat = " Keyword (Bộ luật cứng)"
                         
                     print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
                 else:
                     print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
                     
-                print(f"🗣️ Transcript : '{result.get('transcription', '')}'")
-                print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
+                print(f" Transcript : '{result.get('transcription', '')}'")
+                print(f" Lý do      : {result.get('fusion_reason', '')}")
                 
                 keywords = result.get('matched_keywords', [])
                 if keywords:
-                    print("🔑 Từ khóa bị bắt:")
+                    print(" Từ khóa bị bắt:")
+
                     for kw in keywords:
                         print(f"   - '{kw['keyword']}' (Mức độ: {kw['severity']})")
 

@@ -19,7 +19,12 @@
 #             }
 #         return None # Im lặng hoặc tiếng ồn môi trường
 
+# Tắt các cảnh báo cơ bản của Python (nếu có)
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 import os
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 import sys
 
 import numpy as np
@@ -30,11 +35,8 @@ import torch
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from pyvi import ViTokenizer # Thư viện tách từ tiếng Việt
-import warnings
 import transformers
 
-# Tắt các cảnh báo cơ bản của Python (nếu có)
-warnings.filterwarnings("ignore")
 
 # Ép thư viện transformers chỉ in ra lỗi (Error), ẩn đi các Cảnh báo (Warning)
 transformers.logging.set_verbosity_error()

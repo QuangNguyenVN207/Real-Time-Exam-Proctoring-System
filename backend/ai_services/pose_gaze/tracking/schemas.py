@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from math import hypot, isfinite
 from typing import Any, Sequence
 
 
@@ -37,6 +38,33 @@ class BoundingBox:
     def area(self) -> float:
         return self.width * self.height
 
+    @property
+    def center(self) -> tuple[float, float]:
+        return ((self.x1 + self.x2) / 2.0, (self.y1 + self.y2) / 2.0)
+
+    @property
+    def diagonal(self) -> float:
+        return hypot(self.width, self.height)
+
+    def contains_point(self, point: tuple[float, float]) -> bool:
+        x, y = point
+        return self.x1 <= x <= self.x2 and self.y1 <= y <= self.y2
+
+    def expanded(
+        self,
+        *,
+        left: float = 0.0,
+        right: float = 0.0,
+        top: float = 0.0,
+        bottom: float = 0.0,
+    ) -> "BoundingBox":
+        return BoundingBox(
+            self.x1 - left,
+            self.y1 - top,
+            self.x2 + right,
+            self.y2 + bottom,
+        )
+
     def iou(self, other: "BoundingBox") -> float:
         left, top = max(self.x1, other.x1), max(self.y1, other.y1)
         right, bottom = min(self.x2, other.x2), min(self.y2, other.y2)
@@ -57,10 +85,20 @@ class PersonDetection:
     bbox: BoundingBox
     confidence: float
     class_name: str = "person"
+    appearance_fingerprint: tuple[float, ...] | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("Detection confidence must be in [0, 1]")
+        if self.appearance_fingerprint is not None:
+            if len(self.appearance_fingerprint) < 8:
+                raise ValueError(
+                    "appearance_fingerprint must contain at least 8 values"
+                )
+            if not all(isfinite(value) for value in self.appearance_fingerprint):
+                raise ValueError(
+                    "appearance_fingerprint must contain finite values"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +112,19 @@ class TrackedPerson:
     missed_frames: int
     is_present: bool
     student_id: str | None = None
+    appearance_identity_registered: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "track_id": self.track_id,
+            # ``track_id`` is the tracker's numeric handle. ``person_id`` is
+            # assigned by the proctor and is the stable identity consumers
+            # should display/store. Keep student_id for existing clients.
+            "person_id": self.student_id,
             "student_id": self.student_id,
+            "appearance_identity_registered": (
+                self.appearance_identity_registered
+            ),
             "bbox_xyxy": self.bbox.to_list(),
             "track_confidence": round(self.confidence, 4),
             "age_frames": self.age_frames,
@@ -108,8 +154,14 @@ class TrackPacket:
 def detection_from_dict(payload: dict[str, Any]) -> PersonDetection:
     """Convert an API/detector payload to a validated domain object."""
 
+    raw_fingerprint = payload.get("appearance_fingerprint")
     return PersonDetection(
         bbox=BoundingBox.from_xyxy(payload["bbox_xyxy"]),
         confidence=float(payload["confidence"]),
         class_name=str(payload.get("class_name", "person")),
+        appearance_fingerprint=(
+            tuple(float(value) for value in raw_fingerprint)
+            if raw_fingerprint is not None
+            else None
+        ),
     )

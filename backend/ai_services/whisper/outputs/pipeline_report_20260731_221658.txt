@@ -1,0 +1,208 @@
+================================================================================
+AUDIO PIPELINE EVALUATION REPORT (AI FUSION VERSION)
+================================================================================
+Generated at: 2026-07-31 22:17:09
+Samples dir : D:\AI\Real-Time-Exam-Proctoring-System\backend\ai_services\whisper\samples
+Total files : 23
+
+File       : cheating\cheat1.wav
+Label      : cheating
+Transcript : đáp án là cầu bê.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat10.wav
+Label      : cheating
+Transcript : cho sẽ màn hình.
+Rule-based : Safe
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : AI Catch: Keyword bỏ sót, AI bọc lót thành công!
+--------------------------------------------------------------------------------
+File       : cheating\cheat11.wav
+Label      : cheating
+Transcript : cầu mấy.
+Rule-based : High
+PhoBERT AI : Normal (0.95)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat2.wav
+Label      : cheating
+Transcript : đáp án câu một là a.
+Rule-based : High
+PhoBERT AI : Cheating (0.99)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat3.wav
+Label      : cheating
+Transcript : cho tao xem bài.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat4.wav
+Label      : cheating
+Transcript : mở ai ai đây.
+Rule-based : Safe
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : AI Catch: Keyword bỏ sót, AI bọc lót thành công!
+--------------------------------------------------------------------------------
+File       : cheating\cheat5.wav
+Label      : cheating
+Transcript : đọc đáp án.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat6.wav
+Label      : cheating
+Transcript : làm giúp tao.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat7.wav
+Label      : cheating
+Transcript : khi google câu này.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat8.wav
+Label      : cheating
+Transcript : cho xem bài làm.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\cheat9.wav
+Label      : cheating
+Transcript : tìm đáp án trên mạng.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : cheating\input1.wav
+Label      : cheating
+Transcript : đáp án là cầu bê.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: TP (Bắt Trúng)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : normal\nor1.wav
+Label      : normal
+Transcript : đầu làm bài.
+Rule-based : High
+PhoBERT AI : Cheating (1.00)
+Final Risk : Cheating -> Eval: FP (Bắt Nhầm)
+Reason     : Rule-based Triggered (Mức độ: High).
+--------------------------------------------------------------------------------
+File       : normal\nor10.wav
+Label      : normal
+Transcript : ngầu.
+Rule-based : Safe
+PhoBERT AI : Normal (0.99)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor2.wav
+Label      : normal
+Transcript : em đã nộp bài.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor3.wav
+Label      : normal
+Transcript : thầy cho em hỏi.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor4.wav
+Label      : normal
+Transcript : em xin phép ra ngoài.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor5.wav
+Label      : normal
+Transcript : em làm xong rồi.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor6.wav
+Label      : normal
+Transcript : hôm nay em hơi mệt.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor7.wav
+Label      : normal
+Transcript : cảm ơn thầy.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor8.wav
+Label      : normal
+Transcript : chúc mọi người may mắn.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\nor9.wav
+Label      : normal
+Transcript : mấy giờ rồi ạ.
+Rule-based : Safe
+PhoBERT AI : Normal (1.00)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+File       : normal\test.wav
+Label      : normal
+Transcript : ngầu.
+Rule-based : Safe
+PhoBERT AI : Normal (0.99)
+Final Risk : Normal -> Eval: TN (An Toàn)
+Reason     : Đồng thuận an toàn.
+--------------------------------------------------------------------------------
+
+================================================================================
+SUMMARY (FUSION METRICS)
+================================================================================
+Total Files  : 23
+
+True Positives  (TP) : 12 (Gian lận -> Bắt trúng)
+True Negatives  (TN) : 10 (Bình thường -> An toàn)
+False Positives (FP) : 1 (Bình thường -> Báo động nhầm)
+False Negatives (FN) : 0 (Gian lận -> Bỏ lọt)
+
+Accuracy  : 95.65%
+Precision : 92.31%
+Recall    : 100.00%
+F1-score  : 96.00%
+Avg Time  : 0.501s / file
+================================================================================
