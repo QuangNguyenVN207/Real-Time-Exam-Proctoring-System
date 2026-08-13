@@ -15,9 +15,9 @@ class RealtimeAudioWorker:
     CHANNELS = 1
 
     CHUNK_SECONDS = 0.5       # Ghi từng mảng 0.5s để queue chạy mượt
-    PROCESS_INTERVAL = 3.0    # Cứ đúng 3 giây thì kích hoạt AI 1 lần
+    PROCESS_INTERVAL = 3.5    # Cứ đúng 3 giây thì kích hoạt AI 1 lần
     BUFFER_SECONDS = 3.0      # Độ dài tối đa của file âm thanh đưa vào AI
-    MIN_SECONDS = 2.0         # Phải tích đủ 3 giây mới bắt đầu chạy
+    MIN_SECONDS = 2.0         # Phải tích đủ giây mới bắt đầu chạy
     NOISE_PROFILE_SECONDS = 1.0
 
     def __init__(self):
@@ -259,20 +259,22 @@ class RealtimeAudioWorker:
                     is_alert = True
                     reason_text = str(result.get('fusion_reason', '')).lower()
                     if 'ai catch' in reason_text:
-                        nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)"
+
+                        nguoi_bat = " AI PhoBERT (Bọc lót Keyword)"
                     else:
-                        nguoi_bat = "🔑 Keyword (Bộ luật cứng)"
+                        nguoi_bat = " Keyword (Bộ luật cứng)"
                         
                     print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
                 else:
                     print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
                     
-                print(f"🗣️ Transcript : '{result.get('transcription', '')}'")
-                print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
+                print(f" Transcript : '{result.get('transcription', '')}'")
+                print(f" Lý do      : {result.get('fusion_reason', '')}")
                 
                 keywords = result.get('matched_keywords', [])
                 if keywords:
-                    print("🔑 Từ khóa bị bắt:")
+                    print(" Từ khóa bị bắt:")
+
                     for kw in keywords:
                         print(f"   - '{kw['keyword']}' (Mức độ: {kw['severity']})")
 
