@@ -9,8 +9,7 @@ frames only.
 
 Use the repository virtual environment.  It must provide `opencv-python`,
 `ultralytics`, `mediapipe`, `numpy`, `xgboost`, and `scikit-learn`.
-Place the YOLO person-detector weights at `weights/yolov8n.pt` (not committed
-by this package).
+The repository tracks the YOLO person-detector weights at `weights/yolov8n.pt`.
 
 ## Webcam
 
@@ -38,16 +37,22 @@ $env:PYTHONPATH="C:\Real-Time-Exam-Proctoring-System\backend\ai_services\pose_ga
 
 ```powershell
 $env:PYTHONPATH="C:\Real-Time-Exam-Proctoring-System\backend\ai_services\pose_gaze"
+$video = "C:\path\to\your-video.mp4"
 
 & "C:\Real-Time-Exam-Proctoring-System\.venv\Scripts\python.exe" `
   -m pose_gaze.holistic.test_media `
-  "data\raw_video\VID20260804141339.mp4" `
+  $video `
   --model "weights\yolov8n.pt" `
   --xgboost-model-dir "tmp\behavior_actor_causal_pose_only_20260812" `
   --causal-live `
   --live-pair student_01:student_02 `
   --target-fps 10
 ```
+
+You may supply any local MP4; it is processed causally, frame by frame.
+
+An optional tracked sample is available at
+`backend/ai_services/pose_gaze/demo/pose_gaze_sample.mp4`.
 
 ## Artifact contents
 

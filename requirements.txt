@@ -20,7 +20,13 @@ noisereduce
 numba>=0.59.0
 numpy>=1.26,<3.0
 onnxruntime
-opencv-python>=4.10,<5.0
+opencv-python>=4.10,<6.0
+
+# Pose/Gaze causal C2/C3 realtime runtime.  The committed XGBoost artifacts
+# were smoke-tested with the bounded major versions below.
+mediapipe>=0.10,<0.11
+scikit-learn>=1.4,<2.0
+xgboost>=3.0,<4.0
 
 pandas==3.0.5
 pyvi==0.1.1
