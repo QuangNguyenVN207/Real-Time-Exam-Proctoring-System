@@ -74,6 +74,7 @@ class CausalLiveActorClassifier:
         self.c2_bases = tuple(name.rsplit("__", 1)[0] for name in self.c2_names[::5])
         self.c3_bases = tuple(name.rsplit("__", 1)[0] for name in self.c3_names[::5])
         self.suspicious_bases = tuple(name.rsplit("__", 1)[0] for name in self.suspicious_names[::5]) if self.suspicious_names else ()
+        self.shared_bases = tuple(dict.fromkeys((*self.c2_bases, *self.c3_bases, *self.suspicious_bases)))
         self._windows_c2: dict[str, CausalActorWindow] = {}
         self._windows_c3: dict[str, CausalActorWindow] = {}
         self._windows_suspicious: dict[str, CausalActorWindow] = {}
@@ -237,39 +238,38 @@ class CausalLiveActorClassifier:
         prefix = behavior.derive_hand_shape_and_pair_cues(prefix)
         if self.suspicious_names:
             prefix = behavior.derive_strict_c2_c3_suspicious_cues(prefix, baseline_frames=self.warmup_frames)
-        latest = self._latest(prefix, frame_index)
+        aggregate_rows, _ = behavior.causal_aggregate_rows(
+            prefix,
+            self.shared_bases,
+            warmup_frames=self.warmup_frames,
+            window_frames=self.window_frames,
+        )
+        latest = self._latest(aggregate_rows, frame_index)
         scores, midpoint = {}, {}
         for actor_id, row in latest.items():
             self._state.register_actor(actor_id)
-            c2_window = self._windows_c2.setdefault(actor_id, CausalActorWindow(actor_id, self.c2_bases, max_frames=self.window_frames))
-            c3_window = self._windows_c3.setdefault(actor_id, CausalActorWindow(actor_id, self.c3_bases, max_frames=self.window_frames))
-            c2_state = c2_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            c3_state = c3_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            suspicious_state = None
-            if self.suspicious_names:
-                suspicious_state = self._windows_suspicious.setdefault(actor_id, CausalActorWindow(actor_id, self.suspicious_bases, max_frames=self.window_frames)).update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            self._window_sizes[actor_id] = min(c2_state.window_size, c3_state.window_size)
-            if min(c2_state.window_size, c3_state.window_size) < self.warmup_frames:
+            self._window_sizes[actor_id] = int(row.get("prefix_frames", 0))
+            if not int(row.get("warmup_ready", 0)):
                 continue
-            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[c2_state.features[name] for name in self.c2_names]], dtype=np.float32)))[0])
-            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
+            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c2_names]], dtype=np.float32)))[0])
+            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
             scores[actor_id]["c3_gate"] = (
-                c3_state.features.get("strict_hand_quality__mean", 0.0) > 0.0
-                and c3_state.features.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and c3_state.features.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and c3_state.features.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
-                and c3_state.features.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
+                row.get("strict_hand_quality__mean", 0.0) > 0.0
+                and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
+                and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
             )
-            if suspicious_state is not None:
-                scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[suspicious_state.features[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
+            if self.suspicious_names:
+                scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
-                    suspicious_state.features.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
-                    and max(suspicious_state.features.get("hand_motion__q95", 0.0), suspicious_state.features.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
-                    and suspicious_state.features.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
-                    and suspicious_state.features.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
+                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
+                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
+                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    and row.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
                 )
-            midpoint[actor_id] = row.get("near_midpoint_pre_cross", 0.0)
+            midpoint[actor_id] = row.get("near_midpoint_pre_cross__max", 0.0)
         self._latest_scores.update(scores)
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
