@@ -7,7 +7,7 @@ import warnings
 # ==========================================
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning) # Chặn lỗi chia cho 0 của Noisereduce
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 
 import transformers
@@ -104,6 +104,7 @@ def init_system_resources():
         try:
             audio_worker = RealtimeAudioWorker()
             
+            # Khôi phục lại mưu kế "Bọc lót" hoàn hảo, KHÔNG cần đụng vào file của cộng sự
             original_pipeline = audio_worker.pipeline.process_audio
             def hooked_process_audio(clean_audio, timestamp, source):
                 res = original_pipeline(clean_audio, timestamp, source)
@@ -151,7 +152,7 @@ def draw_warning_overlays(frame):
         ACTIVE_OVERLAYS.extend(valid_overlays)
         
         for alert in ACTIVE_OVERLAYS:
-            module = alert.get("module")
+            module = alert.get("module", "")
             details = alert.get("details", {})
             
             if module == "object_detect":
@@ -174,13 +175,7 @@ def draw_warning_overlays(frame):
                 action = details.get("action", "VI PHAM TU THE").upper()
                 cv2.rectangle(frame, (0, frame.shape[0] - 40), (frame.shape[1], frame.shape[0]), (0, 0, 200), -1)
                 cv2.putText(frame, f"[CANH BAO TU THE]: {action}", (20, frame.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-            elif module in ["audio_whisper", "audio_phobert_pipeline"]:
-                transcription = alert.get("transcription", details.get("transcription", ""))
-                if transcription.strip():
-                    cv2.rectangle(frame, (0, 0), (frame.shape[1], 35), (0, 165, 255), -1)
-                    cv2.putText(frame, f"[AM THANH]: {transcription}", (20, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
+                
     return frame
 
 # ==========================================
@@ -237,11 +232,9 @@ if st.session_state.run_camera:
         st.session_state.camera_obj = cv2.VideoCapture(0)
         # HẠ ĐỘ PHÂN GIẢI XUỐNG ĐỂ TĂNG GẤP ĐÔI TỐC ĐỘ STREAMLIT VÀ AI
         st.session_state.camera_obj.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        st.session_state.camera_obj.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
-        # ÉP CAMERA CHẠY Ở 30FPS CỨNG TỪ PHẦN CỨNG
+        st.session_state.camera_obj.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         st.session_state.camera_obj.set(cv2.CAP_PROP_FPS, 30)
-        # ---> THÊM DÒNG NÀY ĐỂ CHỐNG DELAY VIDEO <---
-        st.session_state.camera_obj.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        st.session_state.camera_obj.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
     
     frame_count = 0
     # TĂNG TẦN SUẤT BỎ QUA KHUNG HÌNH (GIAO DIỆN MƯỢT, AI VẪN ĐỦ CHẠY)
@@ -267,30 +260,6 @@ if st.session_state.run_camera:
             st.session_state.logs.insert(0, "⏳ Đang gửi lệnh trích xuất khuôn mặt...")
             st.session_state.save_face_flag = False
 
-        # Đọc dữ liệu từ hàng đợi AI
-        while not RESULT_QUEUE.empty():
-            alert = RESULT_QUEUE.get_nowait()
-            module_name = alert.get("module")
-            status = alert.get("status")
-            timestamp = alert.get("timestamp", time.time())
-            details = alert.get("details", {})
-            
-            # Xử lý thông báo từ hệ thống (khi chụp ảnh thành công/thất bại)
-            if module_name == "system":
-                st.session_state.logs.insert(0, f"**[{time.strftime('%H:%M:%S')}]** {alert.get('message')}")
-                continue
-            
-            alert['display_timestamp'] = time.time()
-            time_str = time.strftime('%H:%M:%S', time.localtime(timestamp))
-            
-            # Đẩy vào Overlay để vẽ lên Camera
-            with OVERLAY_LOCK:
-                filtered_overlays = [a for a in ACTIVE_OVERLAYS if not (a.get("module") == module_name and a.get("timestamp", 0) < timestamp)]
-                ACTIVE_OVERLAYS.clear()
-                ACTIVE_OVERLAYS.extend(filtered_overlays)
-                ACTIVE_OVERLAYS.append(alert)
-            
-            # XỬ LÝ LOG HIỂN THỊ CỘT BÊN PHẢI
             # ---> THÊM CỜ ĐÁNH DẤU <---
         logs_changed = False 
 
@@ -324,7 +293,7 @@ if st.session_state.run_camera:
             elif module_name == "pose_gaze" and status == "warning":
                 log_msg = f"**[{time_str}]** ⚠️ TƯ THẾ: {details.get('action')}"
             
-            elif module_name == "audio_phobert_pipeline":
+            elif "transcription" in alert or "transcription" in details:
                 transcription = alert.get("transcription", details.get("transcription", "")).strip()
                 if transcription:  
                     risk_level = str(alert.get('risk', '')).lower()
@@ -338,15 +307,7 @@ if st.session_state.run_camera:
                 st.session_state.logs.insert(0, log_msg)
                 if len(st.session_state.logs) > 20:
                     st.session_state.logs.pop()
-                logs_changed = True # Đánh dấu có thay đổi
-
-        # ---> CHỈ CẬP NHẬT GIAO DIỆN KHI CÓ LOG MỚI <---
-        if logs_changed:
-            log_html = "<br>".join(st.session_state.logs)
-            log_placeholder.markdown(f"<div style='height: 500px; overflow-y: auto; background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>{log_html}</div>", unsafe_allow_html=True)
-
-        # Vẽ đè Bounding Box và đưa lên giao diện Streamlit
-        rendered_frame = draw_warning_overlays(frame.copy())
+                logs_changed = True
 
         # Hiển thị cột Logs
         log_html = "<br>".join(st.session_state.logs)
@@ -357,7 +318,8 @@ if st.session_state.run_camera:
         
         rendered_frame_rgb = cv2.cvtColor(rendered_frame, cv2.COLOR_BGR2RGB)
         
-        video_placeholder.image(rendered_frame_rgb, width='stretch', output_format="JPEG")
+        # BỎ LỆNH ÉP GIÃN KÍCH THƯỚC: Camera giờ sẽ giữ kích thước gốc, không đẩy giao diện phình to ra ngoài trang nữa
+        video_placeholder.image(rendered_frame_rgb, output_format="JPEG")
         
         if frame_count % FPS_SKIP == 0:
             if FRAME_QUEUE.full():
