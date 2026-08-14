@@ -255,17 +255,19 @@ class CausalLiveActorClassifier:
             c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
             scores[actor_id]["c3_gate"] = (
-                row.get("hand_motion", 0.0) <= self.gates.get("c3_motion_ceiling", float("inf"))
-                and row.get("c3_pose_head_peer_delta", 0.0) >= self.gates.get("c3_side_floor", float("-inf"))
-                and row.get("strict_head_down_delta", 0.0) <= self.gates.get("c3_down_ceiling", float("inf"))
+                c3_state.features.get("strict_hand_quality__mean", 0.0) > 0.0
+                and c3_state.features.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and c3_state.features.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and c3_state.features.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
+                and c3_state.features.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
             )
             if suspicious_state is not None:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[suspicious_state.features[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
-                    row.get("strict_head_down_delta", 0.0) >= self.gates.get("suspicious_down_floor", float("inf"))
-                    and max(row.get("hand_motion", 0.0), row.get("finger_motion", 0.0)) >= self.gates.get("suspicious_motion_floor", float("inf"))
-                    and row.get("strict_hand_below_hip", 0.0) >= self.gates.get("suspicious_lower_floor", float("inf"))
-                    and row.get("strict_own_side_outside_midpoint", 0.0) >= 1.0
+                    suspicious_state.features.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
+                    and max(suspicious_state.features.get("hand_motion__q95", 0.0), suspicious_state.features.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
+                    and suspicious_state.features.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    and suspicious_state.features.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
                 )
             midpoint[actor_id] = row.get("near_midpoint_pre_cross", 0.0)
         self._latest_scores.update(scores)
