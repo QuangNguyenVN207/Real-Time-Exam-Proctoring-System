@@ -4,7 +4,7 @@ import librosa
 
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
-from whisper.config import PHOWHISPER_MODEL
+from backend.ai_services.whisper.config import PHOWHISPER_MODEL
 
 
 class PhoWhisperService:

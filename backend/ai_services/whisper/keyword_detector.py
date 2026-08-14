@@ -6,13 +6,13 @@ from pathlib import Path
 
 from rapidfuzz import fuzz
 
-from whisper.text_utils import (
+from backend.ai_services.whisper.text_utils import (
     normalize_text,
     generate_ngrams,
 )
-from whisper.rules import RULES
-from whisper.negative_rules import NEGATIVE_RULES
-from whisper.context_words import CONTEXT_WORDS
+from backend.ai_services.whisper.rules import RULES
+from backend.ai_services.whisper.negative_rules import NEGATIVE_RULES
+from backend.ai_services.whisper.context_words import CONTEXT_WORDS
 
 
 SAFE_SENTENCES = [
