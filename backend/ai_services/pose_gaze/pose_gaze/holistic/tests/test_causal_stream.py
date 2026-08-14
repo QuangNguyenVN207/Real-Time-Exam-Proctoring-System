@@ -102,6 +102,24 @@ class CausalStreamTests(unittest.TestCase):
         self.assertEqual(decisions["s1"].first_flag_frame_index, 30)
         self.assertEqual(decisions["s2"].source_actor_id, "s1")
 
+    def test_pair_c2_respects_calibrated_threshold(self) -> None:
+        state = CausalSpecialistState(
+            ("s1", "s2"), c3_threshold=0.7, c2_threshold=0.9
+        )
+        decisions = state.update(
+            frame_index=30,
+            timestamp_ms=1000,
+            scores_by_actor={
+                "s1": {"c2": 0.89, "c3": 0.1},
+                "s2": {"c2": 0.1, "c3": 0.1},
+            },
+            explicit_pairs=(("s1", "s2"),),
+            near_midpoint_by_actor={"s1": 1, "s2": 0},
+        )
+
+        self.assertEqual(decisions["s1"].class_code, "c5")
+        self.assertEqual(decisions["s2"].class_code, "c5")
+
     def test_c3_flag_is_first_and_evidence_is_strongest(self) -> None:
         state = CausalSpecialistState(("s1",), c3_threshold=0.5)
         state.update(

@@ -31,9 +31,9 @@ from ...tracking.webcam import (
 
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "c2c3": PROJECT_ROOT / "tmp" / "behavior_actor_causal_pose_only_20260812",
+    "extended": PROJECT_ROOT / "tmp" / "behavior_actor_extended_suspicious_current_geometry_20260815",
 }
-SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c7")
+SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,7 +46,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_PERSON_CONFIDENCE,
     )
-    parser.add_argument("--target-fps", type=int, default=10)
+    parser.add_argument("--target-fps", type=int, default=30)
     parser.add_argument("--max-tracks", type=int, default=2)
     parser.add_argument("--min-iou", type=float, default=DEFAULT_MIN_IOU)
     parser.add_argument(
@@ -98,8 +98,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--crop-padding", type=float, default=0.15)
     parser.add_argument(
         "--actions",
-        default="c2,c3",
-        help="Comma-separated actions to enable; default c2,c3 uses committed benchmark artifact",
+        default="c2,c3,suspicious_activity",
+        help="Comma-separated actions to enable; default runs C2/C3/C5 plus suspicious_activity",
     )
     parser.add_argument(
         "--causal-model-dir",
@@ -141,12 +141,16 @@ def configure_action_models(args: argparse.Namespace) -> tuple[str, ...]:
     enabled = tuple(action for action in SUPPORTED_ACTIONS if action in requested)
     if not enabled:
         raise ValueError("--actions must enable at least one action")
-    if {"c2", "c3"} & set(enabled):
-        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["c2c3"]
+    if "suspicious_activity" in enabled:
+        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
+    elif {"c2", "c3"} & set(enabled):
+        # The promoted extended artifact contains the deployed C2/C3
+        # specialists as well as suspicious_activity.
+        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
     # Only the locked C2/C3 benchmark artifact is bundled.  Other specialists
     # require an explicit artifact directory instead of silently referencing
     # local, uncommitted experiment outputs.
-    if not ({"c2", "c3"} & set(enabled)):
+    if not ({"c2", "c3", "suspicious_activity"} & set(enabled)):
         args.causal_model_dir = None
     if "c1" not in enabled:
         args.c1_model_dir = None
@@ -256,6 +260,16 @@ def main() -> None:
 
                 inference_started_at = monotonic()
                 latest_packet = tracking.process_frame(frame)
+                # Live causal classifiers require stable actor IDs.  The old
+                # interactive prompt blocks the frame loop before any model
+                # can warm up, so assign deterministic demo IDs immediately.
+                for track in latest_packet.tracks:
+                    if track.is_present and not track.student_id:
+                        latest_packet = tracking.manager.assign_student(
+                            session_id,
+                            track_id=track.track_id,
+                            student_id=f"{args.student_prefix}{track.track_id:02d}",
+                        )
                 latest_holistic_results = holistic.process_packet(
                     frame,
                     latest_packet,

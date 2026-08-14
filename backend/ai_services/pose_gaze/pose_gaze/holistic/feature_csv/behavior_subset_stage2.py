@@ -1283,6 +1283,9 @@ def causal_aggregate_rows(
                 "source_frame_index": row.get("source_frame_index", ""),
                 "timestamp_ms": row.get("timestamp_ms", ""),
                 "near_midpoint_pre_cross": row.get("near_midpoint_pre_cross", "0"),
+                "current_pair_hand_distance": row.get("pair_hand_distance", ""),
+                "current_pair_margin_10pct": row.get("pair_margin_10pct", ""),
+                "current_hand_quality_mask": row.get("hand_quality_mask", "0"),
                 "actor_label": row.get("actor_label", row["actor_truth"]),
                 "prefix_frames": state.window_size,
                 "warmup_ready": int(state.window_size >= warmup_frames),
@@ -1793,6 +1796,7 @@ def causal_specialist_replay(
     c2_probabilities,
     c3_probabilities,
     *,
+    c2_threshold=0.5,
     c3_threshold,
     suspicious_probabilities=None,
     suspicious_threshold=None,
@@ -1821,6 +1825,7 @@ def causal_specialist_replay(
         ]
         state = CausalSpecialistState(
             tuple(actor_ids), c3_threshold=c3_threshold,
+            c2_threshold=c2_threshold,
             suspicious_threshold=suspicious_threshold, c3_gate=c3_gate,
             suspicious_gate=suspicious_gate,
         )
@@ -1850,7 +1855,13 @@ def causal_specialist_replay(
                 # evidence from an earlier frame while the current C2 score
                 # comes from a different frame, creating synthetic exchange
                 # evidence and suspicious_activity -> c2 false positives.
-                encode((video, str(row["actor_id"]))): row.get("near_midpoint_pre_cross__max", 0.0)
+                encode((video, str(row["actor_id"]))): (
+                    row.get("near_midpoint_pre_cross", 0.0)
+                    if number(row.get("current_hand_quality_mask")) > 0.0
+                    and number(row.get("current_pair_hand_distance")) > 0.0
+                    and number(row.get("current_pair_margin_10pct")) > 0.0
+                    else 0.0
+                )
                 for row, _, _, _ in current
             }
             timestamp = min(int(number(row.get("timestamp_ms", 0))) for row, _, _, _ in current)
@@ -1898,6 +1909,37 @@ def _fit_actor_max_threshold(rows, probabilities, positive_class):
     actor_rows = [
         (key, max(values), rows_by_key_truth(rows, key))
         for key, values in grouped.items()
+    ]
+    candidates = sorted({score for _, score, _ in actor_rows} | {0.5})
+    best = (0.0, 0.5)
+    for threshold in candidates:
+        tp = sum(truth == positive_class and score >= threshold for _, score, truth in actor_rows)
+        fp = sum(truth != positive_class and score >= threshold for _, score, truth in actor_rows)
+        fn = sum(truth == positive_class and score < threshold for _, score, truth in actor_rows)
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        candidate = (f1, threshold)
+        if candidate[0] > best[0] or candidate[0] == best[0] and candidate[1] > best[1]:
+            best = candidate
+    return best[1]
+
+
+def _fit_current_geometry_actor_threshold(rows, probabilities, positive_class):
+    """Fit actor-max score only over qualified current-frame geometry."""
+    all_keys = {(row["video"], row["actor_id"]) for row in rows}
+    qualified = defaultdict(list)
+    for row, probability in zip(rows, probabilities):
+        if (
+            number(row.get("near_midpoint_pre_cross")) >= 1.0
+            and number(row.get("current_hand_quality_mask")) > 0.0
+            and number(row.get("current_pair_hand_distance")) > 0.0
+            and number(row.get("current_pair_margin_10pct")) > 0.0
+        ):
+            qualified[(row["video"], row["actor_id"])].append(float(probability))
+    actor_rows = [
+        (key, max(qualified.get(key, [0.0])), rows_by_key_truth(rows, key))
+        for key in all_keys
     ]
     candidates = sorted({score for _, score, _ in actor_rows} | {0.5})
     best = (0.0, 0.5)
@@ -2115,6 +2157,9 @@ def run_extended_suspicious_causal_replay(train_frame_rows, test_frame_rows, out
             [[row[name] for name in names] for row in test_rows], dtype=np.float32
         )))
         thresholds[code] = _fit_actor_max_threshold(train_rows, train_scores[code], code)
+    thresholds["c2"] = _fit_current_geometry_actor_threshold(
+        train_rows, train_scores["c2"], "c2"
+    )
     gates = _extended_gate_thresholds(train_rows)
 
     def c3_gate(values):
@@ -2138,6 +2183,7 @@ def run_extended_suspicious_causal_replay(train_frame_rows, test_frame_rows, out
         test_rows,
         test_scores["c2"],
         test_scores["c3"],
+        c2_threshold=thresholds["c2"],
         c3_threshold=thresholds["c3"],
         suspicious_probabilities=test_scores["suspicious_activity"],
         suspicious_threshold=thresholds["suspicious_activity"],

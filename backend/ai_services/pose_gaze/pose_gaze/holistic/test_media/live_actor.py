@@ -13,7 +13,7 @@ import pickle
 import warnings
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable
 
 import numpy as np
 
@@ -32,7 +32,7 @@ class CausalLiveActorClassifier:
         clip_id: str = "live",
         student_prefix: str = "student_",
         explicit_pairs: Iterable[tuple[str, str]] = (),
-        warmup_frames: int = 30,
+        warmup_frames: int = 15,
         window_frames: int = 90,
     ) -> None:
         self.model_dir = Path(model_dir)
@@ -48,19 +48,45 @@ class CausalLiveActorClassifier:
         metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
         if metrics.get("future_frames_used_for_decision") is not False:
             raise ValueError("model artifact is not certified causal")
-        self.c3_threshold = float(metrics["c3_threshold_train_only"])
-        self.c3_pose_only = metrics.get("c3_feature_family") == "pose_only_contract"
+        thresholds = metrics.get("specialist_thresholds_train_only", {})
+        self.c2_threshold = float(thresholds.get("c2", metrics.get("c2_threshold", 0.5)))
+        self.c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        self.suspicious_threshold = thresholds.get("suspicious_activity")
+        # Extended suspicious artifacts predate the explicit metadata field,
+        # but their C3 schema still requires this causal pose contract.
+        self.c3_pose_only = (
+            metrics.get("c3_feature_family") == "pose_only_contract"
+            or "c3_pose_head_peer_delta__mean" in json.loads(
+                (self.model_dir / "causal_c3_feature_names.json").read_text(encoding="utf-8")
+            )
+        )
         self.c2_model, self.c2_names = self._load_model(
             "causal_c2_specialist.ubj", "causal_c2_feature_names.json"
         )
         self.c3_model, self.c3_names = self._load_model(
             "causal_c3_specialist.ubj", "causal_c3_feature_names.json"
         )
+        self.suspicious_model = self.suspicious_names = None
+        if self.suspicious_threshold is not None:
+            self.suspicious_model, self.suspicious_names = self._load_model(
+                "causal_suspicious_activity_specialist.ubj",
+                "causal_suspicious_activity_feature_names.json",
+            )
         self.c2_bases = tuple(name.rsplit("__", 1)[0] for name in self.c2_names[::5])
         self.c3_bases = tuple(name.rsplit("__", 1)[0] for name in self.c3_names[::5])
+        self.suspicious_bases = tuple(name.rsplit("__", 1)[0] for name in self.suspicious_names[::5]) if self.suspicious_names else ()
+        self.shared_bases = tuple(dict.fromkeys((*self.c2_bases, *self.c3_bases, *self.suspicious_bases)))
         self._windows_c2: dict[str, CausalActorWindow] = {}
         self._windows_c3: dict[str, CausalActorWindow] = {}
-        self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold)
+        self._windows_suspicious: dict[str, CausalActorWindow] = {}
+        self.gates = metrics.get("gate_thresholds_train_only", {})
+        self._state = CausalSpecialistState(
+            (), c3_threshold=self.c3_threshold,
+            c2_threshold=self.c2_threshold,
+            suspicious_threshold=self.suspicious_threshold,
+            c3_gate=lambda values: bool(values.get("c3_gate", True)),
+            suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
+        )
         self._explicit_pairs = tuple(
             (str(left), str(right)) for left, right in explicit_pairs
         )
@@ -185,14 +211,7 @@ class CausalLiveActorClassifier:
             if int(row["source_frame_index"]) == int(frame_index)
         }
 
-    def update(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        results: Iterable[Any],
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None = None,
-    ):
+    def update(self, *, frame_index: int, timestamp_ms: int, results: Iterable[Any]):
         import xgboost as xgb
         from ..feature_csv import behavior_subset_stage2 as behavior
         from ..feature_csv.temporal_geometry import enrich
@@ -219,24 +238,70 @@ class CausalLiveActorClassifier:
         prefix = behavior.derive_face_c3_features(prefix)
         prefix = behavior.derive_finger_motion(prefix)
         prefix = behavior.derive_hand_shape_and_pair_cues(prefix)
-        latest = self._latest(prefix, frame_index)
+        if self.suspicious_names:
+            prefix = behavior.derive_strict_c2_c3_suspicious_cues(prefix, baseline_frames=self.warmup_frames)
+        aggregate_rows, _ = behavior.causal_aggregate_rows(
+            prefix,
+            self.shared_bases,
+            warmup_frames=self.warmup_frames,
+            window_frames=self.window_frames,
+        )
+        latest = self._latest(aggregate_rows, frame_index)
         scores, midpoint = {}, {}
         for actor_id, row in latest.items():
             self._state.register_actor(actor_id)
-            c2_window = self._windows_c2.setdefault(actor_id, CausalActorWindow(actor_id, self.c2_bases, max_frames=self.window_frames))
-            c3_window = self._windows_c3.setdefault(actor_id, CausalActorWindow(actor_id, self.c3_bases, max_frames=self.window_frames))
-            c2_state = c2_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            c3_state = c3_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            self._window_sizes[actor_id] = min(c2_state.window_size, c3_state.window_size)
-            if min(c2_state.window_size, c3_state.window_size) < self.warmup_frames:
+            self._window_sizes[actor_id] = int(row.get("prefix_frames", 0))
+            if not int(row.get("warmup_ready", 0)):
                 continue
-            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[c2_state.features[name] for name in self.c2_names]], dtype=np.float32)))[0])
-            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
+            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c2_names]], dtype=np.float32)))[0])
+            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
-            midpoint[actor_id] = c2_state.features.get("near_midpoint_pre_cross__max", 0.0)
+            scores[actor_id]["c3_gate"] = (
+                row.get("strict_hand_quality__mean", 0.0) > 0.0
+                and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
+                and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
+            )
+            if self.suspicious_names:
+                scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
+                scores[actor_id]["suspicious_gate"] = (
+                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
+                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
+                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    and row.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
+                )
+            midpoint[actor_id] = (
+                row.get("near_midpoint_pre_cross", 0.0)
+                if behavior.number(row.get("current_hand_quality_mask")) > 0.0
+                and behavior.number(row.get("current_pair_hand_distance")) > 0.0
+                and behavior.number(row.get("current_pair_margin_10pct")) > 0.0
+                else 0.0
+            )
         self._latest_scores.update(scores)
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
+
+    def update_tracks(
+        self,
+        *,
+        frame_index: int,
+        timestamp_ms: int,
+        tracks: Iterable[dict[str, Any]],
+    ):
+        """Replay adapter using the same live update path and causal state."""
+        class TrackResult:
+            def __init__(self, payload: dict[str, Any]) -> None:
+                self.payload = payload
+
+            def to_dict(self) -> dict[str, Any]:
+                return self.payload
+
+        return self.update(
+            frame_index=frame_index,
+            timestamp_ms=timestamp_ms,
+            results=(TrackResult(dict(track)) for track in tracks),
+        )
 
     def _decision_output(self, scores):
         return {
@@ -244,6 +309,7 @@ class CausalLiveActorClassifier:
                 "actor_id": actor_id, "predicted_class": decision.class_code,
                 "c2_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c2", ""),
                 "c3_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c3", ""),
+                "suspicious_activity_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("suspicious_activity", ""),
                 "warmup_frames_seen": self._window_sizes.get(actor_id, 0),
                 "warmup_frames_required": self.warmup_frames,
                 "evidence_score": decision.evidence_score if decision.evidence_score is not None else "",
@@ -262,7 +328,14 @@ class CausalLiveActorClassifier:
         """Start a new causal observation without reopening the camera."""
         self._windows_c2.clear()
         self._windows_c3.clear()
-        self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold)
+        self._windows_suspicious.clear()
+        self._state = CausalSpecialistState(
+            (), c3_threshold=self.c3_threshold,
+            c2_threshold=self.c2_threshold,
+            suspicious_threshold=self.suspicious_threshold,
+            c3_gate=lambda values: bool(values.get("c3_gate", True)),
+            suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
+        )
         self._baseline_rows.clear()
         self._tail_rows.clear()
         self._last_frame = None
@@ -272,7 +345,12 @@ class CausalLiveActorClassifier:
 
 
 class CausalPoseActorClassifier:
-    """Causal suspicious-activity specialist with highest-priority object flags."""
+    """Causal pose-only suspicious-activity specialist.
+
+    C1 and C4 remain internal evidence specialists. Pose does not identify the
+    object needed to distinguish those classes, so the public decision is the
+    shared ``suspicious_activity`` label until object detection is fused.
+    """
 
     def __init__(
         self,
@@ -339,72 +417,13 @@ class CausalPoseActorClassifier:
         logit = float(np.dot(standardized, spec["coef"]) + spec["intercept"])
         return 1.0 / (1.0 + math.exp(-max(-700.0, min(700.0, logit))))
 
-    @staticmethod
-    def _object_subtype(row: Mapping[str, Any]) -> tuple[str, float]:
-        """Read only actor-owned direct object evidence."""
-        class_code = str(row.get("direct_object_class", ""))
-        try:
-            score = float(row.get("direct_object_score", 0.0))
-        except (TypeError, ValueError):
-            score = 0.0
-        if class_code not in {"c1", "c4"} or not math.isfinite(score) or score <= 0.0:
-            return "", 0.0
-        return class_code, score
-
-    def _apply_object_subtypes(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None,
-    ) -> None:
-        """Accept actor-owned object evidence as immediate highest-priority flag."""
-        if not object_rows_by_actor:
-            return
-        for raw_actor_id, row in object_rows_by_actor.items():
-            actor_id = str(raw_actor_id)
-            class_code, score = self._object_subtype(row)
-            if not class_code:
-                continue
-            decision = self._decisions.get(actor_id)
-            if decision is None:
-                self._decisions[actor_id] = decision = {
-                    "actor_id": actor_id,
-                    "predicted_class": class_code,
-                    "evidence_score": score,
-                    "evidence_frame_index": int(frame_index),
-                    "first_flag_frame_index": int(frame_index),
-                    "first_flag_timestamp_ms": int(timestamp_ms),
-                    "causal": True,
-                }
-            previous_score = float(decision.get("object_score") or 0.0)
-            if score > previous_score:
-                decision.update(
-                    {
-                        "predicted_class": class_code,
-                        "object_class": class_code,
-                        "object_score": score,
-                        "object_evidence_frame_index": int(frame_index),
-                        "object_evidence_timestamp_ms": int(timestamp_ms),
-                        "object_priority": True,
-                        "evidence_score": score,
-                        "evidence_frame_index": int(frame_index),
-                    }
-                )
-
     def update(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        results: Iterable[Any],
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None = None,
+        self, *, frame_index: int, timestamp_ms: int, results: Iterable[Any]
     ) -> dict[str, dict[str, Any]]:
         return self.update_tracks(
             frame_index=frame_index,
             timestamp_ms=timestamp_ms,
             tracks=(result.to_dict() for result in results),
-            object_rows_by_actor=object_rows_by_actor,
         )
 
     def update_tracks(
@@ -413,7 +432,6 @@ class CausalPoseActorClassifier:
         frame_index: int,
         timestamp_ms: int,
         tracks: Iterable[dict[str, Any]],
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> dict[str, dict[str, Any]]:
         frame_index, timestamp_ms = int(frame_index), int(timestamp_ms)
         if self._last_frame is not None and frame_index <= self._last_frame:
@@ -421,9 +439,7 @@ class CausalPoseActorClassifier:
         if self._last_timestamp is not None and timestamp_ms < self._last_timestamp:
             raise ValueError("pose classifier received a decreasing timestamp")
         self._last_frame, self._last_timestamp = frame_index, timestamp_ms
-        tracks = list(tracks)
         current_scores: dict[str, dict[str, float]] = defaultdict(dict)
-        current_pose_gate: dict[str, bool] = defaultdict(bool)
         seen: set[str] = set()
         for track in tracks:
             track_id = str(track["track_id"])
@@ -440,7 +456,6 @@ class CausalPoseActorClassifier:
                 current_scores[actor_id][f"{class_code}_score"] = score
                 if score < spec["threshold"]:
                     continue
-                current_pose_gate[actor_id] = True
                 decision = self._decisions.get(actor_id)
                 if decision is None:
                     self._decisions[actor_id] = {
@@ -457,11 +472,6 @@ class CausalPoseActorClassifier:
                     decision["source_specialist"] = class_code
                     decision["evidence_score"] = score
                     decision["evidence_frame_index"] = frame_index
-        self._apply_object_subtypes(
-            frame_index=frame_index,
-            timestamp_ms=timestamp_ms,
-            object_rows_by_actor=object_rows_by_actor,
-        )
         output: dict[str, dict[str, Any]] = {}
         for actor_id in seen:
             selected = self._decisions.get(actor_id, {
@@ -469,26 +479,8 @@ class CausalPoseActorClassifier:
                 "evidence_frame_index": "", "first_flag_frame_index": "",
                 "first_flag_timestamp_ms": "", "causal": True,
             })
-            output[actor_id] = {
-                **selected,
-                **current_scores.get(actor_id, {}),
-                "pose_gate": bool(current_pose_gate.get(actor_id, False)),
-            }
+            output[actor_id] = {**selected, **current_scores.get(actor_id, {})}
         return output
-
-    def apply_object_evidence(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None,
-    ) -> None:
-        """Apply object subtype evidence without advancing the pose stream."""
-        self._apply_object_subtypes(
-            frame_index=frame_index,
-            timestamp_ms=timestamp_ms,
-            object_rows_by_actor=object_rows_by_actor,
-        )
 
     def final_decisions(self) -> dict[str, dict[str, Any]]:
         return {
@@ -584,29 +576,10 @@ class CausalC7ActorClassifier:
         logit = float(np.dot(standardized, self.coef) + self.intercept)
         return 1.0 / (1.0 + math.exp(-max(-700.0, min(700.0, logit))))
 
-    def update(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        results: Iterable[Any],
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None = None,
-    ):
-        return self.update_tracks(
-            frame_index=frame_index,
-            timestamp_ms=timestamp_ms,
-            tracks=(result.to_dict() for result in results),
-            object_rows_by_actor=object_rows_by_actor,
-        )
+    def update(self, *, frame_index: int, timestamp_ms: int, results: Iterable[Any]):
+        return self.update_tracks(frame_index=frame_index, timestamp_ms=timestamp_ms, tracks=(result.to_dict() for result in results))
 
-    def update_tracks(
-        self,
-        *,
-        frame_index: int,
-        timestamp_ms: int,
-        tracks: Iterable[dict[str, Any]],
-        object_rows_by_actor: Mapping[str, Mapping[str, Any]] | None = None,
-    ):
+    def update_tracks(self, *, frame_index: int, timestamp_ms: int, tracks: Iterable[dict[str, Any]]):
         frame_index, timestamp_ms, tracks = int(frame_index), int(timestamp_ms), list(tracks)
         if self.last_frame is not None and frame_index <= self.last_frame:
             raise ValueError("C7 classifier received a non-increasing frame")
@@ -682,9 +655,7 @@ class CombinedCausalActorClassifier:
                 previous = merged.get(actor_id)
                 score = float(decision.get("evidence_score") or 0.0)
                 previous_score = float(previous.get("evidence_score") or 0.0) if previous else -1.0
-                object_priority = bool(decision.get("object_priority"))
-                previous_object_priority = bool(previous and previous.get("object_priority"))
-                if previous is None or object_priority or (not previous_object_priority and score > previous_score):
+                if previous is None or score > previous_score:
                     merged[actor_id] = dict(decision)
                 elif previous is not None:
                     for key, value in decision.items():
@@ -694,12 +665,6 @@ class CombinedCausalActorClassifier:
 
     def update(self, **kwargs) -> dict[str, dict[str, Any]]:
         return self._merge(classifier.update(**kwargs) for classifier in self.classifiers)
-
-    def apply_object_evidence(self, **kwargs) -> None:
-        for classifier in self.classifiers:
-            method = getattr(classifier, "apply_object_evidence", None)
-            if method is not None:
-                method(**kwargs)
 
     def update_tracks(self, **kwargs) -> dict[str, dict[str, Any]]:
         return self._merge(classifier.update_tracks(**kwargs) for classifier in self.classifiers)
