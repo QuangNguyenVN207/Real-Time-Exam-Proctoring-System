@@ -259,6 +259,16 @@ def main() -> None:
 
                 inference_started_at = monotonic()
                 latest_packet = tracking.process_frame(frame)
+                # Live causal classifiers require stable actor IDs.  The old
+                # interactive prompt blocks the frame loop before any model
+                # can warm up, so assign deterministic demo IDs immediately.
+                for track in latest_packet.tracks:
+                    if track.is_present and not track.student_id:
+                        latest_packet = tracking.manager.assign_student(
+                            session_id,
+                            track_id=track.track_id,
+                            student_id=f"{args.student_prefix}{track.track_id:02d}",
+                        )
                 latest_holistic_results = holistic.process_packet(
                     frame,
                     latest_packet,

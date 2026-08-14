@@ -51,7 +51,14 @@ class CausalLiveActorClassifier:
         thresholds = metrics.get("specialist_thresholds_train_only", {})
         self.c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
         self.suspicious_threshold = thresholds.get("suspicious_activity")
-        self.c3_pose_only = metrics.get("c3_feature_family") == "pose_only_contract"
+        # Extended suspicious artifacts predate the explicit metadata field,
+        # but their C3 schema still requires this causal pose contract.
+        self.c3_pose_only = (
+            metrics.get("c3_feature_family") == "pose_only_contract"
+            or "c3_pose_head_peer_delta__mean" in json.loads(
+                (self.model_dir / "causal_c3_feature_names.json").read_text(encoding="utf-8")
+            )
+        )
         self.c2_model, self.c2_names = self._load_model(
             "causal_c2_specialist.ubj", "causal_c2_feature_names.json"
         )
@@ -70,7 +77,13 @@ class CausalLiveActorClassifier:
         self._windows_c2: dict[str, CausalActorWindow] = {}
         self._windows_c3: dict[str, CausalActorWindow] = {}
         self._windows_suspicious: dict[str, CausalActorWindow] = {}
-        self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold, suspicious_threshold=self.suspicious_threshold)
+        gates = metrics.get("gate_thresholds_train_only", {})
+        self._state = CausalSpecialistState(
+            (), c3_threshold=self.c3_threshold,
+            suspicious_threshold=self.suspicious_threshold,
+            c3_gate=lambda values: bool(values.get("c3_gate", True)),
+            suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
+        )
         self._explicit_pairs = tuple(
             (str(left), str(right)) for left, right in explicit_pairs
         )
@@ -241,8 +254,19 @@ class CausalLiveActorClassifier:
             c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[c2_state.features[name] for name in self.c2_names]], dtype=np.float32)))[0])
             c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
+            scores[actor_id]["c3_gate"] = (
+                row.get("hand_motion", 0.0) <= gates.get("c3_motion_ceiling", float("inf"))
+                and row.get("c3_pose_head_peer_delta", 0.0) >= gates.get("c3_side_floor", float("-inf"))
+                and row.get("strict_head_down_delta", 0.0) <= gates.get("c3_down_ceiling", float("inf"))
+            )
             if suspicious_state is not None:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[suspicious_state.features[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
+                scores[actor_id]["suspicious_gate"] = (
+                    row.get("strict_head_down_delta", 0.0) >= gates.get("suspicious_down_floor", float("inf"))
+                    and max(row.get("hand_motion", 0.0), row.get("finger_motion", 0.0)) >= gates.get("suspicious_motion_floor", float("inf"))
+                    and row.get("strict_hand_below_hip", 0.0) >= gates.get("suspicious_lower_floor", float("inf"))
+                    and row.get("strict_own_side_outside_midpoint", 0.0) >= 1.0
+                )
             midpoint[actor_id] = row.get("near_midpoint_pre_cross", 0.0)
         self._latest_scores.update(scores)
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
