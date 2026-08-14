@@ -2,17 +2,17 @@ import time
 import numpy as np
 
 # Các tiện ích tiền xử lý (Đã bao gồm hàm apply_bandpass_filter từ bước trước)
-from whisper.audio_utils import load_audio, extract_speech, apply_bandpass_filter
+from backend.ai_services.whisper.audio_utils import load_audio, extract_speech, apply_bandpass_filter
 
 # Import các AI Services hiện có
-from whisper.vad_service import VADService
-from whisper.phowhisper_service import PhoWhisperService
-from whisper.keyword_detector import KeywordDetector
-from whisper.audio_logger import AudioLogger
+from backend.ai_services.whisper.vad_service import VADService
+from backend.ai_services.whisper.phowhisper_service import PhoWhisperService
+from backend.ai_services.whisper.keyword_detector import KeywordDetector
+from backend.ai_services.whisper.audio_logger import AudioLogger
 
 # Import các Service PhoBERT (giả định bạn đặt trong thư mục phobert)
-from whisper.phobert.phobert_service import PhobertService
-from whisper.phobert.decision_fusion import DecisionFusionService
+from backend.ai_services.whisper.phobert.phobert_service import PhobertService
+from backend.ai_services.whisper.phobert.decision_fusion import DecisionFusionService
 
 
 class AudioPipeline:

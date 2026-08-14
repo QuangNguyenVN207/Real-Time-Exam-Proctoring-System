@@ -198,28 +198,32 @@ class RealtimeAudioWorker:
                 )
 
                 if result is None:
-                    print("[Realtime] silence / no speech (Im lặng)")
                     continue
 
-                print("\n" + "=" * 70)
-                
+                transcription = result.get('transcription', '').strip()
                 risk_final = str(result.get('risk', '')).lower()
                 status_final = str(result.get('status', '')).lower()
                 
                 is_alert = False
                 if risk_final in ['cheating', 'high', 'medium'] or status_final == 'alert':
                     is_alert = True
+                
+                # 🛑 CHẶN LOG RÁC: NẾU KHÔNG CÓ TIẾNG NGƯỜI (CHUỖI RỖNG) VÀ KHÔNG PHẢI CẢNH BÁO -> BỎ QUA KHÔNG IN GÌ CẢ
+                if not transcription and not is_alert:
+                    continue
+
+                print("\n" + "=" * 70)
+                if is_alert:
                     reason_text = str(result.get('fusion_reason', '')).lower()
                     if 'ai catch' in reason_text:
                         nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)"
                     else:
                         nguoi_bat = "🔑 Keyword (Bộ luật cứng)"
-                        
                     print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
                 else:
                     print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
                     
-                print(f"🗣️ Transcript : '{result.get('transcription', '')}'")
+                print(f"🗣️ Transcript : '{transcription}'")
                 print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
                 
                 keywords = result.get('matched_keywords', [])
@@ -237,8 +241,6 @@ class RealtimeAudioWorker:
 
             except Exception as e:
                 print(f"[Worker] Error: {e}")
-
-        print("[Worker] Stopped.")
 
     # =========================
     # Start
