@@ -1,0 +1,12 @@
+{
+  "normalization": "pair_hand_distance_px / inter_actor_center_distance_px",
+  "selection": "c2 score above train-only threshold and current-frame midpoint hit",
+  "train_c2_candidate_rows": 440,
+  "train_c2_quantiles": {
+    "0.5": 0.15353649534652425,
+    "0.75": 0.4069513024792286,
+    "0.9": 0.6659781625213537,
+    "0.95": 0.7040666764209608,
+    "1.0": 0.8097285955306195
+  }
+}

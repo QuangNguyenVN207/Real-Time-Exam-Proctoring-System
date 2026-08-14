@@ -1,0 +1,40 @@
+#!/bin/sh
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null)
+
+if [ -z "$branch" ]; then
+  cat <<'EOF'
+Cannot determine the current branch.
+Push from a named branch that follows the repository guidelines.
+EOF
+  exit 1
+fi
+
+case "$branch" in
+  main|develop)
+    cat <<EOF
+Direct pushes to '$branch' are blocked by the repository contributing guidelines.
+Create a feature, bugfix, or hotfix branch and open a pull request instead.
+EOF
+    exit 1
+    ;;
+  feature/*|bugfix/*|hotfix/*)
+    if printf '%s' "$branch" | grep -Eq '^(feature|bugfix|hotfix)/[A-Za-z0-9._-]+-[A-Za-z0-9._-]+$'; then
+      exit 0
+    fi
+
+    cat <<EOF
+Branch '$branch' does not match the required naming pattern.
+Use: [type]/[username]-[feature]
+Example: feature/yourname-camera-check
+EOF
+    exit 1
+    ;;
+  *)
+    cat <<EOF
+Branch '$branch' is not allowed by the repository contributing guidelines.
+Use a branch named feature/*, bugfix/*, or hotfix/*.
+EOF
+    exit 1
+    ;;
+esac

@@ -22,9 +22,14 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
+from .causal_stream import CausalActorWindow, CausalSpecialistState
+
 TARGET_CLASSES = ("c2", "c3", "c7")
 MODEL_CLASSES = ("c2", "c3", "c5", "c7")
 EXCLUDE_C7 = False
+EXTENDED_SUSPICIOUS = False
+FRAME_FLAG_THRESHOLD = 0.5
+CAUSAL_WARMUP_FRAMES = 30
 
 # Selected at runtime from numeric actor-frame geometry columns. Labels,
 # identity, time, semantic flags, and video metadata are excluded.
@@ -59,6 +64,21 @@ FACE_C3_FEATURES = (
     "face_c3_mouth_slope_delta",
 )
 C3_FEATURES = (*POSE_C3_FEATURES, *FACE_C3_FEATURES, "face_quality_mask", "pose_quality_mask")
+# Contract-faithful A/B branch.  This is deliberately separate from the
+# historical C3 specialist so the old benchmark remains reproducible.
+C3_POSE_ONLY_BASE_FEATURES = (
+    "c3_pose_head_peer_delta", "c3_pose_torso_peer_delta",
+    "c3_pose_head_peer_velocity", "c3_pose_torso_peer_velocity",
+    "c3_pose_head_valid", "c3_pose_torso_valid", "c3_pose_peer_valid",
+    "c3_pose_required_valid",
+)
+C3_POSE_ONLY_FEATURES = C3_POSE_ONLY_BASE_FEATURES
+STRICT_C3_SUSPICIOUS_FEATURES = (
+    "delta_nose_down", "hand_motion", "finger_motion", "hand_finger_motion",
+    "own_side_distance", "strict_hand_below_hip", "strict_hand_quality",
+    "strict_head_down_delta", "strict_midpoint_hit",
+    "strict_own_side_outside_midpoint",
+)
 C2_CUE_FEATURES = (
     "near_midpoint_pre_cross", "pair_hand_distance", "own_side_distance",
     "crossing_indicator", "pair_convergence", "hand_direction",
@@ -716,12 +736,13 @@ def actor_truth(row, manifest):
     timestamp = number(row.get("timestamp_ms")) / 1000.0
     in_interval = start <= timestamp <= end
     source_actor = row["actor_id"] in item["action_actor_ids_parsed"]
-    is_target_source = action_class in TARGET_CLASSES and source_actor
+    public_class = "suspicious_activity" if EXTENDED_SUSPICIOUS and action_class in {"c1", "c4"} else action_class
+    is_target_source = public_class in TARGET_CLASSES and source_actor
     # c1/c4/c6 source actors are excluded, never silently relabeled as c5.
-    excluded_source = action_class not in TARGET_CLASSES and source_actor
+    excluded_source = public_class not in TARGET_CLASSES and source_actor
     return {
-        "actor_truth": action_class if is_target_source else "c5",
-        "truth": action_class if is_target_source and in_interval else "c5",
+        "actor_truth": public_class if is_target_source else "c5",
+        "truth": public_class if is_target_source and in_interval else "c5",
         "source_actor": int(source_actor),
         "within_action_interval": int(in_interval),
         "excluded_source": int(excluded_source),
@@ -872,6 +893,177 @@ def derive_behavior_motion(rows):
                 row["c3_head_toward_peer_velocity"] = side * (nose_eye_lateral - previous_c3[3])
             previous_c3 = (face_roll, ear_roll, shoulder_roll, nose_eye_lateral)
             row["pose_quality_mask"] = float(number(row.get("pose_valid_ratio")) > 0.0)
+    return rows
+
+
+def derive_strict_c2_c3_suspicious_cues(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
+    """Current/past-only gates shared by C2, C3 and suspicious activity.
+
+    These are geometry gates, never annotation, identity, or future-window
+    features.  The existing C2 midpoint flag retains its finger-first contract.
+    """
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[(row["clip_id"], row["actor_id"])].append(row)
+    for group in grouped.values():
+        group.sort(key=lambda row: int(row.get("source_frame_index", 0)))
+        baseline = []
+        for row in group:
+            left, right, nose = _point(row, "pose", 11), _point(row, "pose", 12), _point(row, "pose", 0)
+            scale = max(math.hypot(left[0] - right[0], left[1] - right[1]), 1.0) if left and right else 1.0
+            shoulder_y = ((left[1] + right[1]) / 2.0) if left and right else 0.0
+            head_depth = (nose[1] - shoulder_y) / scale if nose and left and right else 0.0
+            if len(baseline) < baseline_frames and nose and left and right:
+                baseline.append(head_depth)
+            base_depth = float(np.median(baseline)) if baseline else head_depth
+            lower = []
+            for wrist_index, hip_index in ((15, 23), (16, 24)):
+                wrist, hip = _point(row, "pose", wrist_index), _point(row, "pose", hip_index)
+                if wrist and hip:
+                    lower.append((wrist[1] - hip[1]) / scale)
+            margin = number(row.get("pair_margin_10pct"))
+            own_distance = number(row.get("own_side_distance"))
+            row.update({
+                "strict_head_down_delta": max(0.0, head_depth - base_depth),
+                "strict_hand_below_hip": max(lower, default=0.0),
+                "strict_hand_quality": float(number(row.get("hand_quality_mask")) > 0.0),
+                "strict_midpoint_hit": float(number(row.get("near_midpoint_pre_cross")) >= 1.0),
+                # An own-side suspicious cue must be outside C2's midpoint margin.
+                "strict_own_side_outside_midpoint": float(own_distance > margin),
+            })
+    return rows
+
+
+def _declared_peer_ids(row):
+    try:
+        value = json.loads(row.get("interaction_peer_ids") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def _bbox_center_x(row):
+    try:
+        return (float(row["bbox_x1"]) + float(row["bbox_x2"])) / 2.0
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _c3_pose_point(row, index):
+    if str(row.get(f"pose_{index}_valid", "0")) != "1":
+        return None
+    try:
+        return float(row[f"pose_{index}_frame_x"]), float(row[f"pose_{index}_frame_y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def derive_c3_pose_contract(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
+    """Derive the causal, pose-only C3 contract for an explicit peer.
+
+    The historical C3 specialist is intentionally untouched.  This branch
+    uses nose/eye/shoulder/hip geometry only: baseline-relative signed head
+    and torso displacement toward the declared peer, with validity and
+    current-frame peer direction carried as explicit features.
+
+    Temporary live-camera fallback: when no declared peer is visible, use the
+    screen-right direction so a one-person camera can exercise the C3 path.
+    This is deliberately not a benchmark rule: without a peer, a left/right
+    turn cannot be interpreted as ``toward another actor``.
+    """
+    grouped = defaultdict(list)
+    by_frame = defaultdict(dict)
+    for row in rows:
+        key = (row["clip_id"], row["actor_id"])
+        grouped[key].append(row)
+        by_frame[(row["clip_id"], int(row.get("source_frame_index", 0)))][row["actor_id"]] = row
+
+    for (clip_id, actor_id), group in grouped.items():
+        group.sort(key=lambda row: int(row.get("source_frame_index", 0)))
+        observations = []
+        for row in group:
+            nose = _c3_pose_point(row, 0)
+            eye_left = _c3_pose_point(row, 1)
+            eye_right = _c3_pose_point(row, 4)
+            shoulder_left = _c3_pose_point(row, 11)
+            shoulder_right = _c3_pose_point(row, 12)
+            hip_left = _c3_pose_point(row, 23)
+            hip_right = _c3_pose_point(row, 24)
+            shoulder_mid = (
+                (shoulder_left[0] + shoulder_right[0]) / 2.0,
+                (shoulder_left[1] + shoulder_right[1]) / 2.0,
+            ) if shoulder_left and shoulder_right else None
+            hip_mid = (
+                (hip_left[0] + hip_right[0]) / 2.0,
+                (hip_left[1] + hip_right[1]) / 2.0,
+            ) if hip_left and hip_right else None
+            shoulder_scale = (
+                math.hypot(shoulder_right[0] - shoulder_left[0], shoulder_right[1] - shoulder_left[1])
+                if shoulder_left and shoulder_right else 0.0
+            )
+            torso_scale = (
+                math.hypot(shoulder_mid[0] - hip_mid[0], shoulder_mid[1] - hip_mid[1])
+                if shoulder_mid and hip_mid else 0.0
+            )
+            frame_index = int(row.get("source_frame_index", 0))
+            peers = _declared_peer_ids(row)
+            peer_id = peers[0] if peers else None
+            peer_row = by_frame.get((clip_id, frame_index), {}).get(peer_id or "")
+            peer_x = _bbox_center_x(peer_row) if peer_row else None
+            required_valid = int(all((nose, eye_left, eye_right, shoulder_left, shoulder_right, hip_left, hip_right)))
+            head_valid = int(all((nose, eye_left, eye_right, shoulder_left, shoulder_right)) and shoulder_scale > 1.0)
+            torso_valid = int(all((shoulder_left, shoulder_right, hip_left, hip_right)) and torso_scale > 1.0)
+            # TEMPORARY live demo: permit one actor.  Do not copy this fallback
+            # into the benchmark; its C3 truth contract requires a peer.
+            peer_valid = int(shoulder_mid is not None)
+            head_lateral = ((nose[0] - shoulder_mid[0]) / shoulder_scale) if head_valid else None
+            torso_lateral = ((shoulder_mid[0] - hip_mid[0]) / torso_scale) if torso_valid else None
+            direction = (
+                1.0 if peer_x is None or peer_x > shoulder_mid[0] else -1.0
+            ) if peer_valid else None
+            observations.append({
+                "row": row, "frame": frame_index,
+                "head_lateral": head_lateral, "torso_lateral": torso_lateral,
+                "direction": direction, "head_valid": head_valid,
+                "torso_valid": torso_valid, "peer_valid": peer_valid,
+                "required_valid": required_valid,
+            })
+
+        def baseline(name):
+            values = [item[name] for item in observations[:baseline_frames] if item[name] is not None]
+            return float(np.median(values)) if values else None
+
+        baseline_head = baseline("head_lateral")
+        baseline_torso = baseline("torso_lateral")
+        previous_head = None
+        previous_torso = None
+        previous_frame = None
+        for item in observations:
+            row = item["row"]
+            head_delta = 0.0
+            torso_delta = 0.0
+            if item["head_lateral"] is not None and baseline_head is not None and item["direction"] is not None:
+                head_delta = item["direction"] * (item["head_lateral"] - baseline_head)
+            if item["torso_lateral"] is not None and baseline_torso is not None and item["direction"] is not None:
+                torso_delta = item["direction"] * (item["torso_lateral"] - baseline_torso)
+            dt = max(1.0, float(item["frame"] - previous_frame)) if previous_frame is not None else 1.0
+            head_velocity = (head_delta - previous_head) / dt if previous_head is not None and item["head_valid"] and item["peer_valid"] else 0.0
+            torso_velocity = (torso_delta - previous_torso) / dt if previous_torso is not None and item["torso_valid"] and item["peer_valid"] else 0.0
+            row.update({
+                "c3_pose_head_peer_delta": head_delta,
+                "c3_pose_torso_peer_delta": torso_delta,
+                "c3_pose_head_peer_velocity": head_velocity,
+                "c3_pose_torso_peer_velocity": torso_velocity,
+                "c3_pose_head_valid": float(item["head_valid"]),
+                "c3_pose_torso_valid": float(item["torso_valid"]),
+                "c3_pose_peer_valid": float(item["peer_valid"]),
+                "c3_pose_required_valid": float(item["required_valid"]),
+            })
+            if item["head_valid"] and item["peer_valid"]:
+                previous_head = head_delta
+            if item["torso_valid"] and item["peer_valid"]:
+                previous_torso = torso_delta
+            previous_frame = item["frame"]
     return rows
 
 
@@ -1054,6 +1246,53 @@ def aggregate_actor_rows(rows, selected_features=None):
     return actor_rows, feature_names
 
 
+def causal_aggregate_rows(
+    rows,
+    selected_features=None,
+    warmup_frames=CAUSAL_WARMUP_FRAMES,
+    window_frames=90,
+):
+    """Build one actor rolling-window row per frame using only current/past values."""
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[(row["clip_id"], row["actor_id"])].append(row)
+    feature_names = []
+    statistics = ("mean", "std", "max", "q95", "min")
+    base_features = selected_features or FEATURES or ACTOR_BASE_FEATURES
+    for base in base_features:
+        for statistic in statistics:
+            feature_names.append(f"{base}__{statistic}")
+    prefix_rows = []
+    for (video, actor_id), group in grouped.items():
+        ordered = sorted(group, key=lambda row: int(row.get("source_frame_index", 0)))
+        window = CausalActorWindow(actor_id, base_features, max_frames=window_frames)
+        for row in ordered:
+            state = window.update(
+                frame_index=int(row.get("source_frame_index", 0)),
+                timestamp_ms=int(number(row.get("timestamp_ms", 0))),
+                features=row,
+            )
+            prefix = {
+                "video": video,
+                "actor_id": actor_id,
+                "truth": row["actor_truth"],
+                "actor_truth": row["actor_truth"],
+                "interaction_peer_ids": row["interaction_peer_ids"],
+                "source_actor": row["source_actor"],
+                "manifest_class_code": row["manifest_class_code"],
+                "source_frame_index": row.get("source_frame_index", ""),
+                "timestamp_ms": row.get("timestamp_ms", ""),
+                "near_midpoint_pre_cross": row.get("near_midpoint_pre_cross", "0"),
+                "actor_label": row.get("actor_label", row["actor_truth"]),
+                "prefix_frames": state.window_size,
+                "warmup_ready": int(state.window_size >= warmup_frames),
+                "window_start_frame": state.window_start_frame,
+            }
+            prefix.update(state.features)
+            prefix_rows.append(prefix)
+    return prefix_rows, feature_names
+
+
 def fit_actor_model(train_rows, feature_names, c7_weight=3.0):
     counts = defaultdict(int)
     for row in train_rows:
@@ -1115,16 +1354,17 @@ def fit_binary_actor_model(train_rows, feature_names, positive_class, positive_w
 def explicit_pair_keys(rows):
     """Return exact declared actor pairs, never all actors in one video."""
     pairs = set()
-    observed = {(row["video"], row["actor_id"]) for row in rows}
+    observed = {(row.get("video") or row["clip_id"], row["actor_id"]) for row in rows}
     for row in rows:
+        video = row.get("video") or row["clip_id"]
         try:
             peers = json.loads(row.get("interaction_peer_ids") or "[]")
         except json.JSONDecodeError as exc:
-            raise ValueError(f"invalid interaction peers for {row['video']}/{row['actor_id']}") from exc
+            raise ValueError(f"invalid interaction peers for {video}/{row['actor_id']}") from exc
         for peer in peers:
-            other = (row["video"], str(peer))
+            other = (video, str(peer))
             if other in observed:
-                pairs.add(frozenset(((row["video"], row["actor_id"]), other)))
+                pairs.add(frozenset(((video, row["actor_id"]), other)))
     return pairs
 
 
@@ -1405,6 +1645,84 @@ def specialist_priority_predictions(
     return output
 
 
+def attach_specialist_frame_evidence(
+    predictions, test_rows, frame_probabilities, c3_frame_probabilities
+):
+    """Attach strongest and first-threshold frames without changing classes."""
+    grouped = defaultdict(list)
+    for row, probability, c3_probability in zip(
+        test_rows, frame_probabilities, c3_frame_probabilities
+    ):
+        grouped[(row["clip_id"], row["actor_id"])].append(
+            (row, probability, float(c3_probability))
+        )
+    pairs = explicit_pair_keys(test_rows)
+    pair_by_key = {}
+    for pair in pairs:
+        for key in pair:
+            pair_by_key[key] = pair
+
+    for prediction in predictions:
+        key = (prediction["video"], prediction["actor_id"])
+        evidence_class = prediction["predicted_class"]
+        chosen = None
+        first_flag = None
+        source_actor = prediction["actor_id"]
+        if evidence_class == "c3":
+            candidates = grouped.get(key, [])
+            if candidates:
+                chosen = max(candidates, key=lambda item: item[2])
+                first_flag = next(
+                    (
+                        item for item in sorted(
+                            candidates,
+                            key=lambda item: int(item[0].get("source_frame_index", 0)),
+                        ) if item[2] >= FRAME_FLAG_THRESHOLD
+                    ),
+                    None,
+                )
+        elif evidence_class == "c2":
+            pair = pair_by_key.get(key)
+            candidates = []
+            if pair:
+                for pair_key in pair:
+                    for item in grouped.get(pair_key, []):
+                        row, probability, _ = item
+                        if number(row.get("near_midpoint_pre_cross")) >= 1.0:
+                            candidates.append((float(probability[0]) - float(probability[2]), pair_key, item))
+            if candidates:
+                _, source_key, chosen = max(candidates, key=lambda item: item[0])
+                source_actor = source_key[1]
+                first_flag = next(
+                    (
+                        item for score, _, item in sorted(
+                            candidates,
+                            key=lambda item: int(item[2][0].get("source_frame_index", 0)),
+                        ) if score >= FRAME_FLAG_THRESHOLD
+                    ),
+                    None,
+                )
+        prediction.update({
+            "evidence_class": evidence_class if chosen is not None else "",
+            "evidence_source_actor_id": source_actor,
+            "evidence_frame_index": chosen[0].get("source_frame_index", "") if chosen else "",
+            "evidence_timestamp_ms": chosen[0].get("timestamp_ms", "") if chosen else "",
+            "evidence_score": (
+                float(chosen[2]) if evidence_class == "c3" and chosen else
+                float(chosen[1][0]) - float(chosen[1][2]) if evidence_class == "c2" and chosen else
+                ""
+            ),
+            "first_flag_frame_index": first_flag[0].get("source_frame_index", "") if first_flag else "",
+            "first_flag_timestamp_ms": first_flag[0].get("timestamp_ms", "") if first_flag else "",
+            "frame_flag_threshold": FRAME_FLAG_THRESHOLD,
+            "evidence_status": (
+                "positive_frame" if first_flag is not None else
+                "no_threshold_frame" if chosen is not None else "none"
+            ),
+        })
+    return predictions
+
+
 def fit_c3_frame_model(rows):
     labels = np.asarray([int(row["truth"] == "c3") for row in rows], dtype=np.float32)
     counts = {0: max(1, int((labels == 0).sum())), 1: max(1, int((labels == 1).sum()))}
@@ -1470,6 +1788,398 @@ def priority_state_predictions(rows, probabilities, c3_probabilities):
     return output
 
 
+def causal_specialist_replay(
+    rows,
+    c2_probabilities,
+    c3_probabilities,
+    *,
+    c3_threshold,
+    suspicious_probabilities=None,
+    suspicious_threshold=None,
+    c3_gate=None,
+    suspicious_gate=None,
+    warmup_frames=CAUSAL_WARMUP_FRAMES,
+):
+    """Replay the same state machine intended for the live feed."""
+    if suspicious_probabilities is None:
+        suspicious_probabilities = np.zeros(len(rows), dtype=np.float32)
+    usable = [
+        (row, float(c2), float(c3), float(suspicious))
+        for row, c2, c3, suspicious in zip(rows, c2_probabilities, c3_probabilities, suspicious_probabilities)
+        if row["warmup_ready"]
+    ]
+    output = []
+    encode = lambda key: f"{key[0]}::{key[1]}"
+    for video in sorted({str(row["video"]) for row, _, _, _ in usable}):
+        video_rows = [(row, c2, c3, suspicious) for row, c2, c3, suspicious in usable if str(row["video"]) == video]
+        actor_keys = sorted({(video, str(row["actor_id"])) for row, _, _, _ in video_rows})
+        actor_ids = [encode(key) for key in actor_keys]
+        pairs = [
+            tuple(encode(key) for key in pair)
+            for pair in explicit_pair_keys([row for row, _, _, _ in video_rows])
+            if len(pair) == 2
+        ]
+        state = CausalSpecialistState(
+            tuple(actor_ids), c3_threshold=c3_threshold,
+            suspicious_threshold=suspicious_threshold, c3_gate=c3_gate,
+            suspicious_gate=suspicious_gate,
+        )
+        by_frame: dict[int, list[tuple[dict[str, object], float, float, float]]] = defaultdict(list)
+        truth_by_actor: dict[str, str] = {}
+        for row, c2, c3, suspicious in video_rows:
+            by_frame[int(row["source_frame_index"])].append((row, c2, c3, suspicious))
+            truth_by_actor[encode((video, str(row["actor_id"])))]= str(row["truth"])
+        for frame_index in sorted(by_frame):
+            current = by_frame[frame_index]
+            scores = {
+                encode((video, str(row["actor_id"]))): {
+                    "c2": c2, "c3": c3, "suspicious_activity": suspicious,
+                    "strict_hand_quality__mean": row.get("strict_hand_quality__mean", 0.0),
+                    "hand_motion__q95": row.get("hand_motion__q95", 0.0),
+                    "finger_motion__q95": row.get("finger_motion__q95", 0.0),
+                    "c3_pose_head_peer_delta__max": row.get("c3_pose_head_peer_delta__max", 0.0),
+                    "strict_head_down_delta__q95": row.get("strict_head_down_delta__q95", 0.0),
+                    "strict_hand_below_hip__max": row.get("strict_hand_below_hip__max", 0.0),
+                    "strict_own_side_outside_midpoint__max": row.get("strict_own_side_outside_midpoint__max", 0.0),
+                }
+                for row, c2, c3, suspicious in current
+            }
+            midpoint = {
+                # C2 midpoint evidence must occur on the same observed frame
+                # as the causal decision.  A rolling max can retain midpoint
+                # evidence from an earlier frame while the current C2 score
+                # comes from a different frame, creating synthetic exchange
+                # evidence and suspicious_activity -> c2 false positives.
+                encode((video, str(row["actor_id"]))): row.get("near_midpoint_pre_cross__max", 0.0)
+                for row, _, _, _ in current
+            }
+            timestamp = min(int(number(row.get("timestamp_ms", 0))) for row, _, _, _ in current)
+            state.update(
+                frame_index=frame_index,
+                timestamp_ms=timestamp,
+                scores_by_actor=scores,
+                explicit_pairs=pairs,
+                near_midpoint_by_actor=midpoint,
+            )
+
+        for actor_key, decision in state.decisions().items():
+            _, actor_id = actor_key.split("::", 1)
+            source_actor_id = decision.source_actor_id or ""
+            if "::" in source_actor_id:
+                source_actor_id = source_actor_id.split("::", 1)[1]
+            output.append({
+                "video": video,
+                "actor_id": actor_id,
+                "truth": truth_by_actor[actor_key],
+                "predicted_class": decision.class_code,
+                "evidence_class": decision.class_code if decision.evidence_frame_index is not None else "",
+                "evidence_source_actor_id": source_actor_id,
+                "evidence_frame_index": decision.evidence_frame_index if decision.evidence_frame_index is not None else "",
+                "evidence_timestamp_ms": decision.evidence_timestamp_ms if decision.evidence_timestamp_ms is not None else "",
+                "evidence_score": decision.evidence_score if decision.evidence_score is not None else "",
+                "first_flag_frame_index": decision.first_flag_frame_index if decision.first_flag_frame_index is not None else "",
+                "first_flag_timestamp_ms": decision.first_flag_timestamp_ms if decision.first_flag_timestamp_ms is not None else "",
+                "first_flag_source_actor_id": source_actor_id,
+                "warmup_frames": warmup_frames,
+                "frames_scanned_after_warmup": sum(
+                    1 for row, _, _, _ in video_rows
+                    if str(row["actor_id"]) == actor_id
+                ),
+                "causal": True,
+            })
+    return output
+
+
+def _fit_actor_max_threshold(rows, probabilities, positive_class):
+    """Fit a threshold on the exact actor-level max-prefix statistic."""
+    grouped = defaultdict(list)
+    for row, probability in zip(rows, probabilities):
+        grouped[(row["video"], row["actor_id"])].append(float(probability))
+    actor_rows = [
+        (key, max(values), rows_by_key_truth(rows, key))
+        for key, values in grouped.items()
+    ]
+    candidates = sorted({score for _, score, _ in actor_rows} | {0.5})
+    best = (0.0, 0.5)
+    for threshold in candidates:
+        tp = sum(truth == positive_class and score >= threshold for _, score, truth in actor_rows)
+        fp = sum(truth != positive_class and score >= threshold for _, score, truth in actor_rows)
+        fn = sum(truth == positive_class and score < threshold for _, score, truth in actor_rows)
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        candidate = (f1, threshold)
+        if candidate[0] > best[0] or candidate[0] == best[0] and candidate[1] > best[1]:
+            best = candidate
+    return best[1]
+
+
+def rows_by_key_truth(rows, key):
+    for row in rows:
+        if (row["video"], row["actor_id"]) == key:
+            return row["truth"]
+    raise KeyError(key)
+
+
+def run_causal_replay(train_frame_rows, test_frame_rows, output_dir, *, c7_weight=3.0, c3_pose_only=False):
+    """Train and evaluate the causal live-feed specialist replay."""
+    if not EXCLUDE_C7:
+        raise ValueError("causal replay currently requires --exclude-c7")
+    if EXTENDED_SUSPICIOUS:
+        return run_extended_suspicious_causal_replay(
+            train_frame_rows, test_frame_rows, output_dir
+        )
+    causal_c2_train, c2_feature_names = causal_aggregate_rows(
+        train_frame_rows, C2_CUE_FEATURES, window_frames=90
+    )
+    c3_bases = C3_POSE_ONLY_FEATURES if c3_pose_only else C3_FEATURES
+    causal_c3_train, c3_feature_names = causal_aggregate_rows(
+        train_frame_rows, c3_bases, window_frames=90
+    )
+    causal_c2_test, _ = causal_aggregate_rows(test_frame_rows, C2_CUE_FEATURES)
+    causal_c3_test, _ = causal_aggregate_rows(test_frame_rows, c3_bases, window_frames=90)
+    train_c2 = [row for row in causal_c2_train if row["warmup_ready"]]
+    train_c3 = [row for row in causal_c3_train if row["warmup_ready"]]
+    test_c2 = [row for row in causal_c2_test if row["warmup_ready"]]
+    test_c3 = [row for row in causal_c3_test if row["warmup_ready"]]
+
+    c2_model, c2_counts = fit_binary_actor_model(
+        train_c2, c2_feature_names, "c2", positive_weight=3.0
+    )
+    c3_model, c3_counts = fit_binary_actor_model(
+        train_c3, c3_feature_names, "c3", positive_weight=3.0
+    )
+    c2_model.save_model(str(output_dir / "causal_c2_specialist.ubj"))
+    c3_model.save_model(str(output_dir / "causal_c3_specialist.ubj"))
+    (output_dir / "causal_c2_feature_names.json").write_text(
+        json.dumps(c2_feature_names, indent=2), encoding="utf-8"
+    )
+    (output_dir / "causal_c3_feature_names.json").write_text(
+        json.dumps(c3_feature_names, indent=2), encoding="utf-8"
+    )
+
+    train_c3_probabilities = c3_model.predict(
+        xgb.DMatrix(np.asarray(
+            [[row[name] for name in c3_feature_names] for row in train_c3],
+            dtype=np.float32,
+        ))
+    )
+    c3_threshold = (
+        _fit_actor_max_threshold(train_c3, train_c3_probabilities, "c3")
+        if c3_pose_only else fit_binary_threshold(train_c3, train_c3_probabilities, "c3")
+    )
+    test_c2_probabilities = c2_model.predict(
+        xgb.DMatrix(np.asarray(
+            [[row[name] for name in c2_feature_names] for row in test_c2],
+            dtype=np.float32,
+        ))
+    )
+    test_c3_probabilities = c3_model.predict(
+        xgb.DMatrix(np.asarray(
+            [[row[name] for name in c3_feature_names] for row in test_c3],
+            dtype=np.float32,
+        ))
+    )
+    test_c3_by_key = {
+        (row["video"], row["actor_id"], row["source_frame_index"]): float(score)
+        for row, score in zip(test_c3, test_c3_probabilities)
+    }
+    aligned_c2 = []
+    aligned_c2_scores = []
+    aligned_c3_scores = []
+    for row, score in zip(test_c2, test_c2_probabilities):
+        key = (row["video"], row["actor_id"], row["source_frame_index"])
+        if key not in test_c3_by_key:
+            continue
+        aligned_c2.append(row)
+        aligned_c2_scores.append(float(score))
+        aligned_c3_scores.append(test_c3_by_key[key])
+    predictions = causal_specialist_replay(
+        aligned_c2,
+        aligned_c2_scores,
+        aligned_c3_scores,
+        c3_threshold=c3_threshold,
+    )
+    with (output_dir / "causal_specialist_predictions.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
+        fields = list(predictions[0]) if predictions else []
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(predictions)
+
+    metrics = {
+        "protocol": "actor_only_causal_live_feed_rolling_replay",
+        "primary_unit": "(video, actor_id)",
+        "metric_labels": ["c2", "c3", "c5"],
+        "video_level_metrics": "forbidden",
+        "causal": True,
+        "future_frames_used_for_decision": False,
+        "warmup_frames": CAUSAL_WARMUP_FRAMES,
+        "rolling_window_frames": 90,
+        "train_prefix_rows": len(train_c2),
+        "test_prefix_rows": len(aligned_c2),
+        "train_actor_count": len({(row["video"], row["actor_id"]) for row in train_c2}),
+        "test_actor_count": len(predictions),
+        "c2_train_prefix_counts": c2_counts,
+        "c3_train_prefix_counts": c3_counts,
+        "c2_threshold": 0.5,
+        "c3_threshold_train_only": c3_threshold,
+        "c3_feature_family": "pose_only_contract" if c3_pose_only else "historical_pose_face_pnp",
+        "c3_threshold_calibration_unit": "train_actor_max_prefix" if c3_pose_only else "train_prefix_row",
+        "frame_flag_rule": "first causal prefix frame where specialist priority enters c2 or c3",
+        "evidence_rule": "strongest causal prefix score observed up to final frame",
+        "actor_flagged_count": sum(bool(row["first_flag_frame_index"] != "") for row in predictions),
+        "target_actor_unflagged_count": sum(
+            row["truth"] in {"c2", "c3"} and row["first_flag_frame_index"] == ""
+            for row in predictions
+        ),
+        **actor_metrics(predictions),
+    }
+    (output_dir / "causal_actor_metrics.json").write_text(
+        json.dumps(metrics, indent=2), encoding="utf-8"
+    )
+    return metrics
+
+
+def _train_quantile(rows, name, truth, quantile, fallback):
+    values = [number(row.get(name)) for row in rows if row["truth"] == truth]
+    return float(np.quantile(values, quantile)) if values else float(fallback)
+
+
+def _extended_gate_thresholds(train_rows):
+    """Fit all rule limits from train prefix rows only."""
+    return {
+        # C3: quiet hand/fingers, peer-directed side turn, and no head-down.
+        "c3_motion_ceiling": max(
+            _train_quantile(train_rows, "hand_motion__q95", "c3", 0.95, 0.0),
+            _train_quantile(train_rows, "finger_motion__q95", "c3", 0.95, 0.0),
+        ),
+        "c3_side_floor": max(0.05, _train_quantile(
+            train_rows, "c3_pose_head_peer_delta__max", "c3", 0.25, 0.0
+        )),
+        # Contract is a hard C3 exclusion: meaningful downward head motion
+        # never qualifies as a side-looking C3 cue.
+        "c3_down_ceiling": min(
+            _train_quantile(train_rows, "strict_head_down_delta__q95", "c3", 0.95, 0.0),
+            0.05,
+        ),
+        # Suspicious: down, active hand, below-hip and own-side evidence.
+        "suspicious_down_floor": _train_quantile(
+            train_rows, "strict_head_down_delta__q95", "suspicious_activity", 0.25, 0.0
+        ),
+        "suspicious_motion_floor": max(
+            _train_quantile(train_rows, "hand_motion__q95", "suspicious_activity", 0.25, 0.0),
+            _train_quantile(train_rows, "finger_motion__q95", "suspicious_activity", 0.25, 0.0),
+        ),
+        "suspicious_lower_floor": _train_quantile(
+            train_rows, "strict_hand_below_hip__max", "suspicious_activity", 0.25, 0.0
+        ),
+    }
+
+
+def run_extended_suspicious_causal_replay(train_frame_rows, test_frame_rows, output_dir):
+    """Causal C2/C3/suspicious replay on the preserved stage2 path.
+
+    A single prefix stream supplies all three specialists.  This keeps the
+    existing causal aggregation, XGBoost training, train-only thresholds and
+    actor state machine while avoiding duplicate temporal-prefix materialization.
+    """
+    shared_bases = tuple(dict.fromkeys((
+        *C2_CUE_FEATURES, *C3_POSE_ONLY_FEATURES, *STRICT_C3_SUSPICIOUS_FEATURES,
+    )))
+    train_prefix, shared_names = causal_aggregate_rows(train_frame_rows, shared_bases)
+    test_prefix, _ = causal_aggregate_rows(test_frame_rows, shared_bases)
+    train_rows = [row for row in train_prefix if row["warmup_ready"]]
+    test_rows = [row for row in test_prefix if row["warmup_ready"]]
+    c2_names = [name for name in shared_names if name.split("__", 1)[0] in C2_CUE_FEATURES]
+    c3_names = [name for name in shared_names if name.split("__", 1)[0] in (*C3_POSE_ONLY_FEATURES, *STRICT_C3_SUSPICIOUS_FEATURES)]
+    suspicious_names = [name for name in shared_names if name.split("__", 1)[0] in STRICT_C3_SUSPICIOUS_FEATURES]
+    specs = {
+        "c2": c2_names,
+        "c3": c3_names,
+        "suspicious_activity": suspicious_names,
+    }
+    models, thresholds, train_scores, test_scores = {}, {}, {}, {}
+    for code, names in specs.items():
+        model, _ = fit_binary_actor_model(train_rows, names, code, positive_weight=3.0)
+        models[code] = model
+        model.save_model(str(output_dir / f"causal_{code}_specialist.ubj"))
+        (output_dir / f"causal_{code}_feature_names.json").write_text(
+            json.dumps(names, indent=2), encoding="utf-8"
+        )
+        train_scores[code] = model.predict(xgb.DMatrix(np.asarray(
+            [[row[name] for name in names] for row in train_rows], dtype=np.float32
+        )))
+        test_scores[code] = model.predict(xgb.DMatrix(np.asarray(
+            [[row[name] for name in names] for row in test_rows], dtype=np.float32
+        )))
+        thresholds[code] = _fit_actor_max_threshold(train_rows, train_scores[code], code)
+    gates = _extended_gate_thresholds(train_rows)
+
+    def c3_gate(values):
+        return (
+            number(values.get("strict_hand_quality__mean")) > 0.0
+            and number(values.get("hand_motion__q95")) <= gates["c3_motion_ceiling"]
+            and number(values.get("finger_motion__q95")) <= gates["c3_motion_ceiling"]
+            and number(values.get("c3_pose_head_peer_delta__max")) >= gates["c3_side_floor"]
+            and number(values.get("strict_head_down_delta__q95")) <= gates["c3_down_ceiling"]
+        )
+
+    def suspicious_gate(values):
+        return (
+            number(values.get("strict_head_down_delta__q95")) >= gates["suspicious_down_floor"]
+            and max(number(values.get("hand_motion__q95")), number(values.get("finger_motion__q95"))) >= gates["suspicious_motion_floor"]
+            and number(values.get("strict_hand_below_hip__max")) >= gates["suspicious_lower_floor"]
+            and number(values.get("strict_own_side_outside_midpoint__max")) >= 1.0
+        )
+
+    predictions = causal_specialist_replay(
+        test_rows,
+        test_scores["c2"],
+        test_scores["c3"],
+        c3_threshold=thresholds["c3"],
+        suspicious_probabilities=test_scores["suspicious_activity"],
+        suspicious_threshold=thresholds["suspicious_activity"],
+        c3_gate=c3_gate,
+        suspicious_gate=suspicious_gate,
+    )
+    labels = ["suspicious_activity", "c2", "c3", "c5"]
+    truth = [row["truth"] for row in predictions]
+    predicted = [row["predicted_class"] for row in predictions]
+    report = classification_report(truth, predicted, labels=labels, output_dict=True, zero_division=0)
+    metrics = {
+        "protocol": "actor_only_causal_live_feed_rolling_replay_extended_suspicious",
+        "primary_unit": "(video, actor_id)", "metric_labels": labels,
+        "causal": True, "future_frames_used_for_decision": False,
+        "official_benchmark_unchanged": True,
+        "official_benchmark_labels": ["c2", "c3", "c5"],
+        "shared_prefix_stream": True,
+        "specialist_thresholds_train_only": thresholds,
+        "gate_thresholds_train_only": gates,
+        "rules": {
+            "c2": "finger-or-hand midpoint evidence through existing explicit-pair gate",
+            "c3": "quiet hand/fingers, peer side-turn, no head-down",
+            "suspicious_activity": "head down, active hand, below hip, own side outside midpoint",
+        },
+        "actor_macro_f1": float(f1_score(truth, predicted, labels=labels, average="macro", zero_division=0)),
+        "actor_metrics": {label: report[label] for label in labels},
+        "actor_confusion_matrix": confusion_matrix(truth, predicted, labels=labels).tolist(),
+        "test_actor_count": len(predictions),
+        "leakage": {
+            "raw_actor_id_overlap": sorted({row["actor_id"] for row in train_frame_rows} & {row["actor_id"] for row in test_frame_rows}),
+            "clip_id_overlap": sorted({row["clip_id"] for row in train_frame_rows} & {row["clip_id"] for row in test_frame_rows}),
+            "split_group_overlap": sorted({row["split_group"] for row in train_frame_rows} & {row["split_group"] for row in test_frame_rows}),
+            "truth_used_as_model_feature": False, "identity_used_as_model_feature": False,
+            "future_rows_used_for_decision": 0,
+        },
+    }
+    with (output_dir / "causal_specialist_predictions.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(predictions[0])); writer.writeheader(); writer.writerows(predictions)
+    (output_dir / "causal_actor_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    return metrics
+
+
 def run(
     input_path: Path,
     manifest_path: Path,
@@ -1481,14 +2191,25 @@ def run(
     priority_mode: bool = False,
     hand_jitter_aware: bool = False,
     exclude_c7: bool = False,
+    causal_replay: bool = False,
+    c3_pose_only: bool = False,
+    extended_suspicious: bool = False,
 ):
-    global FEATURES, LEGACY_C7_FORMULA, MODEL_CLASSES, TARGET_CLASSES, EXCLUDE_C7
+    global FEATURES, LEGACY_C7_FORMULA, MODEL_CLASSES, TARGET_CLASSES, EXCLUDE_C7, EXTENDED_SUSPICIOUS
     # The default path is the preserved benchmark.  The hand-jitter/Q7 branch
     # is opt-in and must never silently change the deployed c7 formula.
     LEGACY_C7_FORMULA = not hand_jitter_aware
     EXCLUDE_C7 = bool(exclude_c7)
-    MODEL_CLASSES = ("c2", "c3", "c5") if EXCLUDE_C7 else ("c2", "c3", "c5", "c7")
-    TARGET_CLASSES = ("c2", "c3") if EXCLUDE_C7 else ("c2", "c3", "c7")
+    # suspicious_activity experiment disabled for official benchmark.
+    # To re-enable later, undo this comment and use the existing opt-in flag.
+    # EXTENDED_SUSPICIOUS = bool(extended_suspicious)
+    EXTENDED_SUSPICIOUS = False
+    if EXTENDED_SUSPICIOUS and not (EXCLUDE_C7 and causal_replay and c3_pose_only):
+        raise ValueError("--extended-suspicious requires --exclude-c7 --causal-replay --c3-pose-only")
+    MODEL_CLASSES = (("suspicious_activity", "c2", "c3", "c5") if EXTENDED_SUSPICIOUS else
+                     (("c2", "c3", "c5") if EXCLUDE_C7 else ("c2", "c3", "c5", "c7")))
+    TARGET_CLASSES = (("suspicious_activity", "c2", "c3") if EXTENDED_SUSPICIOUS else
+                      (("c2", "c3") if EXCLUDE_C7 else ("c2", "c3", "c7")))
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest = load_manifest(manifest_path)
     actor_mapping = load_actor_mapping(mapping_path)
@@ -1515,11 +2236,15 @@ def run(
         rows.append(row)
 
     rows = attach_selected_face_points(rows, json_root)
+    if c3_pose_only:
+        rows = derive_c3_pose_contract(rows)
     rows = _head_pnp_features(rows)
     rows = derive_behavior_motion(rows)
     rows = derive_face_c3_features(rows)
     rows = derive_finger_motion(rows)
     rows = derive_hand_shape_and_pair_cues(rows)
+    if EXTENDED_SUSPICIOUS:
+        rows = derive_strict_c2_c3_suspicious_cues(rows)
     if hand_jitter_aware:
         rows = derive_hand_jitter_aware_cues(rows)
     train_frame_rows = [row for row in rows if row["split"] == "train" and not row["excluded_source"]]
@@ -1532,6 +2257,15 @@ def run(
         train_frame_rows,
         allowed_features=NORMALIZED_FEATURES if feature_mode == "normalized" else None,
     )
+
+    if causal_replay:
+        return run_causal_replay(
+            train_frame_rows,
+            test_frame_rows,
+            output_dir,
+            c7_weight=c7_weight,
+            c3_pose_only=c3_pose_only,
+        )
 
     # Aggregate actor model is retained as a comparison artifact only.
     train_rows, actor_feature_names = aggregate_actor_rows(train_frame_rows)
@@ -1665,7 +2399,6 @@ def run(
         test_rows, c2_cue_probabilities, c3_cue_probabilities, c7_cue_probabilities,
         thresholds=specialist_thresholds,
     )
-
     frame_probabilities = frame_model.predict(
         xgb.DMatrix(np.asarray([features(row) for row in test_frame_rows], dtype=np.float32))
     )
@@ -1693,6 +2426,12 @@ def run(
     c3_frame_scores = c3_frame_actor_evidence(test_frame_rows, c3_frame_probabilities)
     for row in actor_rows:
         row["c3_frame_face_shoulder_score"] = float(c3_frame_scores[(row["video"], row["actor_id"])])
+    attach_specialist_frame_evidence(
+        specialist_predictions,
+        test_frame_rows,
+        frame_probabilities,
+        c3_frame_probabilities,
+    )
     priority_rows = priority_state_predictions(
         test_frame_rows, frame_probabilities, c3_frame_probabilities
     )
@@ -1706,6 +2445,15 @@ def run(
         }
         for row in actor_rows:
             row["predicted_class"] = specialist_by_key[(row["video"], row["actor_id"])] ["predicted_class"]
+            specialist = specialist_by_key[(row["video"], row["actor_id"])]
+            for field in (
+                "evidence_class", "evidence_source_actor_id",
+                "evidence_frame_index", "evidence_timestamp_ms",
+                "evidence_score", "first_flag_frame_index",
+                "first_flag_timestamp_ms", "frame_flag_threshold",
+                "evidence_status",
+            ):
+                row[field] = specialist[field]
 
     with (output_dir / "aggregate_actor_predictions.csv").open("w", encoding="utf-8", newline="") as handle:
         fields = list(aggregate_predictions[0]) if aggregate_predictions else []
@@ -1771,6 +2519,7 @@ def run(
         "primary_metric": "actor_macro_f1_c2_c3_c5" if EXCLUDE_C7 else "actor_macro_f1_c2_c3_c5_c7",
         "metric_labels": list((*TARGET_CLASSES, "c5")),
         "specialist_thresholds_train_only": specialist_thresholds,
+        "frame_flag_threshold": FRAME_FLAG_THRESHOLD,
         "q7_rule": (
             "V_hand AND own-side AND NOT midpoint AND NOT shared-zone AND "
             "(baseline-relative directional raise OR shape-change)"
@@ -1825,9 +2574,24 @@ def main():
     parser.add_argument("--priority-mode", action="store_true")
     parser.add_argument("--hand-jitter-aware", action="store_true")
     parser.add_argument(
+        "--causal-replay",
+        action="store_true",
+        help="Run causal live-feed prefix replay; requires --exclude-c7.",
+    )
+    parser.add_argument(
         "--exclude-c7",
         action="store_true",
         help="Train and evaluate only c2/c3/c5; omit c7 from the model and metrics.",
+    )
+    parser.add_argument(
+        "--c3-pose-only",
+        action="store_true",
+        help="Opt-in causal C3 A/B branch using contract-faithful pose head/torso features.",
+    )
+    parser.add_argument(
+        "--extended-suspicious",
+        action="store_true",
+        help="Opt-in C1/C4 -> suspicious_activity causal profile; requires causal C2/C3 pose-only mode.",
     )
     args = parser.parse_args()
     print(json.dumps(run(
@@ -1841,6 +2605,9 @@ def main():
         args.priority_mode,
         args.hand_jitter_aware,
         args.exclude_c7,
+        args.causal_replay,
+        args.c3_pose_only,
+        args.extended_suspicious,
     ), indent=2))
 
 

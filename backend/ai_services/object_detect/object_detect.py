@@ -7,6 +7,7 @@ import logging
 import time
 from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -266,6 +267,11 @@ class ObjectDetectModule:
         enable_person_roi: bool | None = None,
         enable_custom_paper_roi: bool | None = None,
         confirm_frames_by_class: dict[str, int] | None = None,
+        paper_class_names: set[str] | None = None,
+        flagged_classes: set[str] | None = None,
+        paper_confidence_threshold: float | None = None,
+        inference_size: int | None = None,
+        sahi_model: Any | None = None,
     ):
         self._detect_every_n_frames = (
             settings.object_detect_every_n_frames
@@ -402,9 +408,30 @@ class ObjectDetectModule:
                 "cell phone -> smartphone, book -> cheat_sheet"
             )
 
-        self._paper_classes = set(settings.paper_class_names)
+        self._paper_classes = set(
+            settings.paper_class_names
+            if paper_class_names is None
+            else paper_class_names
+        )
         # Paper classes never use the old class-level alert counter.
-        self._flagged = set(settings.flagged_classes) - self._paper_classes
+        self._flagged = set(
+            settings.flagged_classes if flagged_classes is None else flagged_classes
+        ) - self._paper_classes
+        self._paper_confidence_threshold = (
+            settings.paper_detection_confidence_threshold
+            if paper_confidence_threshold is None
+            else float(paper_confidence_threshold)
+        )
+        if not 0.0 <= self._paper_confidence_threshold <= 1.0:
+            raise ValueError("paper confidence threshold must be in [0, 1]")
+        self._inference_size = (
+            settings.object_inference_size
+            if inference_size is None
+            else int(inference_size)
+        )
+        if self._inference_size < 32:
+            raise ValueError("inference size must be at least 32")
+        self._sahi_model = sahi_model
 
         raw_model_names = self._names_dict(getattr(self._model, "names", {}))
         self._model_names = {
@@ -447,18 +474,19 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = False,
     ) -> dict[str, Any] | None:
+        """Run detection only for a pose-qualified current frame.
+
+        The object detector is a second-stage specialist.  A disabled pose
+        gate must never expose a previous positive result, because doing so
+        would turn a historical detection into a new realtime alert.
+        """
         seen = self._frames_seen.get(session_id, 0) + 1
         self._frames_seen[session_id] = seen
 
-        if seen % self._detect_every_n_frames != 0:
-            cached = self._last_result.get(session_id)
-            if cached is None:
-                return None
-            skipped_result = dict(cached)
-            skipped_result["inference_ran"] = False
-            skipped_result["requested_frame_id"] = frame_id
-            return skipped_result
+        if not pose_suspicious_activity:
+            return self._gated_off_result(frame_id)
 
         result = self._process_sync(
             frame,
@@ -468,8 +496,30 @@ class ObjectDetectModule:
         )
         result["inference_ran"] = True
         result["requested_frame_id"] = frame_id
+        result["pose_gate"] = True
         self._last_result[session_id] = result
         return result
+
+    def _gated_off_result(self, frame_id: int) -> dict[str, Any]:
+        """Return an explicit no-inference result without stale detections."""
+        return {
+            "label": "clear",
+            "risk_score": 0.0,
+            "confirmed_classes": [],
+            "raw_objects": [],
+            "paper_detections": [],
+            "model_capabilities": {
+                "supports_test_paper": self.supports_test_paper,
+                "paper_decision_mode": (
+                    "identity_plus_semantics"
+                    if self.supports_test_paper
+                    else "identity_and_count_only"
+                ),
+            },
+            "inference_ran": False,
+            "pose_gate": False,
+            "requested_frame_id": frame_id,
+        }
 
     def _process_sync(
         self,
@@ -479,20 +529,7 @@ class ObjectDetectModule:
         *,
         person_rois: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        predictions = self._model(
-            frame,
-            imgsz=settings.object_inference_size,
-            device=self._device,
-            conf=min(
-                settings.yolo_confidence_threshold,
-                settings.paper_detection_confidence_threshold,
-            ),
-            # Ultralytics keeps predictor arguments between calls. The custom
-            # paper ROI pass below sets ``classes`` to paper-only, so reset it
-            # explicitly before the next full-frame inference.
-            classes=None,
-            verbose=False,
-        )
+        predictions = self._predict_primary(frame)
         raw_objects = self._extract_detections(predictions)
         raw_objects.extend(
             self._detect_custom_paper_rois(
@@ -548,6 +585,44 @@ class ObjectDetectModule:
         }
         return result
 
+    def _predict_primary(self, frame: np.ndarray) -> Any:
+        """Run the configured primary detector, with SAHI as the runtime path."""
+        if self._sahi_model is None:
+            return self._model(
+                frame,
+                imgsz=self._inference_size,
+                device=self._device,
+                conf=min(
+                    settings.yolo_confidence_threshold,
+                    settings.paper_detection_confidence_threshold,
+                ),
+                # Ultralytics keeps predictor arguments between calls. The
+                # custom paper ROI pass below sets ``classes`` to paper-only,
+                # so reset it explicitly before the next full-frame inference.
+                classes=None,
+                verbose=False,
+            )
+
+        from .tiled_inference import predict_sahi
+
+        boxes, scores, classes = predict_sahi(
+            self._sahi_model,
+            frame,
+            imgsz=self._inference_size,
+        )
+        names = getattr(self._model, "names", self._model_names)
+        box_objects = [
+            SimpleNamespace(
+                cls=np.asarray([int(class_id)]),
+                conf=np.asarray([float(score)]),
+                xyxy=np.asarray([box.tolist()], dtype=float),
+            )
+            for box, score, class_id in zip(
+                boxes.tolist(), scores.tolist(), classes.tolist(), strict=True
+            )
+        ]
+        return [SimpleNamespace(names=names, boxes=box_objects)]
+
     def _extract_detections(self, predictions: Any) -> list[dict[str, Any]]:
         detections: list[dict[str, Any]] = []
         if not predictions:
@@ -571,7 +646,7 @@ class ObjectDetectModule:
 
             confidence = float(box.conf[0])
             threshold = (
-                settings.paper_detection_confidence_threshold
+                self._paper_confidence_threshold
                 if is_paper
                 else settings.object_class_confidence_thresholds.get(
                     class_name,

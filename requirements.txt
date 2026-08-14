@@ -20,13 +20,20 @@ noisereduce
 numba>=0.59.0
 numpy>=1.26,<3.0
 onnxruntime
-opencv-python>=4.10,<5.0
+opencv-python>=4.10,<6.0
+
+# Pose/Gaze causal C2/C3 realtime runtime.  The committed XGBoost artifacts
+# were smoke-tested with the bounded major versions below.
+mediapipe>=0.10,<0.11
+scikit-learn>=1.4,<2.0
+xgboost>=3.0,<4.0
 
 pandas==3.0.5
 pyvi==0.1.1
 
 ultralytics>=8.3,<9.0
-config
+sahi>=0.12.5
+wandb>=0.28
 
 # face_verify: RetinaFace (detection) + ArcFace (recognition), chạy qua onnxruntime.
 # Model pack "buffalo_l" (~280MB) sẽ tự động tải về ~/.insightface/models khi
@@ -36,9 +43,6 @@ insightface>=0.7,<1.0
 # uv pip install faiss-cpu
 
 
-ctranslate2
-av
-
 rapidfuzz
 scipy
 sentencepiece 
@@ -47,7 +51,6 @@ sounddevice
 soundfile
 transformers==5.14.1
 
-ultralytics>=8.3,<9.0
 uvicorn[standard]>=0.30,<1.0
 websockets
 
@@ -55,8 +58,6 @@ underthesea
 
 # webrtcvad-wheel
 
-pandas==3.0.5
-datasets==5.0.0
 # sudo apt-get install portaudio19-dev python3-pyaudio
 pyaudio
 
