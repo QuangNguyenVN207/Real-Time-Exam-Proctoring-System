@@ -32,8 +32,9 @@ from ...tracking.webcam import (
 
 DEFAULT_ACTION_ARTIFACTS = {
     "c2c3": PROJECT_ROOT / "tmp" / "behavior_actor_causal_pose_only_20260812",
+    "extended": PROJECT_ROOT / "tmp" / "behavior_actor_extended_suspicious_readiness15_baseline15_20260814",
 }
-SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c7")
+SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,8 +99,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--crop-padding", type=float, default=0.15)
     parser.add_argument(
         "--actions",
-        default="c2,c3",
-        help="Comma-separated actions to enable; default c2,c3 uses committed benchmark artifact",
+        default="c2,c3,suspicious_activity",
+        help="Comma-separated actions to enable; default runs C2/C3/C5 plus suspicious_activity",
     )
     parser.add_argument(
         "--causal-model-dir",
@@ -141,12 +142,14 @@ def configure_action_models(args: argparse.Namespace) -> tuple[str, ...]:
     enabled = tuple(action for action in SUPPORTED_ACTIONS if action in requested)
     if not enabled:
         raise ValueError("--actions must enable at least one action")
-    if {"c2", "c3"} & set(enabled):
+    if "suspicious_activity" in enabled:
+        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
+    elif {"c2", "c3"} & set(enabled):
         args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["c2c3"]
     # Only the locked C2/C3 benchmark artifact is bundled.  Other specialists
     # require an explicit artifact directory instead of silently referencing
     # local, uncommitted experiment outputs.
-    if not ({"c2", "c3"} & set(enabled)):
+    if not ({"c2", "c3", "suspicious_activity"} & set(enabled)):
         args.causal_model_dir = None
     if "c1" not in enabled:
         args.c1_model_dir = None
