@@ -77,7 +77,7 @@ class CausalLiveActorClassifier:
         self._windows_c2: dict[str, CausalActorWindow] = {}
         self._windows_c3: dict[str, CausalActorWindow] = {}
         self._windows_suspicious: dict[str, CausalActorWindow] = {}
-        gates = metrics.get("gate_thresholds_train_only", {})
+        self.gates = metrics.get("gate_thresholds_train_only", {})
         self._state = CausalSpecialistState(
             (), c3_threshold=self.c3_threshold,
             suspicious_threshold=self.suspicious_threshold,
@@ -255,16 +255,16 @@ class CausalLiveActorClassifier:
             c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
             scores[actor_id]["c3_gate"] = (
-                row.get("hand_motion", 0.0) <= gates.get("c3_motion_ceiling", float("inf"))
-                and row.get("c3_pose_head_peer_delta", 0.0) >= gates.get("c3_side_floor", float("-inf"))
-                and row.get("strict_head_down_delta", 0.0) <= gates.get("c3_down_ceiling", float("inf"))
+                row.get("hand_motion", 0.0) <= self.gates.get("c3_motion_ceiling", float("inf"))
+                and row.get("c3_pose_head_peer_delta", 0.0) >= self.gates.get("c3_side_floor", float("-inf"))
+                and row.get("strict_head_down_delta", 0.0) <= self.gates.get("c3_down_ceiling", float("inf"))
             )
             if suspicious_state is not None:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[suspicious_state.features[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
-                    row.get("strict_head_down_delta", 0.0) >= gates.get("suspicious_down_floor", float("inf"))
-                    and max(row.get("hand_motion", 0.0), row.get("finger_motion", 0.0)) >= gates.get("suspicious_motion_floor", float("inf"))
-                    and row.get("strict_hand_below_hip", 0.0) >= gates.get("suspicious_lower_floor", float("inf"))
+                    row.get("strict_head_down_delta", 0.0) >= self.gates.get("suspicious_down_floor", float("inf"))
+                    and max(row.get("hand_motion", 0.0), row.get("finger_motion", 0.0)) >= self.gates.get("suspicious_motion_floor", float("inf"))
+                    and row.get("strict_hand_below_hip", 0.0) >= self.gates.get("suspicious_lower_floor", float("inf"))
                     and row.get("strict_own_side_outside_midpoint", 0.0) >= 1.0
                 )
             midpoint[actor_id] = row.get("near_midpoint_pre_cross", 0.0)
