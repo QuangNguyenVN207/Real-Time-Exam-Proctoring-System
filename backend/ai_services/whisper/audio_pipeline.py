@@ -28,7 +28,6 @@ class AudioPipeline:
         
         # Tích hợp thêm AI mới
         self.phobert = PhobertService()
-        self.fusion = DecisionFusionService()
         
         print(f"[Pipeline] Khởi tạo hoàn tất trong {time.time() - start_time:.2f}s")
 
@@ -64,51 +63,65 @@ class AudioPipeline:
             return self._build_empty_response(ts, "idle")
 
         # ==========================================================
-        # 3. Phân tích Ngữ nghĩa (Keyword + PhoBERT + Fusion)
+        # 3. Phân tích Ngữ nghĩa (CẢI TIẾN: Lưới bảo vệ kép)
         # ==========================================================
-        # Lấy nhãn thô từ Keyword Detector
+        # 1. Lấy kết quả bắt từ khóa (Rule-based)
         keyword_result = self.detector.detect(text, timestamp=ts)
-        rule_label = keyword_result.get("risk", "Normal").capitalize() # Đảm bảo format: Normal/Suspicious/Cheating
+        rule_label = keyword_result.get("risk", "Normal").capitalize() 
+        matched_keywords = keyword_result.get("matched", [])
         
-        # PhoBERT đánh giá ngữ cảnh sâu
+        # 2. Lấy kết quả phân tích ngữ cảnh sâu (PhoBERT)
         ai_result = self.phobert.predict(text)
-
-        # Trọng tài Fusion quyết định cuối cùng
-        fusion_result = self.fusion.fuse(text, rule_label, ai_result)
-        final_risk = fusion_result["final_label"]
+        phobert_label = ai_result.get("label", "Normal").capitalize()
+        phobert_conf = ai_result.get("confidence", 0.0)
+        
+        # 3. TRỌNG TÀI QUYẾT ĐỊNH (Chỉ cần 1 trong 2 nghi ngờ là bắt)
+        if rule_label in ["Suspicious", "Cheating"] or phobert_label in ["Suspicious", "Cheating"]:
+            status_signal = "alert"
+            final_risk = "Cheating" if "Cheating" in [rule_label, phobert_label] else "Suspicious"
+            
+            # Ưu tiên ghi nhận lý do từ khóa trước (vì nó chính xác với các câu ngắn)
+            if rule_label in ["Suspicious", "Cheating"]:
+                fusion_reason = f"Bắt được từ khóa cấm: {matched_keywords}"
+            else:
+                fusion_reason = f"AI PhoBERT phát hiện ngữ cảnh gian lận (Độ tự tin: {phobert_conf:.2f})"
+        else:
+            status_signal = "success"
+            final_risk = "Normal"
+            fusion_reason = f"Đánh giá an toàn (Độ tự tin: {phobert_conf:.2f})"
 
         # ==========================================================
         # 4. Logger (Ghi log thông minh hơn)
         # ==========================================================
-        if final_risk in ["Suspicious", "Cheating"]:
-            self.logger.write(
-                text=text,
-                risk=final_risk,
-                confidence=ai_result["confidence"],
-                fusion_reason=fusion_result["fusion_reason"],
-                matched_keywords=keyword_result.get("matched", []),
-                source=source,
-                audio_length=len(speech_audio) / 16000.0,
-            )
+        # Đã bỏ điều kiện IF, ghi lại toàn bộ lịch sử các câu thí sinh nói
+        self.logger.write(
+            text=text,
+            risk=final_risk,
+            confidence=phobert_conf,
+            fusion_reason=fusion_reason,
+            matched_keywords=matched_keywords,
+            source=source,
+            audio_length=len(speech_audio) / 16000.0,
+        )
 
         # ==========================================================
         # 5. Final Result (Gọn gàng, sạch sẽ)
         # ==========================================================
         return {
             "module": "audio_pipeline",
-            "status": final_risk,
+            "status": status_signal, # Trả về chuẩn 'alert' / 'success' cho màn hình GUI
             "transcription": text,
             "speech_segments": speech_segments,
             "risk": final_risk,
             
             # Thông số AI chi tiết (Dùng cho Debug/Admin Dashboard)
-            "confidence": round(ai_result["confidence"], 4),
+            "confidence": round(phobert_conf, 4),
             "rule_label": rule_label,
-            "ai_label": fusion_result["ai_label"],
-            "fusion_reason": fusion_result["fusion_reason"],
+            "ai_label": phobert_label,
+            "fusion_reason": fusion_reason,
             
             # Giữ lại danh sách keyword bị bắt để Frontend bôi đỏ câu chữ
-            "matched_keywords": keyword_result.get("matched", []), 
+            "matched_keywords": matched_keywords, 
             "timestamp": ts,
         }
 

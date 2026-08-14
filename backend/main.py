@@ -1,3 +1,36 @@
+# from fastapi import FastAPI
+
+# from backend.api.pose_gaze_routes import router as pose_gaze_router
+
+
+# app = FastAPI(
+#     title="Exam Proctoring System",
+#     version="0.1.0",
+#     description="Backend APIs for realtime exam supervision.",
+# )
+# app.include_router(pose_gaze_router)
+
+
+# @app.get("/health", tags=["system"])
+# def health_check() -> dict[str, str]:
+#     return {"status": "ok"}
+
+# ==========================================
+# Các ưu điểm trong đoạn code vừa nâng cấp:
+# 1. Không giật lag (Flicker-free): Nhờ cơ chế OVERLAY_TTL (Thời gian sống), các Bounding Box hiển thị ổn định, không bị chớp tắt khi AI chỉ chạy ở 5 FPS.
+
+# 2. Xử lý màu sắc linh hoạt:
+
+# Vật thể cấm (YOLOv8): Khung đỏ tươi (0, 0, 255) hiển thị trên vật thể.
+
+# Người lạ (face_verify): Khung màu cam (0, 140, 255) quanh khuôn mặt lạ.
+
+# Tư thế bất thường (pose_gaze): Băng đỏ cảnh báo nằm góc dưới màn hình.
+
+# Âm thanh gian lận (audio_whisper): Dải thông báo màu vàng nổi bật ở góc trên màn hình.
+
+# 3. An toàn đa luồng: Thao tác đọc/ghi vào ACTIVE_OVERLAYS được khóa cẩn thận bằng OVERLAY_LOCK tránh tình trạng đụng độ dữ liệu giữa luồng AI và luồng Camera.
+
 import os
 import logging
 import warnings
