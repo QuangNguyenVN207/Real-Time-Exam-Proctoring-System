@@ -274,6 +274,27 @@ class CausalLiveActorClassifier:
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
 
+    def update_tracks(
+        self,
+        *,
+        frame_index: int,
+        timestamp_ms: int,
+        tracks: Iterable[dict[str, Any]],
+    ):
+        """Replay adapter using the same live update path and causal state."""
+        class TrackResult:
+            def __init__(self, payload: dict[str, Any]) -> None:
+                self.payload = payload
+
+            def to_dict(self) -> dict[str, Any]:
+                return self.payload
+
+        return self.update(
+            frame_index=frame_index,
+            timestamp_ms=timestamp_ms,
+            results=(TrackResult(dict(track)) for track in tracks),
+        )
+
     def _decision_output(self, scores):
         return {
             actor_id: {
