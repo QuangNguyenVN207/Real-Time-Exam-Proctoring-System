@@ -29,7 +29,7 @@ MODEL_CLASSES = ("c2", "c3", "c5", "c7")
 EXCLUDE_C7 = False
 EXTENDED_SUSPICIOUS = False
 FRAME_FLAG_THRESHOLD = 0.5
-CAUSAL_WARMUP_FRAMES = 30
+CAUSAL_WARMUP_FRAMES = 15
 
 # Selected at runtime from numeric actor-frame geometry columns. Labels,
 # identity, time, semantic flags, and video metadata are excluded.
@@ -2246,10 +2246,7 @@ def run(
     # is opt-in and must never silently change the deployed c7 formula.
     LEGACY_C7_FORMULA = not hand_jitter_aware
     EXCLUDE_C7 = bool(exclude_c7)
-    # suspicious_activity experiment disabled for official benchmark.
-    # To re-enable later, undo this comment and use the existing opt-in flag.
-    # EXTENDED_SUSPICIOUS = bool(extended_suspicious)
-    EXTENDED_SUSPICIOUS = False
+    EXTENDED_SUSPICIOUS = bool(extended_suspicious)
     if EXTENDED_SUSPICIOUS and not (EXCLUDE_C7 and causal_replay and c3_pose_only):
         raise ValueError("--extended-suspicious requires --exclude-c7 --causal-replay --c3-pose-only")
     MODEL_CLASSES = (("suspicious_activity", "c2", "c3", "c5") if EXTENDED_SUSPICIOUS else
