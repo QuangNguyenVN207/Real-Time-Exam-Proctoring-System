@@ -75,3 +75,4 @@ site/build-meta.jsbackend/ai_services/whisper/phobert/weights/model.safetensors
 backend/ai_services/whisper/phobert/weights/model.safetensors
 
 audio_log.jsonl
+cheating_detected.jsonl

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QTextEdit, QPushButton, QComboBox, QLabel, QHBoxLayout, QFrame, QMessageBox)
 
 # 🔥 1. IMPORT SIÊU AI CỦA BẠN (Thay cho transformers/Whisper cũ)
-from whisper.audio_pipeline import AudioPipeline
+from backend.ai_services.whisper.audio_pipeline import AudioPipeline
 
 
 # =========================================================================
