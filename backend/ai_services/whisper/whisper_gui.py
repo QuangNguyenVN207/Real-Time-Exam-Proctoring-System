@@ -12,12 +12,11 @@ from PySide6.QtGui import (QPainter, QColor, QPen, QLinearGradient, QRadialGradi
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QTextEdit, QPushButton, QComboBox, QLabel, QHBoxLayout, QFrame, QMessageBox)
 
-# 🔥 1. IMPORT SIÊU AI CỦA BẠN (Thay cho transformers/Whisper cũ)
 from backend.ai_services.whisper.audio_pipeline import AudioPipeline
 
 
 # =========================================================================
-# WIDGET ĐỒ HỌA SÓNG ÂM (Giữ nguyên vẹn 100% để giao diện đẹp)
+# WIDGET ĐỒ HỌA SÓNG ÂM
 # =========================================================================
 class WaveformWidget(QWidget):
     def __init__(self):
@@ -27,13 +26,13 @@ class WaveformWidget(QWidget):
         self.target_waves = []
         self.animation_timer = QTimer()
         self.animation_timer.timeout.connect(self.update_waves)
-        self.animation_timer.start(30)  # Faster updates for smoother animation
+        self.animation_timer.start(30)
         self.is_recording = False
-        self.transition_speed = 0.15  # Controls how fast waves transition
+        self.transition_speed = 0.15
 
     def start_animation(self):
         self.is_recording = True
-        self.waves = [0.1] * 30  # Start with small waves
+        self.waves = [0.1] * 30
 
     def stop_animation(self):
         self.is_recording = False
@@ -43,7 +42,9 @@ class WaveformWidget(QWidget):
         if len(data) > 0:
             normalized = np.abs(data) / np.max(np.abs(data) + 1e-10)
             if self.is_recording:
-                chunk_size = len(normalized) // 30
+                # 🔥 SỬA LỖI 2: Đảm bảo chunk_size không bao giờ bằng 0
+                chunk_size = max(1, len(normalized) // 30)
+                
                 self.target_waves = [
                     normalized[i:i + chunk_size].mean() * 1.2
                     for i in range(0, len(normalized), chunk_size)
@@ -127,16 +128,20 @@ class WaveformWidget(QWidget):
 # =========================================================================
 class WhisperGUI(QMainWindow):
     update_text = Signal(str)
+    # 🔥 SỬA LỖI 1: Tạo thêm Signal để truyền âm thanh cho đồ họa thay vì gọi trực tiếp
+    update_waveform_signal = Signal(np.ndarray)
 
     def __init__(self):
         super().__init__()
-        self.history_text = []  # Lưu lịch sử tin nhắn
-        
+        self.history_text = [] 
         self.statusBar().showMessage("Đang nạp AI...")
         
         self.init_ui()
         self.init_whisper()
+        
+        # Kết nối các Signals
         self.update_text.connect(self.update_display)
+        self.update_waveform_signal.connect(self.waveform.update_audio_data)
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -146,7 +151,6 @@ class WhisperGUI(QMainWindow):
 
         model_label = QLabel("Hệ thống:")
         self.model_combo = QComboBox()
-        # 🔥 Đổi tên giao diện cho oai
         self.model_combo.addItems(["AI Giám Thị (PhoWhisper + PhoBERT)"]) 
 
         self.record_button = QPushButton("Start Recording")
@@ -179,7 +183,6 @@ class WhisperGUI(QMainWindow):
         self.audio_queue = queue.Queue()
         self.sample_rate = 16000
         self.channels = 1
-        # Blocksize nhỏ (0.1s) để sóng âm chạy mượt, AI xử lý riêng
         self.blocksize = int(self.sample_rate * 0.1) 
         self.process_thread = None
         self.pipeline = None
@@ -188,9 +191,8 @@ class WhisperGUI(QMainWindow):
 
     def load_model(self):
         self.statusBar().showMessage("⏳ Đang nạp mô hình AI Giám thị...")
-        QApplication.processEvents() # Ép GUI cập nhật chữ
+        QApplication.processEvents() 
         try:
-            # 🔥 2. KHỞI TẠO BỘ NÃO AI CỦA BẠN
             if self.pipeline is None:
                 self.pipeline = AudioPipeline()
             self.statusBar().showMessage("✅ Đã kết nối Hệ thống AI thành công! Sẵn sàng thu âm.")
@@ -199,7 +201,6 @@ class WhisperGUI(QMainWindow):
             print(f"Error loading AI Pipeline: {str(e)}")
 
     def process_audio(self):
-        """Luồng ngầm gom âm thanh đủ 3.5s và đưa cho AI phân tích"""
         if self.pipeline is None:
             return
 
@@ -214,13 +215,13 @@ class WhisperGUI(QMainWindow):
                 audio_data = audio_data.flatten().astype(np.float32)
                 audio_buffer = np.concatenate([audio_buffer, audio_data])
 
-                # 🔥 3. KIỂM TRA: Gom đủ 5 GIÂY thì ném vào AI
-                if len(audio_buffer) >= self.sample_rate * 4:
+                # Lưu ý: Comment của bạn là 5 giây, nhưng logic hiện tại 16000 * 4 là 4 GIÂY.
+                # Mình đổi thành * 5 cho đúng với ý đồ của bạn nhé.
+                if len(audio_buffer) >= self.sample_rate * 5: 
                     chunk_to_process = audio_buffer.copy()
-                    audio_buffer = np.array([], dtype=np.float32) # Xóa buffer hứng cái mới
+                    audio_buffer = np.array([], dtype=np.float32) 
 
                     try:
-                        # 🔥 4. AI PHÂN TÍCH
                         result = self.pipeline.process_audio(chunk_to_process)
                         
                         if result and result.get("status") != "idle":
@@ -229,7 +230,6 @@ class WhisperGUI(QMainWindow):
                             reason = result.get("fusion_reason", "")
                             timestamp = datetime.now().strftime('%H:%M:%S')
 
-                            # 🔥 5. TRANG TRÍ MÀU SẮC LÊN GIAO DIỆN
                             if status == "alert":
                                 msg = f"🚨 [{timestamp}] GIAN LẬN: '{text}'\n   ↳ Lý do: {reason}"
                             else:
@@ -255,16 +255,18 @@ class WhisperGUI(QMainWindow):
         if not self.pipeline:
             self.load_model()
 
+        # Dọn dẹp hàng đợi cũ để tránh dịch lại tiếng cũ từ lần bật trước
+        while not self.audio_queue.empty():
+            self.audio_queue.get()
+
         self.recording = True
         self.record_button.setText("Stop Recording")
         self.record_button.setStyleSheet("background-color: #c0392b; color: white;")
         self.waveform.start_animation()
 
-        # Bật luồng phân tích AI
         self.process_thread = threading.Thread(target=self.process_audio, daemon=True)
         self.process_thread.start()
 
-        # Bật Mic thu âm liên tục
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=self.channels,
@@ -284,22 +286,25 @@ class WhisperGUI(QMainWindow):
             self.stream.close()
 
     def audio_callback(self, indata, frames, time, status):
-        """Hứng tín hiệu mic đẩy vào buffer (và vẽ sóng âm)"""
+        """Hứng tín hiệu mic đẩy vào buffer"""
         if status:
-            pass
+            print(status) # In ra nếu mic bị quá tải/rớt frame
+            
         self.audio_queue.put(indata.copy())
-        self.waveform.update_audio_data(indata.copy())
+        
+        # 🔥 SỬA LỖI 1: Bắn tín hiệu sang luồng chính để vẽ, tuyệt đối không gọi UI ở đây
+        self.update_waveform_signal.emit(indata.copy())
 
     def update_display(self, text):
-        """Cập nhật text lên cửa sổ GUI mỗi khi AI trả kết quả"""
         self.history_text.append(text)
         
-        # Nối các câu lịch sử lại, cách nhau 1 dòng trắng
+        # 🔥 SỬA LỖI 3: Giữ cho UI nhẹ nhàng, không bị tràn RAM bằng cách chỉ giữ 50 log gần nhất
+        if len(self.history_text) > 50:
+            self.history_text.pop(0)
+            
         display_text = "\n\n".join(self.history_text)
-        
         self.text_display.setPlainText(display_text)
         
-        # Tự động cuộn xuống dòng cuối cùng
         cursor = self.text_display.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.text_display.setTextCursor(cursor)
@@ -309,15 +314,12 @@ class WhisperGUI(QMainWindow):
             self.stop_recording()
         event.accept()
 
-
 def main():
     app = QApplication(sys.argv)
-    # Style tối ưu giao diện app
     app.setStyle("Fusion")
     window = WhisperGUI()
     window.show()
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()
