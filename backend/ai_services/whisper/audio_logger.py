@@ -1,39 +1,80 @@
+import json
 from pathlib import Path
 from datetime import datetime
 
-
 class AudioLogger:
-
     def __init__(self):
+        # Thư mục whisper/
+        whisper_dir = Path(__file__).resolve().parent
 
+        # whisper/outputs/
+        self.output_dir = whisper_dir / "outputs"
+        self.output_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        # whisper/outputs/audio_log.jsonl
         self.log_file = (
-            Path(__file__).resolve().parent /
-            "audio_log.txt"
+            self.output_dir / "cheating_detected.jsonl"
         )
 
-    def write(self, text, matched):
-
-        now = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
+        print(
+            f"[Logger] Log file: {self.log_file}"
         )
 
-        with open(
-            self.log_file,
-            "a",
-            encoding="utf-8"
-        ) as f:
+    def write(
+        self,
+        text,
+        confidence,
+        risk,
+        fusion_reason="",        # Tham số mới từ Decision Fusion
+        matched_keywords=None,   # Tham số mới thay thế cho matched
+        matched=None,            # Giữ lại để tương thích ngược với code cũ
+        matched_rules=None,      # Giữ lại để tương thích ngược
+        source="microphone",
+        processing_time=None,
+        audio_length=None,
+        **kwargs                 # 🛡️ Hứng mọi tham số dư thừa để chống crash hệ thống
+    ):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            f.write(f"[{now}]\n")
+        # Ưu tiên dữ liệu từ keyword mới, nếu không có thì fallback về code cũ
+        actual_keywords = matched_keywords if matched_keywords is not None else (matched or [])
+        actual_rules = matched_rules or []
 
-            f.write(f"Text: {text}\n")
+        # Đóng gói dữ liệu log
+        log = {
+            "time": now,
+            "source": source,
+            "text": text,
+            "risk": risk,
+            "confidence": round(confidence, 4) if isinstance(confidence, (int, float)) else confidence,
+            "fusion_reason": fusion_reason,
+            "matched_keywords": [
+                {
+                    "keyword": item.get("keyword", ""),
+                    "candidate": item.get("candidate", ""),
+                    "score": item.get("score", 0),
+                    "severity": item.get("severity", ""),
+                    "category": item.get("category", ""),
+                }
+                for item in actual_keywords
+            ],
+            "matched_rules": actual_rules,
+        }
 
-            f.write("Keyword:\n")
+        # Nếu có đo lường thời gian thì đưa vào log
+        if processing_time is not None:
+            log["processing_time_sec"] = round(processing_time, 3)
 
-            for item in matched:
+        if audio_length is not None:
+            log["audio_length_sec"] = round(audio_length, 2)
 
-                f.write(
-                    f" - {item['keyword']} "
-                    f"(score={item['score']:.1f})\n"
-                )
-
-            f.write("\n")
+        # Ghi log dạng JSON Lines (mỗi json 1 dòng, an toàn không lo hỏng file nếu cúp điện)
+        try:
+            with open(self.log_file, "a", encoding="utf-8") as f:
+                json.dump(log, f, ensure_ascii=False)
+                f.write("\n")
+        except Exception as e:
+            print(f"[Logger Error] Lỗi khi ghi log: {str(e)}")

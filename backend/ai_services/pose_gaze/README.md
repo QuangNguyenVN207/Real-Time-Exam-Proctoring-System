@@ -1,59 +1,71 @@
-# Pose/Gaze Tracking Foundation
+# Pose/Gaze causal C2/C3 demo
 
-Phần này hoàn thành P0–P1 cho Module 1: theo dõi tối đa hai người, gán `track_id` cho `student_id`, lưu ánh xạ theo session và xuất packet sẵn sàng cho pose/gaze.
+This package classifies each actor, not a whole video.  The committed
+`benchmark goc` artifact is the causal C2/C3/C5 model under
+`tmp/behavior_actor_causal_pose_only_20260812/`; it uses current and past
+frames only.
 
-## Luồng API
+## Setup
 
-Khởi động backend sau khi cài dependencies:
+Use the repository virtual environment.  It must provide `opencv-python`,
+`ultralytics`, `mediapipe`, `numpy`, `xgboost`, and `scikit-learn`.
+The repository tracks the YOLO person-detector weights at `weights/yolov8n.pt`.
 
-```powershell
-python -m pip install -r requirements.txt
-uvicorn backend.main:app --reload
-```
+## Webcam
 
-1. Tạo session:
-
-```http
-POST /api/pose-gaze/sessions
-{"session_id":"exam-room-01"}
-```
-
-2. Detector (YOLO/HOG hoặc service dùng chung) gửi person detections của từng frame:
-
-```http
-POST /api/pose-gaze/sessions/exam-room-01/detections
-{
-  "frame_id": 1,
-  "detections": [
-    {"bbox_xyxy":[90,120,310,690],"confidence":0.96},
-    {"bbox_xyxy":[430,125,650,690],"confidence":0.94}
-  ]
-}
-```
-
-3. Dashboard lấy `track_id` trả về, rồi gán thủ công:
-
-```http
-PUT /api/pose-gaze/sessions/exam-room-01/tracks/1/assignment
-{"student_id":"SV_A"}
-```
-
-4. Pose/gaze lấy input chỉ gồm track đang thấy và đã gán ID:
-
-```http
-GET /api/pose-gaze/sessions/exam-room-01/pose-gaze-input
-```
-
-Trường `ready=true` chỉ khi đủ hai track đang hiển thị và mỗi track có `student_id`. Module pose/gaze ở bước tiếp theo chỉ cần nhận `tracks` từ endpoint này cùng frame cùng `frame_id`.
-
-## Detector adapters
-
-`detectors.py` có `OpenCVHOGPersonDetector` (fallback CPU) và `UltralyticsPersonDetector` (YOLO). Cả hai là adapter tùy chọn; tracker không phụ thuộc vào thư viện detector.
-
-Model YOLO dùng cho adapter phải có class `person`. File `weights/yolov8_finetuned.pt` hiện cần được kiểm tra class trước khi dùng, vì model object-detection tùy biến có thể không chứa class này.
-
-## Tests
+Run from the repository root:
 
 ```powershell
-python -m unittest discover -s backend/ai_services/pose_gaze/tests -v
+$env:PYTHONPATH="C:\Real-Time-Exam-Proctoring-System\backend\ai_services\pose_gaze"
+
+& "C:\Real-Time-Exam-Proctoring-System\.venv\Scripts\python.exe" `
+  -m pose_gaze.holistic.test_webcam `
+  --actions c2,c3 `
+  --causal-model-dir "C:\Real-Time-Exam-Proctoring-System\tmp\behavior_actor_causal_pose_only_20260812" `
+  --live-pair student_01:student_02 `
+  --target-fps 10
 ```
+
+- `X`: reset classifier evidence and start a new 30-frame warmup; camera and
+  tracker continue running.
+- `Q`: quit.
+- C2 requires the configured explicit pair and midpoint evidence.
+- The temporary one-person C3 demo uses screen-right as the turn direction.
+  It is not an official benchmark rule.
+
+## Video demo
+
+```powershell
+$env:PYTHONPATH="C:\Real-Time-Exam-Proctoring-System\backend\ai_services\pose_gaze"
+$video = "C:\path\to\your-video.mp4"
+
+& "C:\Real-Time-Exam-Proctoring-System\.venv\Scripts\python.exe" `
+  -m pose_gaze.holistic.test_media `
+  $video `
+  --model "weights\yolov8n.pt" `
+  --xgboost-model-dir "tmp\behavior_actor_causal_pose_only_20260812" `
+  --causal-live `
+  --live-pair student_01:student_02 `
+  --target-fps 10
+```
+
+You may supply any local MP4; it is processed causally, frame by frame.
+
+An optional tracked sample is available at
+`backend/ai_services/pose_gaze/demo/pose_gaze_sample.mp4`.
+
+## Artifact contents
+
+Inference reads only these five files:
+
+```text
+causal_actor_metrics.json
+causal_c2_feature_names.json
+causal_c2_specialist.ubj
+causal_c3_feature_names.json
+causal_c3_specialist.ubj
+```
+
+The locked actor-level result is macro-F1 `0.8730158730` over `[c2,c3,c5]`.
+`causal_specialist_predictions.csv` is audit output and is intentionally not
+committed.

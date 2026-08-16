@@ -48,6 +48,8 @@ Thumbs.db
 *.log
 
 data/
+test_data_tracking/
+test_image/
 models/
 checkpoints/
 wandb/
@@ -58,6 +60,7 @@ mlruns/
 *.safetensors
 *.bin
 *.h5
+*.task
 .gstack/
 
 .link-cache.json
@@ -68,4 +71,8 @@ catalog.json
 # commit, so they can't drift or drop URLs. Regenerated fresh from PHASES.
 site/sitemap.xml
 site/llms.txt
-site/build-meta.js
+site/build-meta.jsbackend/ai_services/whisper/phobert/weights/model.safetensors
+backend/ai_services/whisper/phobert/weights/model.safetensors
+
+audio_log.jsonl
+cheating_detected.jsonl

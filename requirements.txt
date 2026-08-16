@@ -6,21 +6,68 @@
 # torch==2.13.0
 # torchaudio==2.11.0
 # torchvision==0.28.0
+
+accelerate 
+av
+config
+ctranslate2
+datasets==5.0.0
+fastapi>=0.115,<1.0
 faster_whisper
+huggingface_hub
+librosa
+noisereduce
+numba>=0.59.0
 numpy>=1.26,<3.0
-opencv-python>=4.10,<5.0
+onnxruntime
+opencv-python>=4.10,<6.0
+
+# Pose/Gaze causal C2/C3 realtime runtime.  The committed XGBoost artifacts
+# were smoke-tested with the bounded major versions below.
+mediapipe>=0.10,<0.11
+scikit-learn>=1.4,<2.0
+xgboost>=3.0,<4.0
+
+pandas==3.0.5
+pyvi==0.1.1
+
 ultralytics>=8.3,<9.0
 config
 
+# face_verify: RetinaFace (detection) + ArcFace (recognition), chạy qua onnxruntime.
+# Model pack "buffalo_l" (~280MB) sẽ tự động tải về ~/.insightface/models khi
+# FaceVerifier khởi tạo lần đầu (cần internet).
+insightface>=0.7,<1.0
+# faiss-cpu: tùy chọn, tăng tốc tìm kiếm cosine similarity khi DB có nhiều sinh viên.
+# uv pip install faiss-cpu
+
+
 ctranslate2
 av
+
 rapidfuzz
+scipy
+sentencepiece 
 silero-vad
 sounddevice
-scipy
-onnxruntime
 soundfile
-librosa
-numba>=0.59.0
-fastapi>=0.115,<1.0
+transformers==5.14.1
+
+ultralytics>=8.3,<9.0
 uvicorn[standard]>=0.30,<1.0
+websockets
+
+underthesea
+
+# webrtcvad-wheel
+
+pandas==3.0.5
+datasets==5.0.0
+# sudo apt-get install portaudio19-dev python3-pyaudio
+pyaudio
+
+streamlit
+
+streamlit-webrtc
+av
+streamlit-autorefresh
