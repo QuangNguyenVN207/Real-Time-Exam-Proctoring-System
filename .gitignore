@@ -71,8 +71,7 @@ catalog.json
 # commit, so they can't drift or drop URLs. Regenerated fresh from PHASES.
 site/sitemap.xml
 site/llms.txt
-site/build-meta.jsbackend/ai_services/whisper/phobert/weights/model.safetensors
-backend/ai_services/whisper/phobert/weights/model.safetensors
+site/build-meta.js
 
 audio_log.jsonl
 cheating_detected.jsonl

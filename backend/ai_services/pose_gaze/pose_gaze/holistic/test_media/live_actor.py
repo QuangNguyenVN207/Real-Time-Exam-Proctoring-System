@@ -32,7 +32,7 @@ class CausalLiveActorClassifier:
         clip_id: str = "live",
         student_prefix: str = "student_",
         explicit_pairs: Iterable[tuple[str, str]] = (),
-        warmup_frames: int = 30,
+        warmup_frames: int = 15,
         window_frames: int = 90,
     ) -> None:
         self.model_dir = Path(model_dir)
@@ -48,19 +48,43 @@ class CausalLiveActorClassifier:
         metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
         if metrics.get("future_frames_used_for_decision") is not False:
             raise ValueError("model artifact is not certified causal")
-        self.c3_threshold = float(metrics["c3_threshold_train_only"])
-        self.c3_pose_only = metrics.get("c3_feature_family") == "pose_only_contract"
+        thresholds = metrics.get("specialist_thresholds_train_only", {})
+        self.c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        self.suspicious_threshold = thresholds.get("suspicious_activity")
+        # Extended suspicious artifacts predate the explicit metadata field,
+        # but their C3 schema still requires this causal pose contract.
+        self.c3_pose_only = (
+            metrics.get("c3_feature_family") == "pose_only_contract"
+            or "c3_pose_head_peer_delta__mean" in json.loads(
+                (self.model_dir / "causal_c3_feature_names.json").read_text(encoding="utf-8")
+            )
+        )
         self.c2_model, self.c2_names = self._load_model(
             "causal_c2_specialist.ubj", "causal_c2_feature_names.json"
         )
         self.c3_model, self.c3_names = self._load_model(
             "causal_c3_specialist.ubj", "causal_c3_feature_names.json"
         )
+        self.suspicious_model = self.suspicious_names = None
+        if self.suspicious_threshold is not None:
+            self.suspicious_model, self.suspicious_names = self._load_model(
+                "causal_suspicious_activity_specialist.ubj",
+                "causal_suspicious_activity_feature_names.json",
+            )
         self.c2_bases = tuple(name.rsplit("__", 1)[0] for name in self.c2_names[::5])
         self.c3_bases = tuple(name.rsplit("__", 1)[0] for name in self.c3_names[::5])
+        self.suspicious_bases = tuple(name.rsplit("__", 1)[0] for name in self.suspicious_names[::5]) if self.suspicious_names else ()
+        self.shared_bases = tuple(dict.fromkeys((*self.c2_bases, *self.c3_bases, *self.suspicious_bases)))
         self._windows_c2: dict[str, CausalActorWindow] = {}
         self._windows_c3: dict[str, CausalActorWindow] = {}
-        self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold)
+        self._windows_suspicious: dict[str, CausalActorWindow] = {}
+        self.gates = metrics.get("gate_thresholds_train_only", {})
+        self._state = CausalSpecialistState(
+            (), c3_threshold=self.c3_threshold,
+            suspicious_threshold=self.suspicious_threshold,
+            c3_gate=lambda values: bool(values.get("c3_gate", True)),
+            suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
+        )
         self._explicit_pairs = tuple(
             (str(left), str(right)) for left, right in explicit_pairs
         )
@@ -212,24 +236,64 @@ class CausalLiveActorClassifier:
         prefix = behavior.derive_face_c3_features(prefix)
         prefix = behavior.derive_finger_motion(prefix)
         prefix = behavior.derive_hand_shape_and_pair_cues(prefix)
-        latest = self._latest(prefix, frame_index)
+        if self.suspicious_names:
+            prefix = behavior.derive_strict_c2_c3_suspicious_cues(prefix, baseline_frames=self.warmup_frames)
+        aggregate_rows, _ = behavior.causal_aggregate_rows(
+            prefix,
+            self.shared_bases,
+            warmup_frames=self.warmup_frames,
+            window_frames=self.window_frames,
+        )
+        latest = self._latest(aggregate_rows, frame_index)
         scores, midpoint = {}, {}
         for actor_id, row in latest.items():
             self._state.register_actor(actor_id)
-            c2_window = self._windows_c2.setdefault(actor_id, CausalActorWindow(actor_id, self.c2_bases, max_frames=self.window_frames))
-            c3_window = self._windows_c3.setdefault(actor_id, CausalActorWindow(actor_id, self.c3_bases, max_frames=self.window_frames))
-            c2_state = c2_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            c3_state = c3_window.update(frame_index=frame_index, timestamp_ms=timestamp_ms, features=row)
-            self._window_sizes[actor_id] = min(c2_state.window_size, c3_state.window_size)
-            if min(c2_state.window_size, c3_state.window_size) < self.warmup_frames:
+            self._window_sizes[actor_id] = int(row.get("prefix_frames", 0))
+            if not int(row.get("warmup_ready", 0)):
                 continue
-            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[c2_state.features[name] for name in self.c2_names]], dtype=np.float32)))[0])
-            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[c3_state.features[name] for name in self.c3_names]], dtype=np.float32)))[0])
+            c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c2_names]], dtype=np.float32)))[0])
+            c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
-            midpoint[actor_id] = c2_state.features.get("near_midpoint_pre_cross__max", 0.0)
+            scores[actor_id]["c3_gate"] = (
+                row.get("strict_hand_quality__mean", 0.0) > 0.0
+                and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+                and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
+                and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
+            )
+            if self.suspicious_names:
+                scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
+                scores[actor_id]["suspicious_gate"] = (
+                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
+                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
+                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    and row.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
+                )
+            midpoint[actor_id] = row.get("near_midpoint_pre_cross__max", 0.0)
         self._latest_scores.update(scores)
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
+
+    def update_tracks(
+        self,
+        *,
+        frame_index: int,
+        timestamp_ms: int,
+        tracks: Iterable[dict[str, Any]],
+    ):
+        """Replay adapter using the same live update path and causal state."""
+        class TrackResult:
+            def __init__(self, payload: dict[str, Any]) -> None:
+                self.payload = payload
+
+            def to_dict(self) -> dict[str, Any]:
+                return self.payload
+
+        return self.update(
+            frame_index=frame_index,
+            timestamp_ms=timestamp_ms,
+            results=(TrackResult(dict(track)) for track in tracks),
+        )
 
     def _decision_output(self, scores):
         return {
@@ -237,6 +301,7 @@ class CausalLiveActorClassifier:
                 "actor_id": actor_id, "predicted_class": decision.class_code,
                 "c2_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c2", ""),
                 "c3_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c3", ""),
+                "suspicious_activity_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("suspicious_activity", ""),
                 "warmup_frames_seen": self._window_sizes.get(actor_id, 0),
                 "warmup_frames_required": self.warmup_frames,
                 "evidence_score": decision.evidence_score if decision.evidence_score is not None else "",
@@ -255,6 +320,7 @@ class CausalLiveActorClassifier:
         """Start a new causal observation without reopening the camera."""
         self._windows_c2.clear()
         self._windows_c3.clear()
+        self._windows_suspicious.clear()
         self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold)
         self._baseline_rows.clear()
         self._tail_rows.clear()

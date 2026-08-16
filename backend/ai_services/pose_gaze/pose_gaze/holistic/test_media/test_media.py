@@ -507,6 +507,25 @@ def process_one_frame(
         if live_classifier is not None
         else None
     )
+    write_landmark_record(
+        landmark_writer,
+        source_frame_index=source_frame_index,
+        packet=packet,
+        results=results,
+        classifications=classifications,
+    )
+    annotated = annotate_frame(
+        frame,
+        tracking=tracking,
+        holistic=holistic,
+        packet=packet,
+        results=results,
+        source_frame_index=source_frame_index,
+        inference_ms=inference_ms,
+        sampled_fps=sampled_fps,
+        classifications=classifications,
+    )
+    return annotated, packet
 
 
 def create_live_classifier(args: argparse.Namespace, *, clip_id: str):
@@ -542,27 +561,6 @@ def create_live_classifier(args: argparse.Namespace, *, clip_id: str):
             explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
         ))
     return classifiers[0] if len(classifiers) == 1 else CombinedCausalActorClassifier(classifiers)
-
-    write_landmark_record(
-        landmark_writer,
-        source_frame_index=source_frame_index,
-        packet=packet,
-        results=results,
-        classifications=classifications,
-    )
-    annotated = annotate_frame(
-        frame,
-        tracking=tracking,
-        holistic=holistic,
-        packet=packet,
-        results=results,
-        source_frame_index=source_frame_index,
-        inference_ms=inference_ms,
-        sampled_fps=sampled_fps,
-        classifications=classifications,
-    )
-    return annotated, packet
-
 
 def open_landmark_writer(
     args: argparse.Namespace,
@@ -709,7 +707,10 @@ def process_video_from_json(args: argparse.Namespace) -> int:
                     x1, y1, x2, y2 = map(round, bbox)
                     classification = (
                         classifications.get(str(track_id))
-                        or classifications.get(str(track.get("student_id")))
+                        or classifications.get(str(
+                            track.get("student_id")
+                            or f"{args.student_prefix}{track_id:02d}"
+                        ))
                     )
                     if classification:
                         activation = classification.get(
