@@ -2,6 +2,10 @@ import os
 import logging
 import warnings
 
+# Ẩn các cảnh báo liên quan đến ScriptRunContext của Streamlit
+logging.getLogger('streamlit.runtime.scriptrunner.script_run_context').setLevel(logging.ERROR)
+logging.getLogger('streamlit.runtime.state.session_state').setLevel(logging.ERROR)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 # ==========================================
 # KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
 # ==========================================
