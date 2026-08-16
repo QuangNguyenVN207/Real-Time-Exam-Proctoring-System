@@ -67,4 +67,7 @@ datasets==5.0.0
 pyaudio
 
 streamlit
-cheating_detected.jsonl
+
+streamlit-webrtc
+av
+streamlit-autorefresh

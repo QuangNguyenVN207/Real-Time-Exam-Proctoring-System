@@ -34,7 +34,7 @@ class RealtimeAudioWorker:
     CHANNELS = 1
 
     CHUNK_SECONDS = 0.5       # Ghi từng mảng 0.5s để queue chạy mượt
-    PROCESS_INTERVAL = 3.0    # Cứ đúng 3 giây thì kích hoạt AI 1 lần
+    PROCESS_INTERVAL = 3.5    # Cứ đúng 3 giây thì kích hoạt AI 1 lần
     BUFFER_SECONDS = 3.0      # Độ dài tối đa của file âm thanh đưa vào AI
     MIN_SECONDS = 2.0         # Phải tích đủ 3 giây mới bắt đầu chạy
     NOISE_PROFILE_SECONDS = 1.0
@@ -44,6 +44,10 @@ class RealtimeAudioWorker:
         self.audio_queue = queue.Queue(maxsize=20)
         self.stop_event = threading.Event()
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+
+        self.audio_stream = None
+        self.pyaudio_instance = None
+        self.started = False
 
         self.input_sr = self.TARGET_SR
 
@@ -242,20 +246,73 @@ class RealtimeAudioWorker:
             except Exception as e:
                 print(f"[Worker] Error: {e}")
 
+    def stop(self):
+        print("[Audio] 🛑 Đang dừng RealtimeAudioWorker...")
+
+        self.stop_event.set()
+
+        # Dừng PyAudio stream
+        if self.audio_stream is not None:
+            try:
+                if self.audio_stream.is_active():
+                    self.audio_stream.stop_stream()
+            except Exception as e:
+                print(f"[Audio] Lỗi stop stream: {e}")
+
+            try:
+                self.audio_stream.close()
+            except Exception as e:
+                print(f"[Audio] Lỗi close stream: {e}")
+
+            self.audio_stream = None
+
+        # Đóng PyAudio
+        if self.pyaudio_instance is not None:
+            try:
+                self.pyaudio_instance.terminate()
+            except Exception as e:
+                print(f"[Audio] Lỗi terminate PyAudio: {e}")
+
+            self.pyaudio_instance = None
+
+        # Đánh thức worker thread nếu đang chờ queue
+        try:
+            self.audio_queue.put_nowait(None)
+        except Exception:
+            pass
+
+        # Chờ worker kết thúc
+        if self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=2.0)
+
+        self.started = False
+
+        print("[Audio] ✅ RealtimeAudioWorker đã dừng.")
+
+
     # =========================
     # Start
     # =========================
     def start(self):
+        if self.started:
+            return
+
+        self.started = True
+        self.stop_event.clear()
+
         self.worker_thread.start()
 
-        # Dùng hố đen để tắt log rác từ C++ khi khởi tạo PyAudio
+        print("[Audio] 🔊 Khởi động PyAudio...")
+
         with suppress_alsa_logs():
             p = pyaudio.PyAudio()
+
+        self.pyaudio_instance = p
 
         # Lấy Sample Rate chuẩn của thiết bị
         try:
             default_device = p.get_default_input_device_info()
-            self.input_sr = int(default_device['defaultSampleRate'])
+            self.input_sr = int(default_device["defaultSampleRate"])
         except Exception:
             self.input_sr = self.TARGET_SR
 
@@ -269,37 +326,65 @@ class RealtimeAudioWorker:
         print(f"Chunk seconds : {self.CHUNK_SECONDS}")
         print(f"Process every : {self.PROCESS_INTERVAL}s")
         print("=" * 70)
-        print("Listening... (Ctrl+C to stop)")
-        print("Tip: giữ im lặng ~1 giây đầu để lấy noise profile.\n")
+        print("Listening...")
 
         try:
-            stream = p.open(
-                format=pyaudio.paFloat32,
-                channels=self.CHANNELS,
-                rate=self.input_sr,
-                input=True,
-                frames_per_buffer=blocksize,
-                stream_callback=self._audio_callback
-            )
+            with suppress_alsa_logs():
+                stream = p.open(
+                    format=pyaudio.paFloat32,
+                    channels=self.CHANNELS,
+                    rate=self.input_sr,
+                    input=True,
+                    frames_per_buffer=blocksize,
+                    stream_callback=self._audio_callback
+                )
+
+            self.audio_stream = stream
 
             stream.start_stream()
 
-            while stream.is_active():
-                time.sleep(0.5)
+            # QUAN TRỌNG:
+            # kiểm tra stop_event thay vì chỉ kiểm tra stream
+            while (
+                stream.is_active()
+                and not self.stop_event.is_set()
+            ):
+                time.sleep(0.1)
 
-        except KeyboardInterrupt:
-            print("\n[Main] Stopping...")
+        except Exception as e:
+            print(f"[Audio] ❌ Audio stream error: {e}")
 
         finally:
             self.stop_event.set()
-            try:
-                stream.stop_stream()
-                stream.close()
-                p.terminate()
-            except Exception:
-                pass
-            self.worker_thread.join(timeout=2.0)
-            print("[Main] Done.")
+
+            if self.audio_stream is not None:
+                try:
+                    if self.audio_stream.is_active():
+                        self.audio_stream.stop_stream()
+                except Exception:
+                    pass
+
+                try:
+                    self.audio_stream.close()
+                except Exception:
+                    pass
+
+                self.audio_stream = None
+
+            if self.pyaudio_instance is not None:
+                try:
+                    self.pyaudio_instance.terminate()
+                except Exception:
+                    pass
+
+                self.pyaudio_instance = None
+
+            if self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=2.0)
+
+            self.started = False
+
+            print("[Audio] ✅ Audio worker stopped.")
 
 if __name__ == "__main__":
     RealtimeAudioWorker().start()
