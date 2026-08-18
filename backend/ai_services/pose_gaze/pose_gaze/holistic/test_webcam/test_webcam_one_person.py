@@ -152,6 +152,7 @@ def main() -> None:
                     detected_frames += 1
                 score = _head_turn_score(present) if present is not None else None
                 turn = score is not None and abs(score) >= 0.15
+                c3_flagged = present is not None
                 record = {
                     "timestamp_ms": int(packet.timestamp_ms),
                     "frame_index": int(packet.frame_id),
@@ -164,10 +165,12 @@ def main() -> None:
                     "pose_valid": bool(present and present.pose_landmarks),
                     "head_turn_score": score,
                     "head_turn_detected": bool(turn),
+                    "predicted_class": "c3" if c3_flagged else "unknown",
+                    "c3_flagged": c3_flagged,
                 }
                 trace_records.append(record)
                 previous_frame_mono = frame_started
-                label = "HEAD TURN" if turn else ("ACTOR" if present is not None else "NO ACTOR")
+                label = "C3 FLAG" if c3_flagged else "NO ACTOR"
                 cv2.putText(frame, f"{label} | one-person demo", (12, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2)
                 holistic.draw_results(frame, results)
                 tracking.draw_tracks(frame, packet)
