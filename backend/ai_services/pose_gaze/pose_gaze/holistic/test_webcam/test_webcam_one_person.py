@@ -152,7 +152,7 @@ def main() -> None:
                     detected_frames += 1
                 score = _head_turn_score(present) if present is not None else None
                 turn = score is not None and abs(score) >= 0.15
-                c3_flagged = present is not None
+                c3_flagged = present is not None and turn
                 record = {
                     "timestamp_ms": int(packet.timestamp_ms),
                     "frame_index": int(packet.frame_id),
