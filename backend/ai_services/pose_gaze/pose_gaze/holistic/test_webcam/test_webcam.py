@@ -38,6 +38,7 @@ SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
 # Lazy imports so webcam still starts without debug deps installed
 try:
     from ..debug.frame_trace import FrameTraceLogger, FrameTraceRecord
+    from ..debug.events import C3Trial, OcclusionEvent, SessionEvents, TimeInterval, TrackResetEvent
     from ..debug.session_manifest import SessionManifestRecorder
     _DEBUG_AVAILABLE = True
 except ImportError:
@@ -223,6 +224,8 @@ def main() -> None:
     session_output_dir = PROJECT_ROOT / "test_data_tracking" / session_id
     trace_path = session_output_dir / "frames.jsonl"
     manifest_path = session_output_dir / "session_manifest.json"
+    events_path = session_output_dir / "events.json"
+    video_path = session_output_dir / "camera.mp4"
     _trace_logger = FrameTraceLogger(trace_path) if _DEBUG_AVAILABLE else None
     _manifest_recorder = None
     if _DEBUG_AVAILABLE:
@@ -248,12 +251,55 @@ def main() -> None:
                     "height": args.height,
                     "target_fps": args.target_fps,
                 },
+                video_path=video_path,
                 trace_path=trace_path,
             )
         except Exception as _exc:
             print(f"[trace] SessionManifestRecorder init failed: {_exc}")
             _manifest_recorder = None
     _prev_frame_mono: float | None = None
+    _capture_start_ms: int | None = None
+    _active_annotation: tuple[str, int, str] | None = None
+    _neutral_start_ms: int | None = None
+    _trials = []
+    _neutral_intervals = []
+    _occlusions = []
+    _track_resets = []
+    _stage_a_errors: list[str] = []
+
+    def annotate_key(key: int) -> None:
+        """Record A3 timestamps; keys are edge annotations, not model input."""
+        nonlocal _active_annotation, _neutral_start_ms
+        if _capture_start_ms is None:
+            return
+        ts = int(latest_packet.timestamp_ms)
+        if key in (ord("n"), ord("N")):
+            if _neutral_start_ms is None:
+                _neutral_start_ms = ts
+            else:
+                _neutral_intervals.append(TimeInterval(_neutral_start_ms, ts, "neutral"))
+                _neutral_start_ms = None
+        elif key in (ord("1"), ord("2")):
+            source = "student_01" if key == ord("1") else "student_02"
+            peer = "student_02" if source == "student_01" else "student_01"
+            if _active_annotation is None:
+                _active_annotation = ("trial", ts, source + ":" + peer)
+            elif _active_annotation[0] == "trial":
+                _, start, pair = _active_annotation
+                if pair == source + ":" + peer:
+                    left, right = pair.split(":")
+                    _trials.append(C3Trial(len(_trials) + 1, left, right, start, ts))
+                    _active_annotation = None
+        elif key in (ord("s"), ord("S"), ord("l"), ord("L")):
+            kind = "short_occlusion" if key in (ord("s"), ord("S")) else "long_occlusion"
+            if _active_annotation is None:
+                _active_annotation = (kind, ts, "student_01")
+            elif _active_annotation[0] == kind:
+                _, start, actor = _active_annotation
+                _occlusions.append(OcclusionEvent(actor, start, ts, kind == "long_occlusion"))
+                _active_annotation = None
+        elif key in (ord("t"), ord("T")):
+            _track_resets.append(TrackResetEvent(ts, "student_01", "student_03"))
 
     tracking = PersonTrackingModule(
         PersonTrackingConfig(
@@ -272,6 +318,24 @@ def main() -> None:
         width=args.width,
         height=args.height,
     )
+    actual_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or args.width or 0)
+    actual_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or args.height or 0)
+    actual_fps = float(capture.get(cv2.CAP_PROP_FPS) or args.target_fps)
+    if _manifest_recorder is not None:
+        _manifest_recorder.camera_config.update({
+            "measured_width": actual_width,
+            "measured_height": actual_height,
+            "reported_camera_fps": actual_fps,
+        })
+    video_writer = cv2.VideoWriter(
+        str(video_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        actual_fps if actual_fps > 0 else float(args.target_fps),
+        (actual_width, actual_height),
+    )
+    if not video_writer.isOpened():
+        capture.release()
+        raise RuntimeError(f"Could not open camera video writer: {video_path}")
     rate = ProcessingRateController(args.target_fps)
     live_classifier = None
     if args.c7_model_dir is not None and not args.live_pair:
@@ -312,6 +376,8 @@ def main() -> None:
 
                 inference_started_at = monotonic()
                 latest_packet = tracking.process_frame(frame)
+                if _capture_start_ms is None:
+                    _capture_start_ms = int(latest_packet.timestamp_ms)
                 # Live causal classifiers require stable actor IDs.  The old
                 # interactive prompt blocks the frame loop before any model
                 # can warm up, so assign deterministic demo IDs immediately.
@@ -384,11 +450,17 @@ def main() -> None:
                         gates = getattr(live_classifier, "gates", {}) if live_classifier else {}
                         latest_scores = getattr(live_classifier, "_latest_scores", {})
                         actor_scores = latest_scores.get(actor_id, {})
-                        hand_qual = actor_scores.get("strict_hand_quality__mean")
-                        hand_motion = actor_scores.get("hand_motion__q95")
-                        finger_motion = actor_scores.get("finger_motion__q95")
-                        side_delta = actor_scores.get("c3_pose_head_peer_delta__max")
-                        head_down = actor_scores.get("strict_head_down_delta__q95")
+                        feature_row = (
+                            live_classifier.diagnostic_snapshot(actor_id)
+                            if live_classifier is not None
+                            and hasattr(live_classifier, "diagnostic_snapshot")
+                            else {}
+                        )
+                        hand_qual = feature_row.get("strict_hand_quality__mean")
+                        hand_motion = feature_row.get("hand_motion__q95")
+                        finger_motion = feature_row.get("finger_motion__q95")
+                        side_delta = feature_row.get("c3_pose_head_peer_delta__max")
+                        head_down = feature_row.get("strict_head_down_delta__q95")
 
                         c3_motion_ceil = gates.get("c3_motion_ceiling")
                         c3_side_fl = gates.get("c3_side_floor")
@@ -409,8 +481,7 @@ def main() -> None:
                         actor_c3_thresh = getattr(live_classifier, "c3_threshold", 0.9580807089805603) if live_classifier else 0.9580807089805603
                         actor_c2_thresh = getattr(live_classifier, "c2_threshold", 0.5) if live_classifier else 0.5
 
-                        try:
-                            rec = FrameTraceRecord(
+                        rec = FrameTraceRecord(
                                 timestamp_ms=int(latest_packet.timestamp_ms),
                                 frame_index=int(latest_packet.frame_id),
                                 inter_frame_duration_ms=round(inter_ms, 2),
@@ -425,22 +496,28 @@ def main() -> None:
                                 hand_valid=bool(result.left_hand_landmarks or result.right_hand_landmarks),
                                 peer_pose_valid=bool(peer_result.pose_landmarks) if peer_result else None,
                                 peer_hand_valid=bool(peer_result.left_hand_landmarks or peer_result.right_hand_landmarks) if peer_result else None,
-                                peer_age_ms=None,
-                                peer_stale=False,
+                                 peer_age_ms=0.0 if peer_result is not None else None,
+                                 peer_stale=False,
                                 O_A=bool(result.pose_landmarks),
                                 O_AB=bool(result.pose_landmarks) and (peer_result is not None and bool(peer_result.pose_landmarks)),
                                 R_AB=warmup_seen >= warmup_req,
-                                neutral_baseline_age_ms=0.0,
+                                 neutral_baseline_age_ms=float(
+                                     feature_row.get("prefix_frames", 0)
+                                 ) * 1000.0 / max(float(args.target_fps), 1.0),
                                 ready_state="READY" if warmup_seen >= warmup_req else "CALIBRATING",
                                 reset_reason=None,
                                 p3_A=c3_score,
-                                H_AB=None,  # populated by behavior features, not available here directly
-                                Q_A=None,
+                                 H_AB=(float(side_delta) if side_delta is not None else None),
+                                 Q_A=(float(feature_row.get("strict_head_quality__mean"))
+                                      if feature_row.get("strict_head_quality__mean") is not None
+                                      else float(bool(result.pose_landmarks))),
                                 tau_3=actor_c3_thresh,
                                 tau_H=0.0,
                                 p2_AB=float(clf_dec.get("c2_score") or 0.0),
-                                K_AB=None,
-                                Q_hand_AB=None,
+                                 K_AB=(float(feature_row.get("near_midpoint_pre_cross"))
+                                       if feature_row.get("near_midpoint_pre_cross") is not None else None),
+                                 Q_hand_AB=(float(feature_row.get("current_hand_quality_mask"))
+                                            if feature_row.get("current_hand_quality_mask") is not None else None),
                                 tau_2=actor_c2_thresh,
                                 tau_K=0.0,
                                 legacy_c3_gate_hand_quality_positive=gate_hq,
@@ -453,12 +530,11 @@ def main() -> None:
                                 emitted_class=pred_class,
                                 unknown_reason=None,
                                 first_flag_timestamp_ms=clf_dec.get("first_flag_timestamp_ms") or None,
-                                latency_ms=None,
-                                tracks_snapshot=_tracks_snapshot,
-                            )
-                            _trace_logger.log(rec)
-                        except Exception as _exc:
-                            pass  # Never crash webcam loop due to trace failure
+                                 latency_ms=None,
+                                 tracks_snapshot=_tracks_snapshot,
+                                 raw_feature_values=feature_row,
+                             )
+                        _trace_logger.log(rec)
 
                 if _manifest_recorder is not None:
                     _manifest_recorder.record_frame_latency(inference_ms)
@@ -563,12 +639,14 @@ def main() -> None:
                     cv2.LINE_AA,
                 )
                 cv2.imshow("Exam Proctoring - Tracking + Holistic", frame)
+                video_writer.write(frame)
 
                 pump_keyboard_until_frame_deadline(
                     cv2,
                     frame_started_at=frame_started_at,
                     rate=rate,
                     interaction=interaction,
+                    on_key=annotate_key,
                 )
                 if interaction.consume_classifier_reset():
                     if live_classifier is None:
@@ -601,17 +679,46 @@ def main() -> None:
         if _trace_logger is not None:
             _trace_logger.close()
             print(f"Frame trace saved to: {trace_path.resolve()}")
+        video_writer.release()
+        print(f"Camera video saved to: {video_path.resolve()}")
         if _manifest_recorder is not None:
             try:
                 manifest = _manifest_recorder.build_manifest()
                 manifest.save(manifest_path)
                 print(f"Session manifest saved to: {manifest_path.resolve()}")
             except Exception as _exc:
+                _stage_a_errors.append(f"manifest: {_exc}")
                 print(f"[trace] Could not write session manifest: {_exc}")
+        if _DEBUG_AVAILABLE and _capture_start_ms is not None:
+            if _neutral_start_ms is not None:
+                _neutral_intervals.append(
+                    TimeInterval(_neutral_start_ms, int(latest_packet.timestamp_ms), "neutral")
+                )
+            events = SessionEvents(
+                session_id=session_id,
+                calibration_interval=TimeInterval(_capture_start_ms, _capture_start_ms + 2000, "calibration"),
+                neutral_intervals=_neutral_intervals,
+                trials=_trials,
+                occlusions=_occlusions,
+                track_resets=_track_resets,
+            )
+            events.save(events_path)
+            print(f"Events saved to: {events_path.resolve()}")
+            try:
+                events.validate_protocol()
+            except ValueError as _exc:
+                _stage_a_errors.append(f"events: {_exc}")
+                print(f"[trace] Invalid Stage A events: {_exc}")
+        if _trace_logger is not None and not _trace_logger.records:
+            _stage_a_errors.append(
+                "trace: no processed directed-edge records; camera session has no observable actor pair"
+            )
 
         capture.release()
         cv2.destroyAllWindows()
         print(f"\nTracking JSON saved to: {output_path.resolve()}")
+        if _stage_a_errors:
+            raise RuntimeError("Stage A capture failed: " + " | ".join(_stage_a_errors))
 
 
 if __name__ == "__main__":

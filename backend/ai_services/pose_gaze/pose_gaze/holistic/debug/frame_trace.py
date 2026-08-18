@@ -96,6 +96,9 @@ class FrameTraceRecord:
     # Repeated for every directed edge at the same frame.
     tracks_snapshot: list[dict[str, Any]] = field(default_factory=list)
 
+    # Full current aggregate row, retained so scalar mappings remain auditable.
+    raw_feature_values: dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 

@@ -434,6 +434,8 @@ def main() -> None:
             f"WARNING: Replay took {summary.replay_wall_seconds:.1f}s > 30s criterion",
             file=sys.stderr,
         )
+        if args.assert_expected:
+            sys.exit(1)
 
     if args.assert_expected and not summary.passed:
         sys.exit(1)

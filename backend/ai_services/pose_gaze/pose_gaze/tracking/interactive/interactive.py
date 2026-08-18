@@ -346,6 +346,7 @@ def pump_keyboard_until_frame_deadline(
     frame_started_at: float,
     rate: ProcessingRateController,
     interaction: WebcamInteractionController,
+    on_key: Any | None = None,
 ) -> None:
     """Pump OpenCV/terminal keys while enforcing the full-loop FPS limit."""
 
@@ -355,6 +356,8 @@ def pump_keyboard_until_frame_deadline(
         delay_ms = 1 if remaining <= 0 else max(1, min(10, ceil(remaining * 1000)))
         window_key = wait_key(delay_ms)
         if window_key != -1:
+            if on_key is not None:
+                on_key(window_key & 0xFF)
             interaction.handle_key(window_key)
         interaction.poll_console_keys()
 

@@ -106,6 +106,7 @@ class CausalLiveActorClassifier:
         self._last_frame: int | None = None
         self._last_timestamp: int | None = None
         self._latest_scores: dict[str, dict[str, float]] = {}
+        self._latest_feature_rows: dict[str, dict[str, Any]] = {}
         self._window_sizes: dict[str, int] = {}
 
     def _load_model(self, model_name: str, names_name: str):
@@ -253,6 +254,9 @@ class CausalLiveActorClassifier:
             window_frames=self.window_frames,
         )
         latest = self._latest(aggregate_rows, frame_index)
+        self._latest_feature_rows = {
+            str(actor_id): dict(row) for actor_id, row in latest.items()
+        }
         scores, midpoint = {}, {}
         for actor_id, row in latest.items():
             self._state.register_actor(actor_id)
@@ -347,7 +351,12 @@ class CausalLiveActorClassifier:
         self._last_frame = None
         self._last_timestamp = None
         self._latest_scores.clear()
+        self._latest_feature_rows.clear()
         self._window_sizes.clear()
+
+    def diagnostic_snapshot(self, actor_id: str) -> dict[str, Any]:
+        """Return raw current-frame aggregate features for Stage A trace."""
+        return dict(self._latest_feature_rows.get(str(actor_id), {}))
 
 
 class CausalPoseActorClassifier:
