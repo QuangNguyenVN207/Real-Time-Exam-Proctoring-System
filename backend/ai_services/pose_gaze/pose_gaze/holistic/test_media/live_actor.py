@@ -34,6 +34,7 @@ class CausalLiveActorClassifier:
         explicit_pairs: Iterable[tuple[str, str]] = (),
         warmup_frames: int = 15,
         window_frames: int = 90,
+        c3_threshold_override: float | None = None,
     ) -> None:
         self.model_dir = Path(model_dir)
         self.clip_id = str(clip_id)
@@ -50,7 +51,12 @@ class CausalLiveActorClassifier:
             raise ValueError("model artifact is not certified causal")
         thresholds = metrics.get("specialist_thresholds_train_only", {})
         self.c2_threshold = float(thresholds.get("c2", metrics.get("c2_threshold", 0.5)))
-        self.c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        artifact_c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        self.c3_threshold = (
+            float(c3_threshold_override)
+            if c3_threshold_override is not None
+            else artifact_c3_threshold
+        )
         self.suspicious_threshold = thresholds.get("suspicious_activity")
         # Extended suspicious artifacts predate the explicit metadata field,
         # but their C3 schema still requires this causal pose contract.

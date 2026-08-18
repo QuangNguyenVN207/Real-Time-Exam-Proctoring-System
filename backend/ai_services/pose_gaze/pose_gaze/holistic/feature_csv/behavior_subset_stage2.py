@@ -197,7 +197,12 @@ def _head_pnp_pose(points):
     object_points = np.asarray([HEAD_PNP_MODEL[index] for index in HEAD_PNP_MODEL], dtype=np.float64)
     # Match the paper: use absolute pixel coordinates and an approximate
     # intrinsics matrix derived from the fixed 1920x1080 frame dimensions.
-    image_points = np.asarray([points[index] for index in HEAD_PNP_MODEL], dtype=np.float64)
+    try:
+        image_points = np.asarray([points[index] for index in HEAD_PNP_MODEL], dtype=np.float64)
+    except (TypeError, ValueError, KeyError):
+        return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": 0.0}
+    if image_points.shape != object_points.shape or not np.isfinite(image_points).all():
+        return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": 0.0}
     camera = np.asarray([[HEAD_FRAME_WIDTH, 0.0, HEAD_FRAME_WIDTH / 2.0],
                          [0.0, HEAD_FRAME_WIDTH, HEAD_FRAME_HEIGHT / 2.0],
                          [0.0, 0.0, 1.0]], dtype=np.float64)
@@ -208,8 +213,11 @@ def _head_pnp_pose(points):
         return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": 0.0}
     if not solved:
         return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": 0.0}
-    projected, _ = cv2.projectPoints(object_points, rvec, tvec, camera, distortion)
-    error = float(np.mean(np.linalg.norm(projected.reshape(-1, 2) - image_points, axis=1)) / HEAD_FRAME_WIDTH)
+    try:
+        projected, _ = cv2.projectPoints(object_points, rvec, tvec, camera, distortion)
+        error = float(np.mean(np.linalg.norm(projected.reshape(-1, 2) - image_points, axis=1)) / HEAD_FRAME_WIDTH)
+    except (cv2.error, ValueError, FloatingPointError):
+        return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": 0.0}
     if not math.isfinite(error) or error > HEAD_PNP_REPROJECTION_THRESHOLD:
         return {"valid": 0.0, "yaw": 0.0, "pitch": 0.0, "roll": 0.0, "reprojection_error": error}
     rotation, _ = cv2.Rodrigues(rvec)

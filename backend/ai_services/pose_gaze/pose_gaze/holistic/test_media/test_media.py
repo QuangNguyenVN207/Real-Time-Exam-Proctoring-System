@@ -669,6 +669,7 @@ def create_live_classifier(args: argparse.Namespace, *, clip_id: str):
             clip_id=clip_id,
             student_prefix=args.student_prefix,
             explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
+            c3_threshold_override=getattr(args, "c3_threshold_override", None),
         ))
     pose_dirs = {
         class_code: path.resolve()
