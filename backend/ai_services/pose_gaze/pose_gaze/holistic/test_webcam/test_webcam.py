@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from time import monotonic
+from time import monotonic, time_ns
 
 from ..landmark import (
     HolisticLandmarkExtractor,
@@ -34,6 +34,14 @@ DEFAULT_ACTION_ARTIFACTS = {
     "extended": PROJECT_ROOT / "tmp" / "behavior_actor_extended_suspicious_current_geometry_20260815",
 }
 SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
+
+# Lazy imports so webcam still starts without debug deps installed
+try:
+    from ..debug.frame_trace import FrameTraceLogger, FrameTraceRecord
+    from ..debug.session_manifest import SessionManifestRecorder
+    _DEBUG_AVAILABLE = True
+except ImportError:
+    _DEBUG_AVAILABLE = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,6 +114,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Causal c2/c3 specialist artifact directory",
+    )
+    parser.add_argument(
+        "--c3-threshold-override",
+        type=float,
+        default=None,
+        help="Experimental live-test C3 threshold; does not modify the artifact or benchmark",
     )
     parser.add_argument(
         "--c1-model-dir", type=Path, default=None,
@@ -189,6 +203,8 @@ def main() -> None:
         raise ValueError(
             "--soft-landmark-confidence must be in [0, --holistic-confidence]"
         )
+    if args.c3_threshold_override is not None and not 0.0 <= args.c3_threshold_override <= 1.0:
+        raise ValueError("--c3-threshold-override must be in [0, 1]")
     if any(":" not in pair or pair.count(":") != 1 for pair in args.live_pair):
         raise ValueError("--live-pair must use ACTOR:ACTOR")
     session_id = args.session_id or TrackingManager.generate_session_id(
@@ -202,6 +218,42 @@ def main() -> None:
         import cv2
     except ImportError as error:
         raise RuntimeError("Install opencv-python to run this webcam test") from error
+
+    # Stage A: per-frame trace + session manifest (only when debug available)
+    session_output_dir = PROJECT_ROOT / "test_data_tracking" / session_id
+    trace_path = session_output_dir / "frames.jsonl"
+    manifest_path = session_output_dir / "session_manifest.json"
+    _trace_logger = FrameTraceLogger(trace_path) if _DEBUG_AVAILABLE else None
+    _manifest_recorder = None
+    if _DEBUG_AVAILABLE:
+        try:
+            _manifest_recorder = SessionManifestRecorder(
+                session_id=session_id,
+                working_directory=PROJECT_ROOT,
+                model_dir=getattr(args, "causal_model_dir", None),
+                runtime_arguments={
+                    "camera": args.camera,
+                    "target_fps": args.target_fps,
+                    "max_tracks": args.max_tracks,
+                    "holistic_confidence": args.holistic_confidence,
+                    "soft_landmark_confidence": args.soft_landmark_confidence,
+                    "c3_threshold_override": args.c3_threshold_override,
+                    "actions": ",".join(enabled_actions),
+                    "live_pair": list(args.live_pair),
+                    "student_prefix": args.student_prefix,
+                },
+                camera_config={
+                    "index": args.camera,
+                    "width": args.width,
+                    "height": args.height,
+                    "target_fps": args.target_fps,
+                },
+                trace_path=trace_path,
+            )
+        except Exception as _exc:
+            print(f"[trace] SessionManifestRecorder init failed: {_exc}")
+            _manifest_recorder = None
+    _prev_frame_mono: float | None = None
 
     tracking = PersonTrackingModule(
         PersonTrackingConfig(
@@ -292,6 +344,125 @@ def main() -> None:
                 packet_update = interaction.consume_packet_update()
                 if packet_update is not None:
                     latest_packet = packet_update
+
+                # Stage A: emit per-frame trace record for each result
+                if _trace_logger is not None and _DEBUG_AVAILABLE:
+                    inter_ms = (
+                        (frame_started_at - _prev_frame_mono) * 1000.0
+                        if _prev_frame_mono is not None
+                        else 0.0
+                    )
+                    # Build raw tracks snapshot for replay
+                    _tracks_snapshot = [
+                        result.to_dict() for result in latest_holistic_results
+                    ]
+                    # Index by student_id for O_AB / peer lookups
+                    _result_by_id = {
+                        (result.student_id or f"{args.student_prefix}{result.track_id:02d}"): result
+                        for result in latest_holistic_results
+                    }
+                    for result in latest_holistic_results:
+                        actor_id = result.student_id or f"{args.student_prefix}{result.track_id:02d}"
+                        clf_dec = classifications.get(actor_id, {})
+                        pred_class = clf_dec.get("predicted_class", "c5")
+                        c3_score = float(clf_dec.get("c3_score") or 0.0)
+                        warmup_seen = int(clf_dec.get("warmup_frames_seen", 0))
+                        warmup_req = int(clf_dec.get("warmup_frames_required", 15))
+
+                        # Determine peer (first other actor in holistic results)
+                        peer_result = next(
+                            (r for r in latest_holistic_results
+                             if (r.student_id or f"{args.student_prefix}{r.track_id:02d}") != actor_id),
+                            None,
+                        )
+                        peer_id = (
+                            (peer_result.student_id or f"{args.student_prefix}{peer_result.track_id:02d}")
+                            if peer_result is not None else None
+                        )
+
+                        # Gate terms from live_classifier gates dict
+                        gates = getattr(live_classifier, "gates", {}) if live_classifier else {}
+                        latest_scores = getattr(live_classifier, "_latest_scores", {})
+                        actor_scores = latest_scores.get(actor_id, {})
+                        hand_qual = actor_scores.get("strict_hand_quality__mean")
+                        hand_motion = actor_scores.get("hand_motion__q95")
+                        finger_motion = actor_scores.get("finger_motion__q95")
+                        side_delta = actor_scores.get("c3_pose_head_peer_delta__max")
+                        head_down = actor_scores.get("strict_head_down_delta__q95")
+
+                        c3_motion_ceil = gates.get("c3_motion_ceiling")
+                        c3_side_fl = gates.get("c3_side_floor")
+                        c3_down_ceil = gates.get("c3_down_ceiling")
+
+                        gate_hq = bool(hand_qual) and float(hand_qual or 0) > 0 if hand_qual is not None else None
+                        gate_hm = float(hand_motion or 0) <= float(c3_motion_ceil or 1e9) if (hand_motion is not None and c3_motion_ceil is not None) else None
+                        gate_fm = float(finger_motion or 0) <= float(c3_motion_ceil or 1e9) if (finger_motion is not None and c3_motion_ceil is not None) else None
+                        gate_sf = float(side_delta or 0) >= float(c3_side_fl or 0) if (side_delta is not None and c3_side_fl is not None) else None
+                        gate_dc = float(head_down or 0) <= float(c3_down_ceil or 1e9) if (head_down is not None and c3_down_ceil is not None) else None
+                        gate_final = (
+                            all(g is True for g in [gate_hq, gate_hm, gate_fm, gate_sf, gate_dc]
+                                if g is not None)
+                            if any(g is not None for g in [gate_hq, gate_hm, gate_fm, gate_sf, gate_dc])
+                            else None
+                        )
+
+                        actor_c3_thresh = getattr(live_classifier, "c3_threshold", 0.9580807089805603) if live_classifier else 0.9580807089805603
+                        actor_c2_thresh = getattr(live_classifier, "c2_threshold", 0.5) if live_classifier else 0.5
+
+                        try:
+                            rec = FrameTraceRecord(
+                                timestamp_ms=int(latest_packet.timestamp_ms),
+                                frame_index=int(latest_packet.frame_id),
+                                inter_frame_duration_ms=round(inter_ms, 2),
+                                actor_id=actor_id,
+                                peer_id=peer_id,
+                                track_present=result.track_id is not None,
+                                track_missed_count=0,
+                                track_age_frames=warmup_seen,
+                                actor_bbox=list(result.bbox.to_list()) if result.bbox else None,
+                                peer_bbox=list(peer_result.bbox.to_list()) if peer_result and peer_result.bbox else None,
+                                pose_valid=bool(result.pose_landmarks),
+                                hand_valid=bool(result.left_hand_landmarks or result.right_hand_landmarks),
+                                peer_pose_valid=bool(peer_result.pose_landmarks) if peer_result else None,
+                                peer_hand_valid=bool(peer_result.left_hand_landmarks or peer_result.right_hand_landmarks) if peer_result else None,
+                                peer_age_ms=None,
+                                peer_stale=False,
+                                O_A=bool(result.pose_landmarks),
+                                O_AB=bool(result.pose_landmarks) and (peer_result is not None and bool(peer_result.pose_landmarks)),
+                                R_AB=warmup_seen >= warmup_req,
+                                neutral_baseline_age_ms=0.0,
+                                ready_state="READY" if warmup_seen >= warmup_req else "CALIBRATING",
+                                reset_reason=None,
+                                p3_A=c3_score,
+                                H_AB=None,  # populated by behavior features, not available here directly
+                                Q_A=None,
+                                tau_3=actor_c3_thresh,
+                                tau_H=0.0,
+                                p2_AB=float(clf_dec.get("c2_score") or 0.0),
+                                K_AB=None,
+                                Q_hand_AB=None,
+                                tau_2=actor_c2_thresh,
+                                tau_K=0.0,
+                                legacy_c3_gate_hand_quality_positive=gate_hq,
+                                legacy_c3_gate_hand_motion_passed=gate_hm,
+                                legacy_c3_gate_finger_motion_passed=gate_fm,
+                                legacy_c3_gate_side_floor_passed=gate_sf,
+                                legacy_c3_gate_down_ceiling_passed=gate_dc,
+                                legacy_c3_gate_final=gate_final,
+                                resolver_candidate=pred_class,
+                                emitted_class=pred_class,
+                                unknown_reason=None,
+                                first_flag_timestamp_ms=clf_dec.get("first_flag_timestamp_ms") or None,
+                                latency_ms=None,
+                                tracks_snapshot=_tracks_snapshot,
+                            )
+                            _trace_logger.log(rec)
+                        except Exception as _exc:
+                            pass  # Never crash webcam loop due to trace failure
+
+                if _manifest_recorder is not None:
+                    _manifest_recorder.record_frame_latency(inference_ms)
+                _prev_frame_mono = frame_started_at
 
                 holistic.draw_results(frame, latest_holistic_results)
                 tracking.draw_tracks(frame, latest_packet)
@@ -425,6 +596,19 @@ def main() -> None:
                 encoding="utf-8",
             )
             print(f"Causal live actor classifications saved to: {classification_path.resolve()}")
+
+        # Stage A: flush trace and write manifest
+        if _trace_logger is not None:
+            _trace_logger.close()
+            print(f"Frame trace saved to: {trace_path.resolve()}")
+        if _manifest_recorder is not None:
+            try:
+                manifest = _manifest_recorder.build_manifest()
+                manifest.save(manifest_path)
+                print(f"Session manifest saved to: {manifest_path.resolve()}")
+            except Exception as _exc:
+                print(f"[trace] Could not write session manifest: {_exc}")
+
         capture.release()
         cv2.destroyAllWindows()
         print(f"\nTracking JSON saved to: {output_path.resolve()}")
