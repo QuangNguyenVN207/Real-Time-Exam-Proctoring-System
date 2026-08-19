@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger().setLevel(logging.ERROR) # Thêm dòng này để tắt log W000
 
 import transformers
 transformers.logging.set_verbosity_error()
@@ -79,45 +80,37 @@ def init_system_resources():
                 frame_to_save = shared_state["register_frame"]
                 if frame_to_save is not None:
                     try:
-                        # Dùng AI kiểm tra xem ai đang là người lạ trong khung hình
-                        result = face_model.verify_face(frame_to_save, time.time())
-                        
-                        if result and result.get("status") == "alert":
-                            # BẮT ĐƯỢC NGƯỜI LẠ: Lấy tọa độ và cắt riêng mặt họ ra để lưu
-                            bbox = result["details"]["unauthorized_bbox"]
-                            x1, y1, x2, y2 = map(int, bbox)
+                        # Dùng AI quét tìm khuôn mặt trong ảnh vừa chụp
+                        faces = face_model._detect_faces(frame_to_save)
+                        if faces:
+                            # Lấy khuôn mặt to nhất trong ảnh
+                            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
+                            x1, y1, x2, y2 = map(int, face.bbox)
                             h, w = frame_to_save.shape[:2]
                             
-                            # Mở rộng vùng cắt ra 20 pixel cho trọn vẹn khuôn mặt
-                            crop_y1, crop_y2 = max(0, y1 - 20), min(h, y2 + 20)
-                            crop_x1, crop_x2 = max(0, x1 - 20), min(w, x2 + 20)
-                            stranger_face_img = frame_to_save[crop_y1:crop_y2, crop_x1:crop_x2]
+                            # ---> NỚI RỘNG KHUNG 40 PIXEL ĐỂ KHÔNG LẸM VÀO MẶT <---
+                            margin = 40
+                            x1_ext = max(0, x1 - margin)
+                            y1_ext = max(0, y1 - margin)
+                            x2_ext = min(w, x2 + margin)
+                            y2_ext = min(h, y2 + margin)
                             
-                            file_name = f"data/student_faces/stranger_{int(time.time())}.jpg"
-                            cv2.imwrite(file_name, stranger_face_img) # Lưu ảnh KHÔNG có nét vẽ đè
+                            # Vẽ khung bao quanh rộng rãi lên ảnh
+                            save_frame = frame_to_save.copy()
+                            cv2.rectangle(save_frame, (x1_ext, y1_ext), (x2_ext, y2_ext), (0, 255, 0), 2)
+                            cv2.putText(save_frame, "REGISTERED", (x1_ext, y1_ext - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                             
+                            # Lưu ảnh ĐÃ CÓ KHUNG nhưng vẫn đảm bảo chuẩn tên "student_"
+                            file_name = f"data/student_faces/student_{int(time.time())}.jpg"
+                            cv2.imwrite(file_name, save_frame)
+                            
+                            # Ra lệnh cho FaceNet quét lại thư mục và nạp lên RAM
                             face_model._load_database()
-                            result_q.put({"module": "system", "status": "info", "message": f"📸 Đã nạp NGƯỜI LẠ vào danh sách an toàn!"})
                             
+                            result_q.put({"module": "system", "status": "info", "message": f"📸 Đã đăng ký khuôn mặt: {file_name}"})
                         else:
-                            # NẾU CƠ SỞ DỮ LIỆU TRỐNG (Chưa có ai): Fallback về cách lấy mặt to nhất
-                            faces = face_model._detect_faces(frame_to_save)
-                            if faces:
-                                face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-                                x1, y1, x2, y2 = map(int, face.bbox)
-                                h, w = frame_to_save.shape[:2]
-                                
-                                crop_y1, crop_y2 = max(0, int(y1) - 20), min(h, int(y2) + 20)
-                                crop_x1, crop_x2 = max(0, int(x1) - 20), min(w, int(x2) + 20)
-                                first_face_img = frame_to_save[crop_y1:crop_y2, crop_x1:crop_x2]
-                                
-                                file_name = f"data/student_faces/student_{int(time.time())}.jpg"
-                                cv2.imwrite(file_name, first_face_img)
-                                
-                                face_model._load_database()
-                                result_q.put({"module": "system", "status": "info", "message": f"📸 Đã đăng ký thí sinh đầu tiên!"})
-                            else:
-                                result_q.put({"module": "system", "status": "error", "message": "⚠️ Không tìm thấy khuôn mặt nào để lưu!"})
+                            result_q.put({"module": "system", "status": "error", "message": "⚠️ Không tìm thấy khuôn mặt để lưu!"})
+                            
                     except Exception as e:
                         print(f"[LỖI KHI CHỤP ẢNH] {e}")
                 
