@@ -508,11 +508,12 @@ def main() -> None:
                                 reset_reason=None,
                                 p3_A=c3_score,
                                  H_AB=(float(side_delta) if side_delta is not None else None),
-                                 Q_A=(float(feature_row.get("strict_head_quality__mean"))
-                                      if feature_row.get("strict_head_quality__mean") is not None
-                                      else float(bool(result.pose_landmarks))),
+                                 Q_A=float(min(
+                                     float(feature_row.get("c3_pose_head_valid__mean", 0.0)),
+                                     float(feature_row.get("c3_pose_peer_valid__mean", 0.0)),
+                                 )),
                                 tau_3=actor_c3_thresh,
-                                tau_H=0.0,
+                                 tau_H=float(gates.get("c3_side_floor", 0.0)),
                                 p2_AB=float(clf_dec.get("c2_score") or 0.0),
                                  K_AB=(float(feature_row.get("near_midpoint_pre_cross"))
                                        if feature_row.get("near_midpoint_pre_cross") is not None else None),

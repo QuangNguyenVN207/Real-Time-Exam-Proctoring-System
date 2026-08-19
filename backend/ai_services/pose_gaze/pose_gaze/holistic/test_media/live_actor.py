@@ -210,6 +210,30 @@ class CausalLiveActorClassifier:
                     seen.add(frame)
         return output
 
+    def _legacy_c3_gate(self, row: dict[str, Any]) -> bool:
+        """Pre-B4 C3 gate retained for one-release diagnostic tracing."""
+        return (
+            row.get("strict_hand_quality__mean", 0.0) > 0.0
+            and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+            and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
+            and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
+            and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
+        )
+
+    def _b4_c3_gate(self, row: dict[str, Any]) -> bool:
+        """B4 C3 semantic gate; hand features are diagnostic only."""
+        head_reliability = min(
+            float(row.get("c3_pose_head_valid__mean", 0.0)),
+            float(row.get("c3_pose_peer_valid__mean", 0.0)),
+        )
+        return (
+            head_reliability >= 0.5
+            and float(row.get("c3_pose_head_peer_delta__max", 0.0))
+            >= float(self.gates["c3_side_floor"])
+            and float(row.get("strict_head_down_delta__q95", 0.0))
+            <= float(self.gates["c3_down_ceiling"])
+        )
+
     @staticmethod
     def _latest(rows: list[dict[str, Any]], frame_index: int) -> dict[str, dict[str, Any]]:
         return {
@@ -266,13 +290,8 @@ class CausalLiveActorClassifier:
             c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c2_names]], dtype=np.float32)))[0])
             c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
-            scores[actor_id]["c3_gate"] = (
-                row.get("strict_hand_quality__mean", 0.0) > 0.0
-                and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
-                and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
-            )
+            scores[actor_id]["c3_gate"] = self._b4_c3_gate(row)
+            scores[actor_id]["legacy_c3_gate"] = self._legacy_c3_gate(row)
             if self.suspicious_names:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
