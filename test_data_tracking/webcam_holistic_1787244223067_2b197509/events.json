@@ -1,0 +1,12 @@
+{
+  "session_id": "webcam_holistic_1787244223067_2b197509",
+  "calibration_interval": {
+    "start_ms": 1787244227979,
+    "end_ms": 1787244229979,
+    "label": "calibration"
+  },
+  "neutral_intervals": [],
+  "trials": [],
+  "occlusions": [],
+  "track_resets": []
+}

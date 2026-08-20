@@ -35,12 +35,18 @@ class CausalLiveActorClassifier:
         warmup_frames: int = 15,
         window_frames: int = 90,
         c3_threshold_override: float | None = None,
+        xgboost_device: str = "cuda:0",
     ) -> None:
         self.model_dir = Path(model_dir)
         self.clip_id = str(clip_id)
         self.student_prefix = student_prefix
         self.warmup_frames = int(warmup_frames)
         self.window_frames = int(window_frames)
+        self.xgboost_device = str(xgboost_device).strip().lower()
+        if self.xgboost_device == "gpu":
+            self.xgboost_device = "cuda:0"
+        if not self.xgboost_device.startswith("cuda"):
+            raise ValueError("Causal live XGBoost requires a CUDA device")
         metrics_path = self.model_dir / "causal_actor_metrics.json"
         if not metrics_path.is_file():
             raise FileNotFoundError(
@@ -112,6 +118,9 @@ class CausalLiveActorClassifier:
     def _load_model(self, model_name: str, names_name: str):
         import xgboost as xgb
 
+        if not xgb.build_info().get("USE_CUDA"):
+            raise RuntimeError("XGBoost was built without CUDA support")
+
         model_path = self.model_dir / model_name
         names_path = self.model_dir / names_name
         if not model_path.is_file() or not names_path.is_file():
@@ -120,6 +129,7 @@ class CausalLiveActorClassifier:
             )
         model = xgb.Booster()
         model.load_model(str(model_path))
+        model.set_param({"device": self.xgboost_device})
         names = tuple(json.loads(names_path.read_text(encoding="utf-8")))
         if len(names) % 5 != 0:
             raise ValueError(f"invalid causal feature schema: {names_path}")
@@ -221,16 +231,16 @@ class CausalLiveActorClassifier:
         )
 
     def _b4_c3_gate(self, row: dict[str, Any]) -> bool:
-        """B4 C3 semantic gate; hand features are diagnostic only."""
+        """Current-frame B4 C3 gate; rolling and hand features are diagnostic only."""
         head_reliability = min(
-            float(row.get("c3_pose_head_valid__mean", 0.0)),
-            float(row.get("c3_pose_peer_valid__mean", 0.0)),
+            float(row.get("current_c3_pose_head_valid", 0.0)),
+            float(row.get("current_c3_pose_peer_valid", 0.0)),
         )
         return (
             head_reliability >= 0.5
-            and float(row.get("c3_pose_head_peer_delta__max", 0.0))
+            and float(row.get("current_c3_pose_head_peer_delta", 0.0))
             >= float(self.gates["c3_side_floor"])
-            and float(row.get("strict_head_down_delta__q95", 0.0))
+            and float(row.get("current_strict_head_down_delta", 0.0))
             <= float(self.gates["c3_down_ceiling"])
         )
 
@@ -307,7 +317,9 @@ class CausalLiveActorClassifier:
                 and behavior.number(row.get("current_pair_margin_10pct")) > 0.0
                 else 0.0
             )
-        self._latest_scores.update(scores)
+        self._latest_scores = {
+            actor_id: dict(values) for actor_id, values in scores.items()
+        }
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
 
@@ -332,17 +344,44 @@ class CausalLiveActorClassifier:
             results=(TrackResult(dict(track)) for track in tracks),
         )
 
-    def _decision_output(self, scores):
+    def _decision_output(self, scores=None):
+        scores = scores or {}
         return {
             actor_id: {
-                "actor_id": actor_id, "predicted_class": decision.class_code,
+                "actor_id": actor_id,
+                "predicted_class": decision.class_code,
+                "candidate_class": decision.class_code,
+                "current_scores": {
+                    name: value
+                    for name, value in scores.get(actor_id, {}).items()
+                    if name in {"c2", "c3", "suspicious_activity"}
+                },
+                "current_gates": {
+                    name: bool(scores.get(actor_id, {}).get(f"{name}_gate", False))
+                    for name in ("c2", "c3", "suspicious_activity")
+                },
                 "c2_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c2", ""),
                 "c3_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c3", ""),
                 "suspicious_activity_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("suspicious_activity", ""),
                 "warmup_frames_seen": self._window_sizes.get(actor_id, 0),
                 "warmup_frames_required": self.warmup_frames,
+                "history": [
+                    {
+                        "class_code": evidence.class_code,
+                        "frame_index": evidence.frame_index,
+                        "timestamp_ms": evidence.timestamp_ms,
+                        "score": evidence.score,
+                        "source_actor_id": evidence.source_actor_id or "",
+                        "source_score": evidence.source_score,
+                    }
+                    for evidence in decision.history
+                ],
+                "evidence_class": decision.evidence_class or "",
                 "evidence_score": decision.evidence_score if decision.evidence_score is not None else "",
                 "evidence_frame_index": decision.evidence_frame_index if decision.evidence_frame_index is not None else "",
+                "evidence_timestamp_ms": decision.evidence_timestamp_ms if decision.evidence_timestamp_ms is not None else "",
+                "evidence_source_score": decision.evidence_source_score if decision.evidence_source_score is not None else "",
+                "evidence_source_actor_id": decision.source_actor_id or "",
                 "first_flag_frame_index": decision.first_flag_frame_index if decision.first_flag_frame_index is not None else "",
                 "first_flag_timestamp_ms": decision.first_flag_timestamp_ms if decision.first_flag_timestamp_ms is not None else "",
                 "causal": True,

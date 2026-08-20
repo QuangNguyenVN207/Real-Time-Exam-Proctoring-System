@@ -109,22 +109,37 @@ class CausalActorWindow:
 
 
 @dataclass(frozen=True, slots=True)
+class ActorEvidence:
+    """One qualified class observation retained in actor/session history."""
+
+    class_code: str
+    frame_index: int
+    timestamp_ms: int
+    score: float
+    source_actor_id: str | None = None
+    source_score: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ActorFlag:
-    """Causal actor decision and audit timestamps."""
+    """Current-frame output plus persistent actor evidence history."""
 
     actor_id: str
     class_code: str
+    evidence_class: str | None = None
     evidence_frame_index: int | None = None
     evidence_timestamp_ms: int | None = None
     evidence_score: float | None = None
+    evidence_source_score: float | None = None
     first_flag_frame_index: int | None = None
     first_flag_timestamp_ms: int | None = None
     source_actor_id: str | None = None
+    history: tuple[ActorEvidence, ...] = ()
 
 
 @dataclass(slots=True)
 class CausalSpecialistState:
-    """Actor-level priority state updated in timestamp order."""
+    """Frame-local actor decisions with persistent causal evidence history."""
 
     actor_ids: tuple[str, ...]
     c3_threshold: float
@@ -132,23 +147,25 @@ class CausalSpecialistState:
     suspicious_threshold: float | None = None
     c3_gate: object | None = None
     suspicious_gate: object | None = None
-    class_by_actor: dict[str, str] = field(default_factory=dict)
-    evidence_by_actor: dict[str, tuple[str, float, int, int, str]] = field(default_factory=dict)
-    first_flag_by_actor: dict[str, tuple[int, int, str]] = field(default_factory=dict)
+    current_class_by_actor: dict[str, str] = field(default_factory=dict)
+    history_by_actor: dict[str, list[ActorEvidence]] = field(default_factory=dict)
+    first_flag_by_actor: dict[str, ActorEvidence] = field(default_factory=dict)
     _last_frame: int | None = None
     _last_timestamp: int | None = None
 
     def __post_init__(self) -> None:
         self.actor_ids = tuple(str(actor_id) for actor_id in self.actor_ids)
-        self.class_by_actor = {actor_id: "c5" for actor_id in self.actor_ids}
+        self.current_class_by_actor = {actor_id: "c5" for actor_id in self.actor_ids}
+        self.history_by_actor = {actor_id: [] for actor_id in self.actor_ids}
 
     def register_actor(self, actor_id: str) -> None:
         """Register a track that appears later in a live stream."""
         actor_id = str(actor_id)
-        if actor_id in self.class_by_actor:
+        if actor_id in self.current_class_by_actor:
             return
         self.actor_ids = (*self.actor_ids, actor_id)
-        self.class_by_actor[actor_id] = "c5"
+        self.current_class_by_actor[actor_id] = "c5"
+        self.history_by_actor[actor_id] = []
 
     def update(
         self,
@@ -169,23 +186,33 @@ class CausalSpecialistState:
         self._last_timestamp = timestamp_ms
         midpoint = near_midpoint_by_actor or {}
 
+        for actor_id in scores_by_actor:
+            self.register_actor(actor_id)
+        for left, right in explicit_pairs:
+            self.register_actor(str(left))
+            self.register_actor(str(right))
+        self.current_class_by_actor = {
+            actor_id: "c5" for actor_id in self.actor_ids
+        }
+
         for left, right in explicit_pairs:
             pair = (str(left), str(right))
-            pair_candidates: list[tuple[str, float, str, str]] = []
+            pair_candidates: list[tuple[float, str]] = []
             for actor_id in pair:
                 score = _number(scores_by_actor.get(actor_id, {}).get("c2"))
                 if _number(midpoint.get(actor_id)) >= 1.0 and score >= self.c2_threshold:
-                    pair_candidates.append(("c2", score, actor_id, actor_id))
+                    pair_candidates.append((score, actor_id))
             if pair_candidates:
-                class_code, score, source_actor, _ = max(
-                    pair_candidates,
-                    key=lambda candidate: candidate[1],
-                )
+                source_score, source_actor = max(pair_candidates)
                 for actor_id in pair:
-                    self._accept(actor_id, class_code, score, frame_index, timestamp_ms, source_actor)
+                    own_score = _number(scores_by_actor.get(actor_id, {}).get("c2"))
+                    self._accept(
+                        actor_id, "c2", own_score, frame_index, timestamp_ms,
+                        source_actor, source_score=source_score,
+                    )
 
         for actor_id in self.actor_ids:
-            if self.class_by_actor[actor_id] == "c2":
+            if self.current_class_by_actor[actor_id] == "c2":
                 continue
             values = scores_by_actor.get(actor_id, {})
             c3_score = _number(values.get("c3"))
@@ -208,49 +235,60 @@ class CausalSpecialistState:
         frame_index: int,
         timestamp_ms: int,
         source_actor: str,
+        *,
+        source_score: float | None = None,
     ) -> None:
-        current = self.class_by_actor[actor_id]
-        if current == "c5":
-            self.class_by_actor[actor_id] = class_code
-            self.first_flag_by_actor.setdefault(
-                actor_id, (frame_index, timestamp_ms, source_actor)
-            )
-        elif class_code == "c2" and current != "c2":
-            # Pair exchange has priority over an earlier single-actor cue.
-            self.class_by_actor[actor_id] = class_code
-            self.first_flag_by_actor[actor_id] = (frame_index, timestamp_ms, source_actor)
-        elif current != class_code:
-            # Apart from the explicit pair-exchange priority, the actor state
-            # follows the strongest causal positive evidence seen so far.
-            previous = self.evidence_by_actor.get(actor_id)
-            if previous is None or score <= previous[1]:
-                return
-            self.class_by_actor[actor_id] = class_code
-        previous = self.evidence_by_actor.get(actor_id)
-        if previous is None or score > previous[1]:
-            self.evidence_by_actor[actor_id] = (
-                class_code, score, frame_index, timestamp_ms, source_actor
-            )
+        priority = {"c5": 0, "suspicious_activity": 1, "c3": 2, "c2": 3}
+        current = self.current_class_by_actor[actor_id]
+        if priority.get(class_code, 0) >= priority.get(current, 0):
+            self.current_class_by_actor[actor_id] = class_code
+
+        evidence = ActorEvidence(
+            class_code=class_code,
+            frame_index=frame_index,
+            timestamp_ms=timestamp_ms,
+            score=score,
+            source_actor_id=source_actor,
+            source_score=source_score,
+        )
+        history = self.history_by_actor.setdefault(actor_id, [])
+        for index, previous in enumerate(history):
+            if previous.class_code == class_code and previous.frame_index == frame_index:
+                if evidence.score > previous.score:
+                    history[index] = evidence
+                break
+        else:
+            history.append(evidence)
+        self.first_flag_by_actor.setdefault(actor_id, evidence)
 
     def decisions(self) -> dict[str, ActorFlag]:
         output: dict[str, ActorFlag] = {}
         for actor_id in self.actor_ids:
-            evidence = self.evidence_by_actor.get(actor_id)
+            history = tuple(self.history_by_actor.get(actor_id, ()))
+            evidence = max(
+                history,
+                key=lambda item: (item.score, item.frame_index, item.timestamp_ms),
+                default=None,
+            )
             first = self.first_flag_by_actor.get(actor_id)
             output[actor_id] = ActorFlag(
                 actor_id=actor_id,
-                class_code=self.class_by_actor[actor_id],
-                evidence_frame_index=evidence[2] if evidence else None,
-                evidence_timestamp_ms=evidence[3] if evidence else None,
-                evidence_score=evidence[1] if evidence else None,
-                first_flag_frame_index=first[0] if first else None,
-                first_flag_timestamp_ms=first[1] if first else None,
-                source_actor_id=(evidence[4] if evidence else first[2] if first else None),
+                class_code=self.current_class_by_actor[actor_id],
+                evidence_class=evidence.class_code if evidence else None,
+                evidence_frame_index=evidence.frame_index if evidence else None,
+                evidence_timestamp_ms=evidence.timestamp_ms if evidence else None,
+                evidence_score=evidence.score if evidence else None,
+                evidence_source_score=evidence.source_score if evidence else None,
+                first_flag_frame_index=first.frame_index if first else None,
+                first_flag_timestamp_ms=first.timestamp_ms if first else None,
+                source_actor_id=evidence.source_actor_id if evidence else None,
+                history=history,
             )
         return output
 
 
 __all__ = [
+    "ActorEvidence",
     "ActorFlag",
     "CausalActorWindow",
     "CausalFrameState",

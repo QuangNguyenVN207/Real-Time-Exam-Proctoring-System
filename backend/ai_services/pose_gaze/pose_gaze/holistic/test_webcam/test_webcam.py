@@ -31,7 +31,7 @@ from ...tracking.webcam import (
 
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "extended": PROJECT_ROOT / "tmp" / "behavior_actor_extended_suspicious_current_geometry_20260815",
+    "extended": PROJECT_ROOT / "tmp" / "benchmark_face_mesh_restored_cuda_snapshot_verify_final_20260820",
 }
 SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
 
@@ -49,7 +49,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--model", type=Path, default=None)
-    parser.add_argument("--device", default=None, help="Ultralytics device: cpu, 0, ...")
+    parser.add_argument("--device", default="0", help="Ultralytics CUDA device; default: 0")
+    parser.add_argument(
+        "--xgboost-device",
+        default="cuda:0",
+        help="XGBoost inference device; default: cuda:0",
+    )
     parser.add_argument(
         "--confidence",
         type=float,
@@ -208,6 +213,12 @@ def main() -> None:
         raise ValueError("--c3-threshold-override must be in [0, 1]")
     if any(":" not in pair or pair.count(":") != 1 for pair in args.live_pair):
         raise ValueError("--live-pair must use ACTOR:ACTOR")
+    try:
+        import torch
+    except ImportError as error:
+        raise RuntimeError("PyTorch CUDA is required for YOLO GPU inference") from error
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is unavailable; YOLO and XGBoost GPU mode cannot start")
     session_id = args.session_id or TrackingManager.generate_session_id(
         "webcam_holistic"
     )
@@ -215,6 +226,7 @@ def main() -> None:
     print(f"Session ID ({mode}): {session_id}")
     print(f"Actions: {','.join(enabled_actions)}")
     print(f"Explicit pairs: {','.join(args.live_pair) if args.live_pair else 'none'}")
+    print(f"YOLO device: {args.device} | XGBoost device: {args.xgboost_device}")
     try:
         import cv2
     except ImportError as error:
@@ -241,6 +253,8 @@ def main() -> None:
                     "holistic_confidence": args.holistic_confidence,
                     "soft_landmark_confidence": args.soft_landmark_confidence,
                     "c3_threshold_override": args.c3_threshold_override,
+                    "xgboost_device": args.xgboost_device,
+                    "yolo_device": args.device,
                     "actions": ",".join(enabled_actions),
                     "live_pair": list(args.live_pair),
                     "student_prefix": args.student_prefix,
