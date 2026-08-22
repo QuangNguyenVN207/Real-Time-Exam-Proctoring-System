@@ -1,0 +1,111 @@
+{
+  "protocol": "actor_only_causal_live_feed_rolling_replay_extended_suspicious",
+  "primary_unit": "(video, actor_id)",
+  "metric_labels": [
+    "suspicious_activity",
+    "c2",
+    "c3",
+    "c5"
+  ],
+  "causal": true,
+  "future_frames_used_for_decision": false,
+  "official_benchmark_unchanged": true,
+  "official_benchmark_labels": [
+    "c2",
+    "c3",
+    "c5"
+  ],
+  "shared_prefix_stream": true,
+  "specialist_thresholds_train_only": {
+    "c2": 0.9274576902389526,
+    "c3": 0.9580807089805603,
+    "suspicious_activity": 0.8993487358093262
+  },
+  "gate_thresholds_train_only": {
+    "c3_motion_ceiling": 0.12455908344792344,
+    "c3_side_floor": 0.05,
+    "c3_down_ceiling": 0.05,
+    "suspicious_down_floor": 0.028485298248173724,
+    "suspicious_motion_floor": 0.03761289230916461,
+    "suspicious_lower_floor": -0.18785898052595834
+  },
+  "rules": {
+    "c2": "finger-or-hand midpoint evidence through existing explicit-pair gate",
+    "c3": "quiet hand/fingers, peer side-turn, no head-down",
+    "suspicious_activity": "head down, active hand, below hip, own side outside midpoint"
+  },
+  "actor_macro_f1": 0.7133909007034944,
+  "actor_metrics": {
+    "suspicious_activity": {
+      "precision": 0.8888888888888888,
+      "recall": 0.4,
+      "f1-score": 0.5517241379310345,
+      "support": 20.0
+    },
+    "c2": {
+      "precision": 0.6,
+      "recall": 1.0,
+      "f1-score": 0.75,
+      "support": 12.0
+    },
+    "c3": {
+      "precision": 1.0,
+      "recall": 0.625,
+      "f1-score": 0.7692307692307693,
+      "support": 8.0
+    },
+    "c5": {
+      "precision": 0.6923076923076923,
+      "recall": 0.9,
+      "f1-score": 0.782608695652174,
+      "support": 20.0
+    }
+  },
+  "actor_confusion_matrix": [
+    [
+      8,
+      7,
+      0,
+      5
+    ],
+    [
+      0,
+      12,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      5,
+      3
+    ],
+    [
+      1,
+      1,
+      0,
+      18
+    ]
+  ],
+  "test_actor_count": 60,
+  "leakage": {
+    "raw_actor_id_overlap": [],
+    "clip_id_overlap": [],
+    "split_group_overlap": [],
+    "truth_used_as_model_feature": false,
+    "identity_used_as_model_feature": false,
+    "future_rows_used_for_decision": 0
+  },
+  "experiment": {
+    "name": "causal_readiness_c3_baseline_ablation",
+    "source_cadence_fps_approx": 30.0,
+    "readiness_frames": 15,
+    "readiness_seconds_approx": 0.5,
+    "c3_baseline_frames": 15,
+    "c3_baseline_seconds_approx": 0.5,
+    "official_artifact_modified": false,
+    "extended_suspicious": true
+  },
+  "warmup_frames": 15,
+  "warmup_seconds_approx": 0.5
+}

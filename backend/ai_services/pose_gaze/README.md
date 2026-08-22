@@ -67,8 +67,9 @@ $video = "C:\path\to\your-video.mp4"
   --target-fps 30
 ```
 
-No sample video is committed. Supply a local MP4; it is processed causally,
-frame by frame.
+A tracked sample is available at
+`backend/ai_services/pose_gaze/demo/pose_gaze_sample.mp4`. Any local MP4 is
+processed causally, frame by frame.
 
 ## Artifact contents
 

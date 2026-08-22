@@ -3,15 +3,25 @@ from pathlib import Path
 from datetime import datetime
 
 class AudioLogger:
-    def __init__(self, log_dir="outputs"):
-        """
-        Sử dụng pathlib (từ file cũ) để quản lý đường dẫn đa nền tảng tốt hơn.
-        Mặc định lưu vào thư mục 'outputs' để tách biệt log với code source.
-        """
-        # Trỏ ra ngoài thư mục gọi script hoặc sử dụng thư mục outputs
-        base_dir = Path(__file__).resolve().parent.parent
-        self.log_file = base_dir / log_dir / "audio_log.jsonl"
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
+        # Thư mục whisper/
+        whisper_dir = Path(__file__).resolve().parent
+
+        # whisper/outputs/
+        self.output_dir = whisper_dir / "outputs"
+        self.output_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        # whisper/outputs/audio_log.jsonl
+        self.log_file = (
+            self.output_dir / "cheating_detected.jsonl"
+        )
+
+        print(
+            f"[Logger] Log file: {self.log_file}"
+        )
 
     def write(
         self,
