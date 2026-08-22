@@ -33,7 +33,7 @@ from ...tracking.webcam import (
 DEFAULT_ACTION_ARTIFACTS = {
     "extended": PROJECT_ROOT / "tmp" / "benchmark_face_mesh_restored_cuda_snapshot_verify_final_20260820",
 }
-SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
+SUPPORTED_ACTIONS = ("c2", "c3", "c5", "suspicious_activity")
 
 # Lazy imports so webcam still starts without debug deps installed
 try:
@@ -127,18 +127,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Experimental live-test C3 threshold; does not modify the artifact or benchmark",
     )
-    parser.add_argument(
-        "--c1-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C1 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c4-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C4 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c7-model-dir", type=Path, default=None,
-        help="Optional causal per-hand C7 specialist artifact directory",
-    )
     parser.add_argument("--student-prefix", default="student_")
     parser.add_argument(
         "--live-pair",
@@ -167,34 +155,13 @@ def configure_action_models(args: argparse.Namespace) -> tuple[str, ...]:
         # The promoted extended artifact contains the deployed C2/C3
         # specialists as well as suspicious_activity.
         args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
-    # Only the locked C2/C3 benchmark artifact is bundled.  Other specialists
-    # require an explicit artifact directory instead of silently referencing
-    # local, uncommitted experiment outputs.
     if not ({"c2", "c3", "suspicious_activity"} & set(enabled)):
         args.causal_model_dir = None
-    if "c1" not in enabled:
-        args.c1_model_dir = None
-    if "c4" not in enabled:
-        args.c4_model_dir = None
-    if "c7" not in enabled:
-        args.c7_model_dir = None
-    missing_specialists = [
-        action for action, model_dir in (
-            ("c1", args.c1_model_dir), ("c4", args.c4_model_dir),
-            ("c7", args.c7_model_dir),
-        )
-        if action in enabled and model_dir is None
-    ]
-    if missing_specialists:
-        raise ValueError(
-            "requested action requires an explicit model directory: "
-            + ", ".join(missing_specialists)
-        )
-    if not args.live_pair and ({"c2", "c7"} & set(enabled)):
+    if not args.live_pair and "c2" in enabled:
         args.live_pair = ["student_01:student_02"]
-    missing = [str(path) for path in (
-        args.causal_model_dir, args.c1_model_dir, args.c4_model_dir, args.c7_model_dir
-    ) if path is not None and not Path(path).is_dir()]
+    missing = [str(args.causal_model_dir)] if (
+        args.causal_model_dir is not None and not Path(args.causal_model_dir).is_dir()
+    ) else []
     if missing:
         raise FileNotFoundError("Action artifact directories were not found: " + ", ".join(missing))
     return enabled
@@ -352,9 +319,7 @@ def main() -> None:
         raise RuntimeError(f"Could not open camera video writer: {video_path}")
     rate = ProcessingRateController(args.target_fps)
     live_classifier = None
-    if args.c7_model_dir is not None and not args.live_pair:
-        raise ValueError("--c7-model-dir requires at least one explicit --live-pair")
-    if any((args.causal_model_dir, args.c1_model_dir, args.c4_model_dir, args.c7_model_dir)):
+    if args.causal_model_dir is not None:
         from ..test_media.test_media import create_live_classifier
 
         args.xgboost_model_dir = args.causal_model_dir

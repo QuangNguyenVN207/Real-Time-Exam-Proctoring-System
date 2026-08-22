@@ -52,19 +52,6 @@ def main() -> None:
         help="Webcam index or path to an MP4/video file.",
     )
     parser.add_argument("--session-id", default=None)
-    parser.add_argument(
-        "--enable-face-identity",
-        action="store_true",
-        help=(
-            "Use RetinaFace/ArcFace for automatic stable person IDs and "
-            "identity-mismatch alerts."
-        ),
-    )
-    parser.add_argument(
-        "--face-db",
-        default=settings.face_db_path,
-        help="Directory of reference images named <person_id>.jpg/png.",
-    )
     args = parser.parse_args()
     source: int | str = (
         int(args.source) if args.source.isdigit() else args.source
@@ -90,11 +77,6 @@ def main() -> None:
             else None
         ),
     )
-    face_verifier = None
-    if args.enable_face_identity:
-        from backend.ai_services.face_verify.face_verify import FaceVerifier
-
-        face_verifier = FaceVerifier(db_path=args.face_db)
     pipeline = PoseGazePaperPipeline(
         person_detector=person_detector,
         object_detector=object_detector,
@@ -105,7 +87,6 @@ def main() -> None:
             if is_live_webcam
             else 1
         ),
-        face_verifier=face_verifier,
     )
     source_stem = (
         "webcam"
@@ -113,7 +94,7 @@ def main() -> None:
         else Path(str(source)).stem
     )
     session_id = args.session_id or f"paper_tracking_{source_stem}"
-    pipeline.create_session(session_id, restore_existing=True)
+    pipeline.create_session(session_id)
 
     capture = cv2.VideoCapture(source)
     if is_live_webcam:

@@ -215,7 +215,7 @@ class ObjectDetectorContractTests(unittest.TestCase):
 
 
 class ObjectDetectExtractionTests(unittest.TestCase):
-    def test_pose_gate_blocks_detection_and_never_replays_stale_alert(
+    def test_live_cadence_runs_object_model_once_every_four_frames(
         self,
     ) -> None:
         model = _FakeCountingObjectModel()
@@ -226,42 +226,16 @@ class ObjectDetectExtractionTests(unittest.TestCase):
         )
         frame = np.zeros((360, 640, 3), dtype=np.uint8)
 
-        blocked = module.process(frame, "live", 1)
-        gated = module.process(
-            frame,
-            "live",
-            2,
-            pose_suspicious_activity=True,
-        )
-        blocked_again = module.process(frame, "live", 3)
+        results = [
+            module.process(frame, "live", frame_id)
+            for frame_id in range(1, 9)
+        ]
 
-        self.assertEqual(model.calls, 1)
-        self.assertFalse(blocked["pose_gate"])
-        self.assertFalse(blocked["inference_ran"])
-        self.assertTrue(gated["pose_gate"])
-        self.assertTrue(gated["inference_ran"])
-        self.assertFalse(blocked_again["pose_gate"])
-        self.assertEqual(blocked_again["raw_objects"], [])
-
-    def test_pose_gate_runs_current_frame_without_cadence_delay(self) -> None:
-        model = _FakeCountingObjectModel()
-        module = ObjectDetectModule(
-            model=model,
-            enable_smartphone_fallback=False,
-            detect_every_n_frames=4,
-        )
-        frame = np.zeros((360, 640, 3), dtype=np.uint8)
-
-        result = module.process(
-            frame,
-            "live",
-            7,
-            pose_suspicious_activity=True,
-        )
-
-        self.assertEqual(model.calls, 1)
-        self.assertTrue(result["pose_gate"])
-        self.assertTrue(result["inference_ran"])
+        self.assertEqual(model.calls, 2)
+        self.assertIsNone(results[0])
+        self.assertTrue(results[3]["inference_ran"])
+        self.assertFalse(results[4]["inference_ran"])
+        self.assertTrue(results[7]["inference_ran"])
 
     def test_calculator_button_grid_is_not_a_smartphone(self) -> None:
         calculator = np.full((500, 300, 3), 230, dtype=np.uint8)

@@ -149,17 +149,6 @@ def parse_args() -> argparse.Namespace:
         help="Do not write annotated image or video output",
     )
     parser.add_argument("--model", type=Path, default=None, help="YOLO weights")
-    parser.add_argument(
-        "--object-model",
-        type=Path,
-        default=None,
-        help="Optional three-class object detector used to subtype suspicious_activity",
-    )
-    parser.add_argument(
-        "--object-device",
-        default=None,
-        help="Object detector device: cpu, 0, ...",
-    )
     parser.add_argument("--device", default=None, help="Ultralytics device: cpu, 0, ...")
     parser.add_argument(
         "--confidence",
@@ -251,19 +240,7 @@ def parse_args() -> argparse.Namespace:
         "--xgboost-model-dir",
         type=Path,
         default=None,
-        help="Optional actor-level c2/c3/c7 XGBoost model directory",
-    )
-    parser.add_argument(
-        "--c1-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C1 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c4-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C4 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c7-model-dir", type=Path, default=None,
-        help="Optional causal per-hand C7 specialist artifact directory",
+        help="Optional actor-level c2/c3/suspicious_activity XGBoost model directory",
     )
     parser.add_argument(
         "--causal-live",
@@ -350,19 +327,10 @@ def validate_args(args: argparse.Namespace, kind: str) -> None:
     if args.causal_live:
         if kind != "video":
             raise ValueError("--causal-live requires a video or camera stream")
-        if not any((args.xgboost_model_dir, args.c1_model_dir, args.c4_model_dir, args.c7_model_dir)):
-            raise ValueError(
-                "--causal-live requires at least one of --xgboost-model-dir, "
-                "--c1-model-dir, --c4-model-dir, or --c7-model-dir"
-            )
-        if args.c7_model_dir is not None and not args.live_pair:
-            raise ValueError("--c7-model-dir requires at least one explicit --live-pair")
+        if args.xgboost_model_dir is None:
+            raise ValueError("--causal-live requires --xgboost-model-dir")
         if any(":" not in pair or pair.count(":") != 1 for pair in args.live_pair):
             raise ValueError("--live-pair must use ACTOR:ACTOR")
-    if args.object_model is not None and not args.causal_live:
-        raise ValueError("--object-model requires --causal-live")
-    if args.object_model is not None and not args.object_model.is_file():
-        raise FileNotFoundError(f"Object detector weights were not found: {args.object_model}")
     if not args.no_save_annotated:
         output_suffix = args.output.suffix.lower()
         allowed = IMAGE_EXTENSIONS if kind == "image" else VIDEO_EXTENSIONS
@@ -370,45 +338,6 @@ def validate_args(args: argparse.Namespace, kind: str) -> None:
             expected = "image" if kind == "image" else "video"
             raise ValueError(f"--output must have a supported {expected} extension")
 
-
-def create_object_detector(args: argparse.Namespace) -> Any | None:
-    """Load the optional three-class detector for pose-gated subtype evidence."""
-    if args.object_model is None:
-        return None
-    from ultralytics import YOLO
-    from backend.ai_services.object_detect.object_detect import ObjectDetectModule
-    from backend.ai_services.object_detect.tiled_inference import build_sahi_model
-    import torch
-
-    model = YOLO(str(args.object_model.resolve()))
-    device = args.object_device
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    elif str(device).isdigit():
-        device = f"cuda:{device}"
-    # This is the production runtime path: pose gate first, then real SAHI
-    # slicing on the current frame. Do not silently fall back to full-frame.
-    sahi_model = build_sahi_model(
-        args.object_model.resolve(),
-        imgsz=1280,
-        conf=0.15,
-        device=device,
-    )
-    return ObjectDetectModule(
-        model=model,
-        device=device,
-        enable_smartphone_fallback=False,
-        detect_every_n_frames=1,
-        # One pose-qualified, actor-owned positive frame is sufficient for
-        # this specialist to promote C1/C4; persistence belongs to pose state,
-        # not to the object detector's alert decision.
-        confirm_frames_by_class={"phone": 1},
-        paper_class_names={"baseline_paper", "cheating_paper"},
-        flagged_classes={"phone"},
-        paper_confidence_threshold=0.15,
-        inference_size=1280,
-        sahi_model=sahi_model,
-    )
 
 def create_tracking(args: argparse.Namespace, session_id: str) -> PersonTrackingModule:
     return PersonTrackingModule(
@@ -541,9 +470,6 @@ def process_one_frame(
     landmark_writer: LandmarkJsonWriter | None,
     sampled_fps: float | None,
     live_classifier: Any | None = None,
-    object_rows_by_actor: dict[str, dict[str, Any]] | None = None,
-    object_detector: Any | None = None,
-    object_session_id: str | None = None,
 ) -> tuple[Any, TrackPacket]:
     started_at = monotonic()
     packet = tracking.process_frame(frame, timestamp_ms=timestamp_ms)
@@ -552,10 +478,7 @@ def process_one_frame(
         packet,
         student_prefix,
     )
-    # Pose is the first-stage gate.  It must be evaluated on this current
-    # frame before the expensive object detector is allowed to run.
     results = holistic.process_packet(frame, packet)
-    object_rows_by_actor = {}
     classifications = (
         live_classifier.update(
             frame_index=source_frame_index,
@@ -565,71 +488,6 @@ def process_one_frame(
         if live_classifier is not None
         else None
     )
-    pose_gate = any(
-        bool(classification.get("pose_gate", False))
-        for classification in (classifications or {}).values()
-    )
-    if object_detector is not None:
-        from ...object_cues import object_row
-
-        people = [
-            track
-            for track in packet.to_dict().get("tracks", [])
-            if track.get("is_present", True)
-        ]
-        person_rois = [
-            {
-                "bbox_xyxy": track.get("bbox_xyxy", []),
-                "track_id": track.get("track_id"),
-                "person_id": track.get("student_id"),
-            }
-            for track in people
-        ]
-        detector_result = object_detector.process(
-            frame,
-            object_session_id or "live",
-            source_frame_index,
-            person_rois=person_rois,
-            pose_suspicious_activity=pose_gate,
-        )
-        if detector_result is not None:
-            object_payload = {
-                "object_result": detector_result,
-                "raw_objects": detector_result.get("raw_objects", []),
-                "people": people,
-                "papers": detector_result.get("papers", []),
-                "alerts": detector_result.get("alerts", []),
-            }
-            for track in people:
-                actor_id = str(
-                    track.get("student_id")
-                    or f"{student_prefix}{int(track['track_id']):02d}"
-                )
-                object_rows_by_actor[actor_id] = object_row(
-                    track,
-                    object_payload,
-                    object_payload["papers"],
-                )
-    if live_classifier is not None and object_rows_by_actor:
-        apply_object_evidence = getattr(
-            live_classifier,
-            "apply_object_evidence",
-            None,
-        )
-        if apply_object_evidence is not None:
-            apply_object_evidence(
-                frame_index=source_frame_index,
-                timestamp_ms=timestamp_ms,
-                object_rows_by_actor=object_rows_by_actor,
-            )
-            current_decisions = live_classifier.final_decisions()
-            classifications = {
-                actor_id: {
-                    **(classifications or {}).get(actor_id, {}),
-                    **decision,
-                }
-                for actor_id, decision in current_decisions.items()
-            }
     inference_ms = (monotonic() - started_at) * 1000.0
 
     write_landmark_record(
@@ -655,39 +513,16 @@ def process_one_frame(
 
 def create_live_classifier(args: argparse.Namespace, *, clip_id: str):
     """Build one shared causal classifier for media replay or live capture."""
-    from .live_actor import (
-        CausalLiveActorClassifier,
-        CausalPoseActorClassifier,
-        CausalC7ActorClassifier,
-        CombinedCausalActorClassifier,
-    )
+    from .live_actor import CausalLiveActorClassifier
 
-    classifiers = []
-    if args.xgboost_model_dir is not None:
-        classifiers.append(CausalLiveActorClassifier(
-            args.xgboost_model_dir.resolve(),
-            clip_id=clip_id,
-            student_prefix=args.student_prefix,
-            explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
-            c3_threshold_override=getattr(args, "c3_threshold_override", None),
-            xgboost_device=getattr(args, "xgboost_device", "cuda:0"),
-        ))
-    pose_dirs = {
-        class_code: path.resolve()
-        for class_code, path in (("c1", args.c1_model_dir), ("c4", args.c4_model_dir))
-        if path is not None
-    }
-    if pose_dirs:
-        classifiers.append(CausalPoseActorClassifier(
-            pose_dirs, student_prefix=args.student_prefix
-        ))
-    if args.c7_model_dir is not None:
-        classifiers.append(CausalC7ActorClassifier(
-            args.c7_model_dir.resolve(),
-            student_prefix=args.student_prefix,
-            explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
-        ))
-    return classifiers[0] if len(classifiers) == 1 else CombinedCausalActorClassifier(classifiers)
+    return CausalLiveActorClassifier(
+        args.xgboost_model_dir.resolve(),
+        clip_id=clip_id,
+        student_prefix=args.student_prefix,
+        explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
+        c3_threshold_override=getattr(args, "c3_threshold_override", None),
+        xgboost_device=getattr(args, "xgboost_device", "cuda:0"),
+    )
 
 def open_landmark_writer(
     args: argparse.Namespace,
@@ -710,8 +545,6 @@ def process_image(
     *,
     tracking: PersonTrackingModule,
     landmark_writer: LandmarkJsonWriter | None,
-    object_detector: Any | None = None,
-    object_session_id: str | None = None,
 ) -> None:
     import cv2
 
@@ -742,8 +575,6 @@ def process_image(
             student_prefix=args.student_prefix,
             landmark_writer=landmark_writer,
             sampled_fps=None,
-            object_detector=object_detector,
-            object_session_id=object_session_id,
         )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -1004,8 +835,6 @@ def process_video(
     tracking: PersonTrackingModule,
     landmark_writer: LandmarkJsonWriter | None,
     live_classifier: Any | None = None,
-    object_detector: Any | None = None,
-    object_session_id: str | None = None,
 ) -> int:
     import cv2
 
@@ -1072,8 +901,6 @@ def process_video(
                     landmark_writer=landmark_writer,
                     sampled_fps=sampled_fps,
                     live_classifier=live_classifier,
-                    object_detector=object_detector,
-                    object_session_id=object_session_id,
                 )
                 if writer is not None:
                     writer.write(annotated)
@@ -1145,7 +972,6 @@ def main() -> None:
 
     session_id = safe_session_id(args.input, args.session_id)
     tracking = create_tracking(args, session_id)
-    object_detector = create_object_detector(args)
     live_classifier = None
     if args.causal_live:
         live_classifier = create_live_classifier(args, clip_id=args.input.stem)
@@ -1162,8 +988,6 @@ def main() -> None:
                 args,
                 tracking=tracking,
                 landmark_writer=landmark_writer,
-                object_detector=object_detector,
-                object_session_id=session_id,
             )
         else:
             processed_frames = process_video(
@@ -1171,14 +995,10 @@ def main() -> None:
                 tracking=tracking,
                 landmark_writer=landmark_writer,
                 live_classifier=live_classifier,
-                object_detector=object_detector,
-                object_session_id=session_id,
             )
     finally:
         if landmark_writer is not None:
             landmark_writer.close()
-        if object_detector is not None:
-            object_detector.cleanup_session(session_id)
         tracking_json = tracking.manager.generate_final_output(session_id)
 
     if live_classifier is not None:
