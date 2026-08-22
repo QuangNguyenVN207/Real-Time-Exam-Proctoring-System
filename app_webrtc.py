@@ -75,36 +75,62 @@ def init_system_resources():
         print("[INFO] ✅ AI Thị giác đã nạp xong!")
 
         while True:
-            # 1. Xử lý chụp ảnh đăng ký
+            # 1. Xử lý chụp ảnh đăng ký (Ưu tiên NGƯỜI LẠ TO NHẤT bằng kỹ thuật Masking)
             if register_face_event.is_set():
                 frame_to_save = shared_state["register_frame"]
                 if frame_to_save is not None:
                     try:
-                        # Dùng AI quét tìm khuôn mặt trong ảnh vừa chụp
+                        target_bbox = None
+                        h, w = frame_to_save.shape[:2]
+                        
+                        # Bước 1: Trích xuất TẤT CẢ khuôn mặt có trong ảnh
                         faces = face_model._detect_faces(frame_to_save)
+                        
                         if faces:
-                            # Lấy khuôn mặt to nhất trong ảnh
-                            face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-                            x1, y1, x2, y2 = map(int, face.bbox)
-                            h, w = frame_to_save.shape[:2]
+                            # Bước 2: Sắp xếp khuôn mặt theo diện tích từ TO đến NHỎ
+                            faces = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
                             
-                            # ---> NỚI RỘNG KHUNG 40 PIXEL ĐỂ KHÔNG LẸM VÀO MẶT <---
+                            # Bước 3: Dùng kỹ thuật "Che phủ" (Masking) để test từng mặt
+                            for i, target_face in enumerate(faces):
+                                masked_frame = frame_to_save.copy()
+                                
+                                # Vẽ ô đen che giấu TẤT CẢ các khuôn mặt khác
+                                for j, other_face in enumerate(faces):
+                                    if i != j:
+                                        ox1, oy1, ox2, oy2 = map(int, other_face.bbox)
+                                        # Nới rộng ô đen ra 10 pixel để xóa thật sạch
+                                        cv2.rectangle(masked_frame, 
+                                                      (max(0, ox1 - 10), max(0, oy1 - 10)), 
+                                                      (min(w, ox2 + 10), min(h, oy2 + 10)), 
+                                                      (0, 0, 0), -1)
+                                        
+                                # Gửi ảnh đã che đen đi kiểm tra (AI giờ chỉ còn thấy 1 mặt duy nhất)
+                                verify_result = face_model.verify_face(masked_frame, time.time())
+                                
+                                if verify_result and verify_result.get("status") == "alert":
+                                    target_bbox = target_face.bbox
+                                    break  # Chốt người lạ to nhất và thoát vòng lặp
+                                    
+                            # Bước 4: Phương án dự phòng (Nếu DB trống hoặc toàn người quen)
+                            if target_bbox is None:
+                                target_bbox = faces[0].bbox
+                                
+                            # Bước 5: Nới rộng khung chữ nhật, vẽ và lưu ảnh gốc
+                            x1, y1, x2, y2 = map(int, target_bbox)
                             margin = 40
                             x1_ext = max(0, x1 - margin)
                             y1_ext = max(0, y1 - margin)
                             x2_ext = min(w, x2 + margin)
                             y2_ext = min(h, y2 + margin)
                             
-                            # Vẽ khung bao quanh rộng rãi lên ảnh
                             save_frame = frame_to_save.copy()
                             cv2.rectangle(save_frame, (x1_ext, y1_ext), (x2_ext, y2_ext), (0, 255, 0), 2)
                             cv2.putText(save_frame, "REGISTERED", (x1_ext, y1_ext - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                             
-                            # Lưu ảnh ĐÃ CÓ KHUNG nhưng vẫn đảm bảo chuẩn tên "student_"
                             file_name = f"data/student_faces/student_{int(time.time())}.jpg"
                             cv2.imwrite(file_name, save_frame)
                             
-                            # Ra lệnh cho FaceNet quét lại thư mục và nạp lên RAM
+                            # Nạp lại Face Vector
                             face_model._load_database()
                             
                             result_q.put({"module": "system", "status": "info", "message": f"📸 Đã đăng ký khuôn mặt: {file_name}"})
