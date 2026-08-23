@@ -3,10 +3,15 @@ from __future__ import annotations
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.ai_services.pose_gaze.pose_gaze.holistic.feature_csv.benchmark_c7_causal import C7Stream
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.live_actor import CombinedCausalActorClassifier
-from backend.ai_services.pose_gaze.pose_gaze.holistic.test_webcam.test_webcam import configure_action_models
+from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import parse_args as parse_media_args
+from backend.ai_services.pose_gaze.pose_gaze.holistic.test_webcam.test_webcam import (
+    SUPPORTED_ACTIONS,
+    configure_action_models,
+)
 
 
 def row(frame: int, *, hand: bool = True) -> dict[str, str]:
@@ -44,10 +49,26 @@ class CausalC7StreamTest(unittest.TestCase):
         self.assertIsNone(args.c4_model_dir)
         self.assertIsNone(args.c7_model_dir)
 
-    def test_webcam_action_without_bundled_artifact_requires_explicit_path(self) -> None:
-        args = self._args("c1,c4")
-        with self.assertRaisesRegex(ValueError, "requires an explicit model directory"):
-            configure_action_models(args)
+    def test_webcam_runtime_exposes_only_current_causal_classes(self) -> None:
+        self.assertEqual(
+            SUPPORTED_ACTIONS,
+            ("c2", "c3", "c5", "suspicious_activity"),
+        )
+
+    def test_webcam_rejects_removed_specialist_classes(self) -> None:
+        for action in ("c1", "c4", "c7"):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, "Unsupported --actions"):
+                    configure_action_models(self._args(action))
+
+    def test_media_rejects_removed_object_subtype_option(self) -> None:
+        with patch(
+            "sys.argv",
+            ["test_media", "input.mp4", "--object-model", "best.pt"],
+        ):
+            with self.assertRaises(SystemExit) as raised:
+                parse_media_args()
+        self.assertEqual(raised.exception.code, 2)
 
     def test_combined_classifier_keeps_only_adapter_methods(self) -> None:
         self.assertEqual(

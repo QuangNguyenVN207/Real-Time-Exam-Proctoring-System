@@ -48,7 +48,12 @@ Thumbs.db
 *.log
 
 data/
-test_data_tracking/
+/test_data_tracking/
+!/test_data_tracking/
+/test_data_tracking/*
+!/test_data_tracking/webcam_holistic_1787244223067_2b197509/
+!/test_data_tracking/webcam_holistic_1787244223067_2b197509/**
+!/test_data_tracking/webcam_holistic_1787244223067_2b197509_live_actor_classification.json
 test_image/
 models/
 checkpoints/
