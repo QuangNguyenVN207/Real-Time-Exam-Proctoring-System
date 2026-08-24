@@ -207,9 +207,9 @@ def draw_warning_overlays(frame):
     current_time = time.time()
     
     # 1. Vẽ Skeleton 3D trước (để nó nằm dưới)
-    gaze_ai = SHARED_STATE.get("gaze_model")
-    if gaze_ai and hasattr(gaze_ai, 'draw_skeleton'):
-        gaze_ai.draw_skeleton(frame)
+    # gaze_ai = SHARED_STATE.get("gaze_model")
+    # if gaze_ai and hasattr(gaze_ai, 'draw_skeleton'):
+    #     gaze_ai.draw_skeleton(frame)
         
     if not ACTIVE_OVERLAYS: 
         return frame
