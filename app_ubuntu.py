@@ -13,6 +13,8 @@ logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 import transformers
 transformers.logging.set_verbosity_error()
 
+os.environ["GLOG_minloglevel"] = "2"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
@@ -26,7 +28,7 @@ import streamlit as st
 
 # Import các module AI của bạn
 from backend.ai_services.object_detect.object_detect import ObjectDetector
-from backend.ai_services.pose_gaze.pose_gaze_test import PoseGazeDetector
+from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
 
@@ -47,12 +49,23 @@ def init_system_resources():
     register_face_event = threading.Event()
     shared_state = {"register_frame": None}
 
+    # ---> THÊM "CHÓ CANH GÁC" (WATCHDOG) VÀO ĐÂY <---
+    def emergency_watchdog():
+        # Lệnh join() sẽ block (đứng chờ) cho đến khi luồng chính của Streamlit tắt
+        threading.main_thread().join() 
+        # Ngay khi luồng chính sập do Ctrl+C, nó ép tắt toàn bộ hệ thống
+        os._exit(0)
+        
+    threading.Thread(target=emergency_watchdog, daemon=True).start()
+    # ------------------------------------------------
+
     def vision_ai_thread():
         print("[INFO] Đang khởi động luồng AI Thị giác...")
         yolo_model = ObjectDetector(model_path="weights/yolov8_finetuned.pt")
         face_model = FaceVerifier(db_path="data/student_faces/")
         gaze_model = PoseGazeDetector()
-        
+
+        shared_state["gaze_model"] = gaze_model
         vision_ready.set()
         print("[INFO] ✅ AI Thị giác đã nạp xong!")
 
@@ -97,14 +110,17 @@ def init_system_resources():
             if result_face and not result_q.full(): result_q.put(result_face)
                 
             result_gaze = gaze_model.process_frame(frame, timestamp)
+            shared_state["skeleton_frame"] = frame.copy()
             if result_gaze and not result_q.full(): result_q.put(result_gaze)
 
     def audio_ai_thread():
+        # global audio_worker_instance
+
         print("[INFO] Đang khởi động luồng AI Âm thanh thực tế...")
         try:
             audio_worker = RealtimeAudioWorker()
-            
-            # Khôi phục lại mưu kế "Bọc lót" hoàn hảo, KHÔNG cần đụng vào file của cộng sự
+            # audio_worker_instance = audio_worker
+
             original_pipeline = audio_worker.pipeline.process_audio
             def hooked_process_audio(clean_audio, timestamp, source):
                 res = original_pipeline(clean_audio, timestamp, source)
@@ -123,6 +139,9 @@ def init_system_resources():
         except Exception as e:
             print(f"[LỖI LUỒNG ÂM THANH] {e}")
             audio_ready.set()
+
+        finally:
+            print("[INFO] 🔴 Audio thread đã kết thúc.")
 
     t_vision = threading.Thread(target=vision_ai_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
@@ -242,16 +261,27 @@ if st.session_state.run_camera:
 
     while st.session_state.run_camera:
         # Sử dụng camera từ session_state thay vì cap cục bộ
-        ret, frame = st.session_state.camera_obj.read()
         
+        # ---> XẢ TRÔI ẢNH CŨ (Chống Delay cho Streamlit) <---
+        # Chụp bỏ qua 3-4 khung hình bị kẹt trong bộ đệm hệ điều hành
+        for _ in range(4):
+            st.session_state.camera_obj.grab()
+
+        # Lấy khung hình tươi nhất (tức thời)
+        ret, frame = st.session_state.camera_obj.retrieve()
+        
+        # if not ret:
+        #     st.error("Lỗi: Không thể kết nối với Camera! (Thiết bị có thể đang bị chiếm dụng)")
+        #     st.session_state.run_camera = False
+        #     # Dọn dẹp nếu lỗi
+        #     if st.session_state.camera_obj is not None:
+        #         st.session_state.camera_obj.release()
+        #         st.session_state.camera_obj = None
+        #     break
         if not ret:
-            st.error("Lỗi: Không thể kết nối với Camera! (Thiết bị có thể đang bị chiếm dụng)")
-            st.session_state.run_camera = False
-            # Dọn dẹp nếu lỗi
-            if st.session_state.camera_obj is not None:
-                st.session_state.camera_obj.release()
-                st.session_state.camera_obj = None
-            break
+            # Nhường CPU một chút khi Streamlit tải lại trang (chống văng app)
+            time.sleep(0.1)
+            continue
             
         # NẾU BẤM NÚT CHỤP ẢNH -> TRUYỀN FRAME XUYÊN LUỒNG CHO AI
         if st.session_state.save_face_flag:
@@ -313,13 +343,31 @@ if st.session_state.run_camera:
         log_html = "<br>".join(st.session_state.logs)
         log_placeholder.markdown(f"<div style='height: 500px; overflow-y: auto; background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>{log_html}</div>", unsafe_allow_html=True)
 
+        # LẤY ẢNH CÓ SKELETON (NẾU CÓ), CHƯA CÓ THÌ DÙNG ẢNH GỐC CAMERA
+        base_frame = SHARED_STATE.get("skeleton_frame", frame).copy()
+
+        # ---> VẼ KHUNG XƯƠNG SKELETON LÊN ẢNH 30 FPS TỨC THỜI <---
+        gaze_ai = SHARED_STATE.get("gaze_model")
+        if gaze_ai and hasattr(gaze_ai, 'draw_skeleton'):
+            gaze_ai.draw_skeleton(frame)
+
+        # Hiển thị cột Logs
+        log_html = "<br>".join(st.session_state.logs)
+
         # Vẽ đè Bounding Box và đưa lên giao diện Streamlit
-        rendered_frame = draw_warning_overlays(frame.copy())
+        rendered_frame = draw_warning_overlays(base_frame)
         
         rendered_frame_rgb = cv2.cvtColor(rendered_frame, cv2.COLOR_BGR2RGB)
         
-        # BỎ LỆNH ÉP GIÃN KÍCH THƯỚC: Camera giờ sẽ giữ kích thước gốc, không đẩy giao diện phình to ra ngoài trang nữa
-        video_placeholder.image(rendered_frame_rgb, output_format="JPEG")
+        # ---> NÉN ẢNH THỦ CÔNG ĐỂ CHỐNG LAG STREAMLIT <---
+        # Nén JPEG giảm dung lượng xuống còn 1/4
+        _, encoded_img = cv2.imencode('.jpg', rendered_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        
+        # Gửi chuỗi byte siêu nhẹ thay vì ma trận thô
+        video_placeholder.image(encoded_img.tobytes())
+        
+        # Thêm nhịp nghỉ siêu ngắn để WebSocket của Streamlit kịp thở
+        time.sleep(0.01)
         
         if frame_count % FPS_SKIP == 0:
             if FRAME_QUEUE.full():

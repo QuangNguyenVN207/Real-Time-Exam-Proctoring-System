@@ -1,0 +1,17 @@
+#!/bin/sh
+
+commit_msg_file="$1"
+commit_msg=$(head -n 1 "$commit_msg_file")
+
+case "$commit_msg" in
+  feat:*|fix:*|docs:*|refactor:*|chore:*)
+    exit 0
+    ;;
+esac
+
+cat <<'EOF'
+Invalid commit message.
+Use one of these prefixes: feat:, fix:, docs:, refactor:, chore:
+Example: feat: add proctoring camera check
+EOF
+exit 1

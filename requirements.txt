@@ -67,4 +67,10 @@ datasets==5.0.0
 pyaudio
 
 streamlit
-cheating_detected.jsonl
+
+streamlit-webrtc
+av
+streamlit-autorefresh
+
+sahi>=0.12.5
+wandb>=0.28

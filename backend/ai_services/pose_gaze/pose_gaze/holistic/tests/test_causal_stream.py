@@ -10,6 +10,7 @@ from pose_gaze.holistic.feature_csv.causal_stream import (
     CausalOrderError,
     CausalSpecialistState,
 )
+from pose_gaze.holistic.test_media.live_actor import CausalLiveActorClassifier
 
 
 class CausalStreamTests(unittest.TestCase):
@@ -102,6 +103,24 @@ class CausalStreamTests(unittest.TestCase):
         self.assertEqual(decisions["s1"].first_flag_frame_index, 30)
         self.assertEqual(decisions["s2"].source_actor_id, "s1")
 
+    def test_pair_c2_respects_calibrated_threshold(self) -> None:
+        state = CausalSpecialistState(
+            ("s1", "s2"), c3_threshold=0.7, c2_threshold=0.9
+        )
+        decisions = state.update(
+            frame_index=30,
+            timestamp_ms=1000,
+            scores_by_actor={
+                "s1": {"c2": 0.89, "c3": 0.1},
+                "s2": {"c2": 0.1, "c3": 0.1},
+            },
+            explicit_pairs=(("s1", "s2"),),
+            near_midpoint_by_actor={"s1": 1, "s2": 0},
+        )
+
+        self.assertEqual(decisions["s1"].class_code, "c5")
+        self.assertEqual(decisions["s2"].class_code, "c5")
+
     def test_c3_flag_is_first_and_evidence_is_strongest(self) -> None:
         state = CausalSpecialistState(("s1",), c3_threshold=0.5)
         state.update(
@@ -136,6 +155,36 @@ class CausalStreamTests(unittest.TestCase):
         )["s1"]
         self.assertEqual(decision.class_code, "suspicious_activity")
 
+    def test_b4_uses_only_current_frame_terms(self) -> None:
+        classifier = CausalLiveActorClassifier.__new__(CausalLiveActorClassifier)
+        classifier.gates = {"c3_side_floor": 0.05, "c3_down_ceiling": 0.05}
+
+        passed = classifier._b4_c3_gate({
+            "current_c3_pose_head_valid": 1.0,
+            "current_c3_pose_peer_valid": 1.0,
+            "current_c3_pose_head_peer_delta": 0.4,
+            "current_strict_head_down_delta": 0.0,
+            "c3_pose_head_valid__mean": 0.0,
+            "c3_pose_peer_valid__mean": 0.0,
+            "c3_pose_head_peer_delta__max": 0.0,
+            "strict_head_down_delta__q95": 1.5,
+        })
+
+        self.assertTrue(passed)
+
+        blocked = classifier._b4_c3_gate({
+            "current_c3_pose_head_valid": 1.0,
+            "current_c3_pose_peer_valid": 1.0,
+            "current_c3_pose_head_peer_delta": 0.0,
+            "current_strict_head_down_delta": 1.5,
+            "c3_pose_head_valid__mean": 1.0,
+            "c3_pose_peer_valid__mean": 1.0,
+            "c3_pose_head_peer_delta__max": 0.4,
+            "strict_head_down_delta__q95": 0.0,
+        })
+
+        self.assertFalse(blocked)
+
     def test_midpoint_c2_stays_out_of_suspicious_gate(self) -> None:
         suspicious_gate = lambda values: values["own_side_outside_midpoint"] >= 1.0
         state = CausalSpecialistState(
@@ -165,6 +214,36 @@ class CausalStreamTests(unittest.TestCase):
         )["s1"]
         self.assertEqual(decision.class_code, "suspicious_activity")
         self.assertEqual(decision.evidence_frame_index, 31)
+
+    def test_current_returns_c5_without_erasing_history(self) -> None:
+        state = CausalSpecialistState(("s1",), c3_threshold=0.5)
+        state.update(
+            frame_index=1, timestamp_ms=33,
+            scores_by_actor={"s1": {"c2": 0.0, "c3": 0.8}},
+        )
+        decision = state.update(
+            frame_index=2, timestamp_ms=67,
+            scores_by_actor={"s1": {"c2": 0.0, "c3": 0.1}},
+        )["s1"]
+        self.assertEqual(decision.class_code, "c5")
+        self.assertEqual(decision.evidence_class, "c3")
+        self.assertEqual(decision.history[0].score, 0.8)
+
+    def test_c2_pair_keeps_source_and_propagated_scores(self) -> None:
+        state = CausalSpecialistState(("s1", "s2"), c3_threshold=0.5, c2_threshold=0.5)
+        decisions = state.update(
+            frame_index=1, timestamp_ms=33,
+            scores_by_actor={
+                "s1": {"c2": 0.8, "c3": 0.0},
+                "s2": {"c2": 0.4, "c3": 0.0},
+            },
+            explicit_pairs=(("s1", "s2"),),
+            near_midpoint_by_actor={"s1": 1.0, "s2": 0.0},
+        )
+        self.assertEqual(decisions["s1"].history[0].score, 0.8)
+        self.assertEqual(decisions["s2"].history[0].score, 0.4)
+        self.assertEqual(decisions["s2"].history[0].source_score, 0.8)
+        self.assertEqual(decisions["s2"].history[0].source_actor_id, "s1")
 
 
 if __name__ == "__main__":

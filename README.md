@@ -79,3 +79,21 @@ exam_proctoring_system/
 ```bash 
 uv run -m backend.main
 ```
+
+---
+
+## Cập nhật mới nhất: Tối ưu hóa & Sửa lỗi Module Đếm Giấy Thi (`CountBasedPaperMonitor`)
+
+### 1. Tối ưu hóa Độ nhạy & Giảm độ trễ (Latency Reduction)
+- **Tăng tần suất suy luận (Inference frequency)**: Điều chỉnh `object_detect_every_n_frames = 2` (trong `backend/core/config.py`), giúp hệ thống quét vật thể thường xuyên hơn và phản hồi nhanh hơn **~4.3 giây** so với cấu hình cũ.
+- **Hạ ngưỡng tự tin phát hiện giấy (Confidence Thresholds)**:
+  - Toàn bộ khung hình: Giảm xuống `0.20`.
+  - Vùng ROI thí sinh: Giảm xuống `0.15` nhằm phát hiện các tờ phao nhỏ/bị che khuất một phần.
+- **Tinh chỉnh gom cụm (`cluster_papers`)**: Thiết lập `duplicate_center_distance_ratio = 0.70` tránh gộp nhầm 2 tờ giấy ở sát nhau thành 1.
+
+### 2. Sửa lỗi Logic Đếm Giấy Theo Từng Thí Sinh (Per-Person Paper Monitoring)
+- **Khắc phục lỗi đếm toàn cục (Global Count Bug)**: 
+  - *Lỗi cũ*: Khi 1 thí sinh bị che mất giấy (0 tờ) và 1 thí sinh khác rút thêm phao mới (2 tờ), tổng số giấy đếm được vẫn là 2 (bằng baseline tổng) $\rightarrow$ Hệ thống bị đánh lừa và gán cả 2 tờ là giấy hợp lệ (cyan).
+  - *Giải pháp*: Chuyển sang đếm và so sánh baseline theo **từng thí sinh (`owner_person_id`)**. Bất kỳ thí sinh nào có số giấy vượt mức baseline riêng của mình sẽ lập tức bị cờ đỏ cảnh báo.
+- **Hiển thị cảnh báo tức thì (`suspicious_new_paper`)**: Đánh dấu đỏ `cheat_sheet NEW` cho tờ phao mới ngay khi xuất hiện mà không bị hoãn giao diện chờ debounce streak.
+- **Bảo vệ Baseline vị trí**: Khắc phục lỗi tự động ghi đè vị trí giấy chuẩn (`baseline_clusters`) khi có sự cố học sinh rút thêm phao.

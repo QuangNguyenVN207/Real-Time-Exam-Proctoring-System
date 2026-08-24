@@ -27,6 +27,7 @@ class _FakeObjectDetector:
     def __init__(self) -> None:
         self.paper_boxes: list[list[int]] = [[60, 430, 180, 570]]
         self.person_rois = None
+        self.pose_gates: list[bool] = []
 
     def process(
         self,
@@ -35,8 +36,10 @@ class _FakeObjectDetector:
         frame_id: int,
         *,
         person_rois=None,
+        pose_suspicious_activity: bool = False,
     ):
         self.person_rois = person_rois
+        self.pose_gates.append(pose_suspicious_activity)
         return {
             "label": "clear",
             "risk_score": 0.0,
@@ -51,6 +54,7 @@ class _FakeObjectDetector:
                 for bbox in self.paper_boxes
             ],
             "model_capabilities": {"supports_test_paper": False},
+            "pose_gate": pose_suspicious_activity,
         }
 
     def cleanup_session(self, _session_id: str) -> None:
@@ -93,10 +97,34 @@ class PoseGazePaperPipelineTests(unittest.TestCase):
                 np.zeros((720, 480, 3), dtype=np.uint8),
                 session_id="identity_room",
                 frame_id=1,
+                pose_suspicious_activity=True,
             )
 
             self.assertEqual(result["people"][0]["student_id"], "SV_FACE")
             self.assertEqual(objects.person_rois[0]["person_id"], "SV_FACE")
+
+    def test_object_alert_requires_pose_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            objects = _FakeObjectDetector()
+            pipeline = PoseGazePaperPipeline(
+                person_detector=_FakePersonDetector(),
+                object_detector=objects,
+                tracking_manager=TrackingManager(Path(directory), max_tracks=1),
+                capture_evidence=False,
+            )
+
+            result = pipeline.process_frame(
+                np.zeros((720, 480, 3), dtype=np.uint8),
+                session_id="pose_gate_room",
+                frame_id=1,
+                pose_suspicious_activity=False,
+            )
+
+            self.assertEqual(objects.pose_gates, [False])
+            self.assertEqual(
+                [alert for alert in result["alerts"] if alert["source"] == "object_detect"],
+                [],
+            )
 
     def test_live_mode_reuses_person_detection_between_inferences(
         self,
@@ -121,6 +149,7 @@ class PoseGazePaperPipelineTests(unittest.TestCase):
                     frame,
                     session_id="live_cache",
                     frame_id=frame_id,
+                    pose_suspicious_activity=True,
                 )
 
             self.assertEqual(people.calls, 3)
@@ -149,6 +178,7 @@ class PoseGazePaperPipelineTests(unittest.TestCase):
                     frame,
                     session_id="integration_room",
                     frame_id=frame_id,
+                    pose_suspicious_activity=True,
                 )
             self.assertEqual(
                 result["papers"][0]["status"],
@@ -169,6 +199,7 @@ class PoseGazePaperPipelineTests(unittest.TestCase):
                     frame,
                     session_id="integration_room",
                     frame_id=frame_id,
+                    pose_suspicious_activity=True,
                 )
 
             paper_alerts = [

@@ -10,6 +10,7 @@ from backend.ai_services.object_detect.object_detect import (
     ObjectDetector,
     _bbox_center_inside,
     _looks_like_calculator,
+    _looks_like_pen,
 )
 from backend.ai_services.webcam_utils import resize_live_frame
 
@@ -299,6 +300,60 @@ class ObjectDetectExtractionTests(unittest.TestCase):
 
         self.assertEqual(accepted, [])
 
+    def test_bright_marker_is_rejected_without_rejecting_bright_phone(
+        self,
+    ) -> None:
+        import cv2
+
+        marker_frame = np.full((180, 160, 3), 25, dtype=np.uint8)
+        marker = np.array(
+            [[70, 20], [84, 16], [108, 150], [94, 154]],
+            dtype=np.int32,
+        )
+        cv2.fillConvexPoly(marker_frame, marker, (210, 210, 210))
+
+        phone_frame = np.full((180, 160, 3), 25, dtype=np.uint8)
+        cv2.rectangle(
+            phone_frame,
+            (42, 20),
+            (122, 155),
+            (210, 210, 210),
+            -1,
+        )
+
+        self.assertTrue(
+            _looks_like_pen(marker_frame, [40, 10, 130, 160])
+        )
+        self.assertFalse(
+            _looks_like_pen(phone_frame, [40, 10, 130, 160])
+        )
+
+        landscape_phone = np.full((100, 180, 3), 25, dtype=np.uint8)
+        cv2.rectangle(
+            landscape_phone,
+            (20, 38),
+            (160, 58),
+            (210, 210, 210),
+            -1,
+        )
+        self.assertFalse(
+            _looks_like_pen(landscape_phone, [10, 10, 170, 90])
+        )
+
+        # A tight low-confidence YOLO box around a white marker used to have
+        # too much bright coverage for the guard and slipped through as a
+        # smartphone. This reproduces the small classroom-video proposal.
+        tight_marker = np.full((59, 30, 3), 25, dtype=np.uint8)
+        cv2.fillConvexPoly(
+            tight_marker,
+            np.array(
+                [[7, 1], [19, 0], [25, 57], [12, 58]],
+                dtype=np.int32,
+            ),
+            (210, 210, 210),
+        )
+        self.assertTrue(_looks_like_pen(tight_marker, [0, 0, 30, 59]))
+
     def test_live_frame_is_downscaled_without_aspect_distortion(self) -> None:
         full_hd = np.zeros((1080, 1920, 3), dtype=np.uint8)
         vga = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -401,6 +456,94 @@ class ObjectDetectExtractionTests(unittest.TestCase):
 
         self.assertEqual(first["label"], "clear")
         self.assertEqual(second["label"], "smartphone_detected")
+
+    def test_distant_false_positives_do_not_form_one_temporal_alert(
+        self,
+    ) -> None:
+        module = ObjectDetectModule(model=_FakeModel())
+        module._capture_evidence = lambda *args, **kwargs: None
+        frame = np.zeros((240, 640, 3), dtype=np.uint8)
+        smartphone = {"smartphone": 0.80}
+        boxes = [
+            [10, 20, 50, 90],
+            [280, 20, 320, 90],
+            [550, 20, 590, 90],
+        ]
+
+        results = [
+            module._evaluate(
+                smartphone,
+                {"smartphone": bbox},
+                frame,
+                "spatial_false_positives",
+                frame_id,
+            )
+            for frame_id, bbox in enumerate(boxes, start=1)
+        ]
+
+        self.assertTrue(all(result["label"] == "clear" for result in results))
+
+    def test_nearby_moving_phone_still_confirms(self) -> None:
+        module = ObjectDetectModule(model=_FakeModel())
+        module._capture_evidence = lambda *args, **kwargs: None
+        frame = np.zeros((240, 640, 3), dtype=np.uint8)
+        smartphone = {"smartphone": 0.80}
+        boxes = [
+            [100, 80, 170, 120],
+            [118, 86, 188, 126],
+            [136, 90, 206, 130],
+        ]
+
+        results = [
+            module._evaluate(
+                smartphone,
+                {"smartphone": bbox},
+                frame,
+                "moving_phone",
+                frame_id,
+            )
+            for frame_id, bbox in enumerate(boxes, start=1)
+        ]
+
+        self.assertEqual(results[-1]["label"], "smartphone_detected")
+
+    def test_second_persistent_phone_confirms_when_best_box_jumps(
+        self,
+    ) -> None:
+        module = ObjectDetectModule(model=_FakeModel())
+        module._capture_evidence = lambda *args, **kwargs: None
+        frame = np.zeros((300, 900, 3), dtype=np.uint8)
+        smartphone = {"smartphone": 0.90}
+        best_false_boxes = [
+            [10, 20, 50, 90],
+            [400, 20, 440, 90],
+            [800, 20, 840, 90],
+        ]
+        persistent_phone_boxes = [
+            [200, 180, 280, 220],
+            [208, 182, 288, 222],
+            [216, 184, 296, 224],
+        ]
+
+        results = []
+        for frame_id, (false_box, phone_box) in enumerate(
+            zip(best_false_boxes, persistent_phone_boxes, strict=True),
+            start=1,
+        ):
+            results.append(
+                module._evaluate(
+                    smartphone,
+                    {"smartphone": false_box},
+                    frame,
+                    "parallel_phones",
+                    frame_id,
+                    candidate_boxes_this_frame={
+                        "smartphone": [false_box, phone_box]
+                    },
+                )
+            )
+
+        self.assertEqual(results[-1]["label"], "smartphone_detected")
 
     def test_coco_cell_phone_is_normalized_and_duplicate_tiles_are_removed(
         self,

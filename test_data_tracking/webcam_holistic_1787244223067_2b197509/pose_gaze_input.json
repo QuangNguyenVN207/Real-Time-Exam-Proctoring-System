@@ -1,0 +1,30 @@
+{
+  "session_id": "webcam_holistic_1787244223067_2b197509",
+  "frame_id": 899,
+  "timestamp_ms": 1787244402708,
+  "frame": "numpy.ndarray BGR",
+  "tracks": [
+    {
+      "track_id": 1,
+      "student_id": "student_01",
+      "bbox_xyxy": [
+        0,
+        232,
+        218,
+        480
+      ],
+      "track_confidence": 0.89
+    },
+    {
+      "track_id": 2,
+      "student_id": "student_02",
+      "bbox_xyxy": [
+        330,
+        130,
+        639,
+        480
+      ],
+      "track_confidence": 0.9
+    }
+  ]
+}

@@ -95,6 +95,7 @@ class PoseGazePaperPipeline:
         session_id: str,
         frame_id: int,
         timestamp_ms: int | None = None,
+        pose_suspicious_activity: bool = False,
     ) -> dict[str, Any]:
         self.manager.ensure_session(session_id)
         resolved_timestamp_ms = (
@@ -160,6 +161,7 @@ class PoseGazePaperPipeline:
             session_id,
             frame_id,
             person_rois=person_rois,
+            pose_suspicious_activity=pose_suspicious_activity,
         )
         if object_result is not None and object_result.get("inference_ran", False):
             paper_detections = []
@@ -191,7 +193,11 @@ class PoseGazePaperPipeline:
         paper_alerts = paper_state["alerts"]
         direct_object_alert = (
             object_result
-            if object_result is not None and object_result.get("label") != "clear"
+            if (
+                object_result is not None
+                and object_result.get("pose_gate", False)
+                and object_result.get("label") != "clear"
+            )
             else None
         )
         alerts: list[dict[str, Any]] = []
