@@ -344,7 +344,11 @@ with col1:
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
         media_stream_constraints={
-            "video": True,
+            "video": {
+                "width": {"ideal": 640, "max": 640},
+                "height": {"ideal": 480, "max": 480},
+                "frameRate": {"ideal": 24, "max": 30},
+            },
             "audio": False 
         },
         async_processing=True,
