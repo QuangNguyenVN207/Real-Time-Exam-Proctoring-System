@@ -2,6 +2,11 @@ import os
 import logging
 import warnings
 
+# Ẩn các cảnh báo liên quan đến ScriptRunContext của Streamlit (Kế thừa từ app_win.py)
+logging.getLogger('streamlit.runtime.scriptrunner.script_run_context').setLevel(logging.ERROR)
+logging.getLogger('streamlit.runtime.state.session_state').setLevel(logging.ERROR)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
 # ==========================================
 # KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
 # ==========================================
@@ -9,20 +14,15 @@ warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-logging.getLogger().setLevel(logging.ERROR) # Thêm dòng này để tắt log W000
 
 import transformers
 transformers.logging.set_verbosity_error()
 
-os.environ["QT_QPA_PLATFORM"] = "xcb"
-os.environ["XDG_SESSION_TYPE"] = "x11"
-os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
+# ĐÃ BỎ CÁC CẤU HÌNH ĐẶC TRƯNG CỦA UBUNTU (X11, XCB) ĐỂ CHẠY ĐƯỢC TRÊN WINDOWS
+# os.environ["QT_QPA_PLATFORM"] = "xcb"
+# os.environ["XDG_SESSION_TYPE"] = "x11"
+# os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
-
-# ---> THÊM 3 DÒNG NÀY ĐỂ DIỆT GỌN LOG CỦA MEDIAPIPE, TENSORFLOW VÀ ONNX <---
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
-os.environ["GLOG_minloglevel"] = "3"
-os.environ["ORT_LOGGING_LEVEL"] = "4"
 
 import cv2
 import threading
@@ -38,7 +38,9 @@ from streamlit_autorefresh import st_autorefresh
 from backend.ai_services.object_detect.object_detect import ObjectDetector
 from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
-from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
+
+# ĐỔI IMPORT SANG BẢN WORKER CHO WINDOWS THEO YÊU CẦU:
+from backend.ai_services.whisper.realtime_audio_worker import RealtimeAudioWorker
 
 # ==========================================
 # 1. KHỞI TẠO TÀI NGUYÊN (CHẠY 1 LẦN DUY NHẤT)
@@ -75,7 +77,7 @@ def init_system_resources():
         print("[INFO] ✅ AI Thị giác đã nạp xong!")
 
         while True:
-            # 1. Xử lý chụp ảnh đăng ký (Ưu tiên NGƯỜI LẠ TO NHẤT bằng kỹ thuật Masking)
+            # 1. Xử lý chụp ảnh đăng ký
             if register_face_event.is_set():
                 frame_to_save = shared_state["register_frame"]
                 if frame_to_save is not None:
@@ -157,12 +159,13 @@ def init_system_resources():
             result_gaze = gaze_model.process_frame(frame, timestamp)
             if result_gaze and not result_q.full(): result_q.put(result_gaze)
 
-    # --- LUỒNG AI ÂM THANH (Dùng PyAudio độc lập) ---
+    # --- LUỒNG AI ÂM THANH (Dùng RealtimeAudioWorker Windows) ---
     def audio_ai_thread():
         print("[INFO] Đang khởi động luồng AI Âm thanh thực tế...")
         try:
             audio_worker = RealtimeAudioWorker()
             
+            # Khôi phục lại mưu kế "Bọc lót" hoàn hảo, KHÔNG cần đụng vào file của cộng sự
             original_pipeline = audio_worker.pipeline.process_audio
             def hooked_process_audio(*args, **kwargs):
                 res = original_pipeline(*args, **kwargs)
@@ -172,7 +175,9 @@ def init_system_resources():
                 return res
                 
             audio_worker.pipeline.process_audio = hooked_process_audio
+
             audio_ready.set()
+            print("[INFO] ✅ AI Âm thanh đã nạp xong!")
             audio_worker.start()
         except Exception as e:
             print(f"[LỖI LUỒNG ÂM THANH] {e}")
@@ -333,14 +338,14 @@ with col1:
     if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
         SHARED_STATE["save_face_flag"] = True
 
-    # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
+    # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua Worker bên dưới)
     webrtc_streamer(
         key="exam-proctor",
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
         media_stream_constraints={
             "video": True,
-            "audio": False # Chặn WebRTC thu âm để tránh đụng độ với luồng PyAudio
+            "audio": False 
         },
         async_processing=True,
         rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
@@ -348,10 +353,10 @@ with col1:
 
 with col2:
     st.markdown("### 📜 Lịch Sử Cảnh Báo")
-
-    # ---> LỆNH TỰ ĐỘNG LÀM MỚI GIAO DIỆN MỖI 3 GIÂY (3000 mili-giây) <---
+    
+    # LỆNH TỰ ĐỘNG LÀM MỚI GIAO DIỆN MỖI 3 GIÂY (3000 mili-giây)
     st_autorefresh(interval=3000, key="auto_refresh_log")
-
+    
     # Lấy Log mới nhất từ Shared State
     log_html = "<br>".join(SHARED_STATE["logs"]) if SHARED_STATE["logs"] else "Hệ thống đang chạy..."
     st.markdown(f"<div style='height: 500px; overflow-y: auto; background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>{log_html}</div>", unsafe_allow_html=True)
