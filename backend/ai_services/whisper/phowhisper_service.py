@@ -2,7 +2,8 @@ import numpy as np
 import torch
 import librosa
 
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+from transformers import AutoProcessor #, AutoModelForSpeechSeq2Seq
+from optimum.intel import OVModelForSpeechSeq2Seq
 
 from backend.ai_services.whisper.config import PHOWHISPER_MODEL
 
@@ -12,18 +13,36 @@ class PhoWhisperService:
 
     def __init__(self):
         print("[PhoWhisper] Loading model...")
+        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                # self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        
+                # print(f"[PhoWhisper] Device: {self.device}")
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        import openvino as ov
+        
+        # Kiểm tra xem OpenVINO có nhìn thấy GPU hay không
+        try:
+            core = ov.Core()
+            available_devices = core.available_devices
+            self.device = "GPU" if "GPU" in available_devices else "CPU"
+        except Exception:
+            self.device = "CPU"
+        # self.dtype = torch.float16 if self.device == "cuda" else torch.float32
 
         print(f"[PhoWhisper] Device: {self.device}")
 
         self.processor = AutoProcessor.from_pretrained(PHOWHISPER_MODEL)
 
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        # self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        #     PHOWHISPER_MODEL,
+        #     torch_dtype=self.dtype,
+        # ).to(self.device)
+        self.model = OVModelForSpeechSeq2Seq.from_pretrained(
             PHOWHISPER_MODEL,
-            torch_dtype=self.dtype,
-        ).to(self.device)
+            device=self.device,  # Sẽ nhận giá trị "GPU" hoặc "CPU"
+            # export=True,         # Tự động export sang OpenVINO IR lần đầu tiên
+        )
+
 
         self.model.eval()
 
@@ -64,10 +83,10 @@ class PhoWhisperService:
             return_tensors="pt",
         )
 
-        input_features = inputs["input_features"].to(
-            self.device,
-            dtype=self.dtype,
-        )
+        input_features = inputs["input_features"]   #.to(
+        #     self.device,
+        #     dtype=self.dtype,
+        # )
 
         generate_kwargs = dict(
             input_features=input_features,

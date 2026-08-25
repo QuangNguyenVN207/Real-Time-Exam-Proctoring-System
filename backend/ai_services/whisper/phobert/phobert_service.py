@@ -3,13 +3,26 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from optimum.intel import OVModelForSequenceClassification
 from underthesea import word_tokenize
 
 class PhobertService:
     def __init__(self, model_path=None):
         print("[PhoBERT] Loading model...")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"[PhoBERT] Device: {self.device}")
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # print(f"[PhoBERT] Device: {self.device}")
+        
+        import openvino as ov
+
+        # Kiểm tra xem OpenVINO có nhìn thấy GPU hay không
+        try:
+            core = ov.Core()
+            available_devices = core.available_devices
+            self.device = "GPU" if "GPU" in available_devices else "CPU"
+        except Exception:
+            self.device = "CPU"
+
+        print(f"[PhoBERT] Thiết bị được chọn cho OpenVINO: {self.device}")
         
         # 1. Xử lý đường dẫn tuyệt đối để không bao giờ bị lỗi do khác thư mục đứng
         if model_path is None:
@@ -25,10 +38,16 @@ class PhobertService:
             model_path = "vinai/phobert-base-v2"
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
             # CHỈNH VỀ 2 NHÃN
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2).to(self.device)
+            self.model = OVModelForSequenceClassification.from_pretrained(
+                model_path, num_labels=2, device="GPU", export=True
+            )
+            # self.model = AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2).to(self.device)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+            # self.model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+            self.model = OVModelForSequenceClassification.from_pretrained(
+                model_path, device="GPU", export=True
+            )
             
         self.model.eval()
         
@@ -58,7 +77,7 @@ class PhobertService:
             truncation=True, 
             padding=True, 
             max_length=self.MAX_LEN
-        ).to(self.device)
+        )               # .to(self.device)
 
         with torch.no_grad():
             outputs = self.model(**inputs)
