@@ -5,6 +5,11 @@ import warnings
 # ==========================================
 # KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
 # ==========================================
+# Tối ưu hóa driver SYCL cho Intel Arc (Giảm độ trễ giao tiếp)
+os.environ["SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS"] = "1"
+# Ép FaceNet/ONNXRuntime sử dụng OpenVINO để tăng tốc bằng Intel GPU
+os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "OpenVINOExecutionProvider,CPUExecutionProvider"
+
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -33,6 +38,21 @@ import av
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit_autorefresh import st_autorefresh
+
+# ---> KIỂM TRA THIẾT BỊ OPENVINO CHO INTEL GPU <---
+@st.cache_resource
+def initialize_openvino():
+    try:
+        import openvino as ov
+        core = ov.Core()
+        devices = core.available_devices
+        print(f"[INFO] OpenVINO đã sẵn sàng trên các thiết bị: {devices}")
+        return devices
+    except Exception as e:
+        print(f"[WARNING] Không khởi tạo được OpenVINO: {e}")
+        return []
+# Gọi hàm ngay phía dưới:
+core, devices = initialize_openvino()
 
 # Import các module AI của bạn
 from backend.ai_services.object_detect.object_detect import ObjectDetector
@@ -68,9 +88,15 @@ def init_system_resources():
     # --- LUỒNG AI THỊ GIÁC ---
     # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
     def heavy_vision_thread():
-        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng)...")
-        yolo_model = ObjectDetector(model_path="weights/best (1).pt")
-        face_model = FaceVerifier(db_path="data/student_faces/")
+        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng OpenVINO...")
+        # Trỏ tới thư mục chứa file .xml và .bin của OpenVINO
+        try:
+            yolo_model = ObjectDetector(model_path="weights/best_openvino_model", device="GPU")
+            face_model = FaceVerifier(db_path="data/student_faces/")
+        except Exception as e:
+            print(f"[LỖI KHỞI TẠO AI THỊ GIÁC]: {e}")
+            vision_ready.set() # Bắt buộc gọi để giải phóng luồng chính không bị treo
+            return
         
         # ---> BÍ QUYẾT ĐỒNG BỘ: Tạo hàm Masking chung cho cả Camera và Đăng ký <---
         def get_largest_stranger_with_masking(img, ts):
@@ -337,8 +363,8 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 
     # 3. Đẩy ảnh mới vào Queue cho AI xử lý (Frame Skipping)
 
-    # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 3 frame ~ 10 FPS)
-    if SHARED_STATE["frame_count"] % 3 == 0:
+    # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 2 frame ~ 10 FPS)
+    if SHARED_STATE["frame_count"] % 2 == 0:
         if GAZE_QUEUE.full():
             try: GAZE_QUEUE.get_nowait()
             except queue.Empty: pass

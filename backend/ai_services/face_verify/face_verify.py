@@ -36,6 +36,9 @@ _AVAILABLE_PROVIDERS = ort.get_available_providers()
 if "CUDAExecutionProvider" in _AVAILABLE_PROVIDERS:
     _PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     _DEVICE = "cuda"
+elif "OpenVINOExecutionProvider" in _AVAILABLE_PROVIDERS:
+    _PROVIDERS = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+    _DEVICE = "gpu"  # Hoặc "intel_gpu"
 else:
     _PROVIDERS = ["CPUExecutionProvider"]
     _DEVICE = "cpu"
@@ -64,7 +67,8 @@ class FaceVerifier:
         # thay vì insightface.app.FaceAnalysis (nạp cả 5 model trong bộ
         # buffalo_l rồi mới lọc bớt) — bộ đó có model landmark_3d_68 nặng
         # ~140MB không dùng tới, tốn RAM/thời gian khởi động vô ích.
-        ctx_id = 0 if _DEVICE == "cuda" else -1
+        # Thay vì chỉ check cuda cho ctx_id, đổi lại để OpenVINO nhận diện provider đúng cách
+        ctx_id = 0 if _DEVICE in ["cuda", "gpu"] else -1
         model_dir = ensure_available(
             "models",
             model_name,

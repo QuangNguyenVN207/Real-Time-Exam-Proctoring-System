@@ -57,7 +57,10 @@ class ObjectDetector:
 
         self.model = model
         if hasattr(self.model, "to"):
-            self.model.to(self.device)
+            try:
+                self.model.to(self.device)
+            except Exception:
+                pass  # Bỏ qua nếu mô hình là OpenVINO/ONNX không hỗ trợ .to()
 
     def process_frame(
         self,
@@ -196,8 +199,8 @@ class ObjectDetector:
         try:
             import torch
         except ImportError:  # pragma: no cover - ultralytics installs torch
-            return "cpu"
-        return "cuda" if torch.cuda.is_available() else "cpu"
+            return "gpu"
+        return "cuda" if torch.cuda.is_available() else "gpu"
 
     @staticmethod
     def _suppress_ultralytics_logging() -> None:
@@ -323,7 +326,10 @@ class ObjectDetectModule:
                 f"{settings.yolo_model_path}..."
             )
             self._model = YOLO(settings.yolo_model_path)
-            self._model.to(self._device)
+            try:
+                self._model.to(self._device)
+            except Exception:
+                pass  # Bỏ qua lỗi .to() đối với OpenVINO
             if self._device == "cuda":
                 print(
                     f"[object_detect] Inference device: cuda "
@@ -360,7 +366,10 @@ class ObjectDetectModule:
             self._smartphone_model,
             "to",
         ):
-            self._smartphone_model.to(self._device)
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
         self._smartphone_fallback_enabled = (
             fallback_enabled and self._smartphone_model is not None
         )
