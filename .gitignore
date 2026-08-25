@@ -80,3 +80,4 @@ site/build-meta.js
 
 audio_log.jsonl
 cheating_detected.jsonl
+backend/ai_services/whisper/weights/
