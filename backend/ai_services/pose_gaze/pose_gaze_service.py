@@ -33,7 +33,7 @@ from backend.ai_services.pose_gaze.tracking.webcam import PersonTrackingConfig, 
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
 
 class PoseGazeDetector:
-    def __init__(self, causal_model_dir="tmp/behavior_actor_causal_pose_only_20260812"):
+    def __init__(self, causal_model_dir="tmp/benchmark_face_mesh_restored_cuda_snapshot_verify_final_20260820"):
         print("[INFO] Đang khởi tạo PoseGazeDetector (Thực tế)...")
         self.session_id = TrackingManager.generate_session_id("webcam_holistic")
         

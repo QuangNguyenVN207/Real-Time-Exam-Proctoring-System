@@ -224,10 +224,10 @@ class CausalLiveActorClassifier:
         """Pre-B4 C3 gate retained for one-release diagnostic tracing."""
         return (
             row.get("strict_hand_quality__mean", 0.0) > 0.0
-            and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-            and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-            and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
-            and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
+            and row.get("hand_motion__q95", 0.0) <= self.gates.get("c3_motion_ceiling", 0.124559)
+            and row.get("finger_motion__q95", 0.0) <= self.gates.get("c3_motion_ceiling", 0.124559)
+            and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates.get("c3_side_floor", 0.05)
+            and row.get("strict_head_down_delta__q95", 0.0) <= self.gates.get("c3_down_ceiling", 0.05)
         )
 
     def _b4_c3_gate(self, row: dict[str, Any]) -> bool:
@@ -305,9 +305,9 @@ class CausalLiveActorClassifier:
             if self.suspicious_names:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
-                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
-                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
-                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates.get("suspicious_down_floor", 0.028485)
+                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates.get("suspicious_motion_floor", 0.037612)
+                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates.get("suspicious_lower_floor", -0.187859)
                     and row.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
                 )
             midpoint[actor_id] = (

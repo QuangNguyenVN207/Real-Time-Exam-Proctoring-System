@@ -47,6 +47,7 @@ from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorke
 def init_system_resources():
     print("[INFO] Khởi tạo trạm trung chuyển dữ liệu...")
     frame_q = queue.Queue(maxsize=2) 
+    gaze_q = queue.Queue(maxsize=2)
     result_q = queue.Queue(maxsize=100)
     
     overlays = []
@@ -54,6 +55,7 @@ def init_system_resources():
     
     vision_ready = threading.Event()
     audio_ready = threading.Event()
+    gaze_ready = threading.Event()
     
     register_face_event = threading.Event()
     shared_state = {
@@ -64,58 +66,66 @@ def init_system_resources():
     }
 
     # --- LUỒNG AI THỊ GIÁC ---
-    def vision_ai_thread():
-        print("[INFO] Đang khởi động luồng AI Thị giác...")
-        yolo_model = ObjectDetector(model_path="weights/yolov8_finetuned.pt")
+    # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
+    def heavy_vision_thread():
+        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng)...")
+        yolo_model = ObjectDetector(model_path="weights/best (1).pt")
         face_model = FaceVerifier(db_path="data/student_faces/")
-        gaze_model = PoseGazeDetector()
         
-        shared_state["gaze_model"] = gaze_model
+        # ---> BÍ QUYẾT ĐỒNG BỘ: Tạo hàm Masking chung cho cả Camera và Đăng ký <---
+        def get_largest_stranger_with_masking(img, ts):
+            faces = face_model._detect_faces(img)
+            if not faces:
+                return None, None
+                
+            # Sắp xếp khuôn mặt theo diện tích từ TO đến NHỎ
+            faces = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
+            h, w = img.shape[:2]
+            
+            # Dùng kỹ thuật "Che phủ" (Masking) để test từng mặt từ to đến nhỏ
+            for i, target_face in enumerate(faces):
+                masked_frame = img.copy()
+                
+                # Vẽ ô đen che giấu TẤT CẢ các khuôn mặt khác
+                for j, other_face in enumerate(faces):
+                    if i != j:
+                        ox1, oy1, ox2, oy2 = map(int, other_face.bbox)
+                        # Nới rộng ô đen ra 10 pixel để xóa thật sạch
+                        cv2.rectangle(masked_frame, 
+                                      (max(0, ox1 - 10), max(0, oy1 - 10)), 
+                                      (min(w, ox2 + 10), min(h, oy2 + 10)), 
+                                      (0, 0, 0), -1)
+                                      
+                # Gửi ảnh đã che đen đi kiểm tra (AI giờ chỉ còn thấy 1 mặt duy nhất)
+                verify_result = face_model.verify_face(masked_frame, ts)
+                
+                if verify_result and verify_result.get("status") == "alert":
+                    # Ghi đè lại tọa độ gốc để khung vàng vẽ chính xác
+                    verify_result["details"]["unauthorized_bbox"] = [
+                        int(x) for x in target_face.bbox
+                    ]
+                    return verify_result, target_face.bbox
+                    
+            # Nếu toàn người quen (hoặc DB trống), trả về bbox của người to nhất làm dự phòng
+            return None, faces[0].bbox
+        # -------------------------------------------------------------------------
+        
         vision_ready.set()
-        print("[INFO] ✅ AI Thị giác đã nạp xong!")
+        print("[INFO] ✅ AI Thị giác (Nặng) đã nạp xong!")
 
         while True:
-            # 1. Xử lý chụp ảnh đăng ký (Ưu tiên NGƯỜI LẠ TO NHẤT bằng kỹ thuật Masking)
+            # 1. Xử lý chụp ảnh đăng ký (Đồng bộ Masking)
             if register_face_event.is_set():
                 frame_to_save = shared_state["register_frame"]
                 if frame_to_save is not None:
                     try:
-                        target_bbox = None
                         h, w = frame_to_save.shape[:2]
                         
-                        # Bước 1: Trích xuất TẤT CẢ khuôn mặt có trong ảnh
-                        faces = face_model._detect_faces(frame_to_save)
-                        
-                        if faces:
-                            # Bước 2: Sắp xếp khuôn mặt theo diện tích từ TO đến NHỎ
-                            faces = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-                            
-                            # Bước 3: Dùng kỹ thuật "Che phủ" (Masking) để test từng mặt
-                            for i, target_face in enumerate(faces):
-                                masked_frame = frame_to_save.copy()
+                        # Gọi hàm Masking chung
+                        _, target_bbox = get_largest_stranger_with_masking(frame_to_save, time.time())
                                 
-                                # Vẽ ô đen che giấu TẤT CẢ các khuôn mặt khác
-                                for j, other_face in enumerate(faces):
-                                    if i != j:
-                                        ox1, oy1, ox2, oy2 = map(int, other_face.bbox)
-                                        # Nới rộng ô đen ra 10 pixel để xóa thật sạch
-                                        cv2.rectangle(masked_frame, 
-                                                      (max(0, ox1 - 10), max(0, oy1 - 10)), 
-                                                      (min(w, ox2 + 10), min(h, oy2 + 10)), 
-                                                      (0, 0, 0), -1)
-                                        
-                                # Gửi ảnh đã che đen đi kiểm tra (AI giờ chỉ còn thấy 1 mặt duy nhất)
-                                verify_result = face_model.verify_face(masked_frame, time.time())
-                                
-                                if verify_result and verify_result.get("status") == "alert":
-                                    target_bbox = target_face.bbox
-                                    break  # Chốt người lạ to nhất và thoát vòng lặp
-                                    
-                            # Bước 4: Phương án dự phòng (Nếu DB trống hoặc toàn người quen)
-                            if target_bbox is None:
-                                target_bbox = faces[0].bbox
-                                
-                            # Bước 5: Nới rộng khung chữ nhật, vẽ và lưu ảnh gốc
+                        if target_bbox is not None:
+                            # Bước 5: Nới rộng khung chữ nhật
                             x1, y1, x2, y2 = map(int, target_bbox)
                             margin = 40
                             x1_ext = max(0, x1 - margin)
@@ -123,17 +133,26 @@ def init_system_resources():
                             x2_ext = min(w, x2 + margin)
                             y2_ext = min(h, y2 + margin)
                             
+                            # 1. BẢN CHO AI: Chỉ cắt khuôn mặt lưu vào thư mục chuẩn
+                            face_crop = frame_to_save[y1_ext:y2_ext, x1_ext:x2_ext]
+                            if face_crop.size > 0:
+                                ai_file = f"data/student_faces/student_{int(time.time())}.jpg"
+                                cv2.imwrite(ai_file, face_crop)
+                            
+                            # 2. BẢN TOÀN CẢNH CHO BẠN: Vẽ khung xanh và lưu ra thư mục riêng
                             save_frame = frame_to_save.copy()
                             cv2.rectangle(save_frame, (x1_ext, y1_ext), (x2_ext, y2_ext), (0, 255, 0), 2)
                             cv2.putText(save_frame, "REGISTERED", (x1_ext, y1_ext - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                             
-                            file_name = f"data/student_faces/student_{int(time.time())}.jpg"
-                            cv2.imwrite(file_name, save_frame)
+                            import os
+                            os.makedirs("data/registered_logs", exist_ok=True)
+                            human_file = f"data/registered_logs/full_student_{int(time.time())}.jpg"
+                            cv2.imwrite(human_file, save_frame)
                             
-                            # Nạp lại Face Vector
+                            # Nạp lại Face Vector (AI lúc này chỉ đọc bản cắt trong student_faces)
                             face_model._load_database()
                             
-                            result_q.put({"module": "system", "status": "info", "message": f"📸 Đã đăng ký khuôn mặt: {file_name}"})
+                            result_q.put({"module": "system", "status": "info", "message": f"📸 Đã đăng ký thành công!"})
                         else:
                             result_q.put({"module": "system", "status": "error", "message": "⚠️ Không tìm thấy khuôn mặt để lưu!"})
                             
@@ -151,11 +170,24 @@ def init_system_resources():
             result_yolo = yolo_model.process_frame(frame, timestamp)
             if result_yolo and not result_q.full(): result_q.put(result_yolo)
                 
-            result_face = face_model.verify_face(frame, timestamp)
-            if result_face and not result_q.full(): result_q.put(result_face)
-                
+            # ---> ĐỒNG BỘ: Luồng Camera giám sát giờ cũng dùng Masking để quét người lạ <---
+            result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
+            if result_face and not result_q.full(): 
+                result_q.put(result_face)
+
+
+    # LUỒNG 2: Xử lý nhẹ (MediaPipe PoseGaze) - Chạy siêu tốc
+    def fast_gaze_thread():
+        gaze_model = PoseGazeDetector()
+        shared_state["gaze_model"] = gaze_model
+        gaze_ready.set()
+        while True:
+            data = gaze_q.get()
+            if data is None: break
+            frame, timestamp = data
             result_gaze = gaze_model.process_frame(frame, timestamp)
             if result_gaze and not result_q.full(): result_q.put(result_gaze)
+
 
     # --- LUỒNG AI ÂM THANH (Dùng PyAudio độc lập) ---
     def audio_ai_thread():
@@ -179,19 +211,22 @@ def init_system_resources():
             audio_ready.set()
 
     # Khởi chạy các luồng
-    t_vision = threading.Thread(target=vision_ai_thread, daemon=True)
+    t_vision = threading.Thread(target=heavy_vision_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
+    t_gaze = threading.Thread(target=fast_gaze_thread, daemon=True)
     
     t_vision.start()
     t_audio.start()
+    t_gaze.start()
     
     vision_ready.wait()
     audio_ready.wait()
+    gaze_ready.wait()
 
-    return frame_q, result_q, overlays, overlay_lock, register_face_event, shared_state
+    return frame_q, gaze_q, result_q, overlays, overlay_lock, register_face_event, shared_state
 
 # Kích hoạt Cache
-FRAME_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
+FRAME_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
 FPS_SKIP = 8
 
@@ -223,14 +258,14 @@ def draw_warning_overlays(frame):
                 for det in alert.get("detections", []):
                     bbox = det.get("bbox")
                     label = det.get("label", "Vat cam").upper()
-                    if bbox and len(bbox) == 4:
+                    if bbox is not None and len(bbox) == 4:
                         x1, y1, x2, y2 = map(int, bbox)
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                         cv2.putText(frame, label, (x1 + 5, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
             elif module == "face_verify":
                 bbox = details.get("unauthorized_bbox")
-                if bbox and len(bbox) == 4:
+                if bbox is not None and len(bbox) == 4:
                     x1, y1, x2, y2 = map(int, bbox)
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 140, 255), 2)
                     cv2.putText(frame, "NGUOI LA", (x1 + 5, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -301,6 +336,14 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
             break
 
     # 3. Đẩy ảnh mới vào Queue cho AI xử lý (Frame Skipping)
+
+    # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 3 frame ~ 10 FPS)
+    if SHARED_STATE["frame_count"] % 3 == 0:
+        if GAZE_QUEUE.full():
+            try: GAZE_QUEUE.get_nowait()
+            except queue.Empty: pass
+        GAZE_QUEUE.put((img.copy(), current_time))
+
     if SHARED_STATE["frame_count"] % FPS_SKIP == 0:
         if FRAME_QUEUE.full():
             try: FRAME_QUEUE.get_nowait()
