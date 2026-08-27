@@ -1,0 +1,25 @@
+{
+  "source": "grouped OOF training-prefix scores only; coordinate search on primary actor macro-F1",
+  "specialist_thresholds": {
+    "c2": 0.31567803025245667,
+    "c3": 0.22652508318424225,
+    "suspicious_activity": 0.6603246927261353
+  },
+  "gate_thresholds": {
+    "c3_motion_ceiling": 2.127486297745217,
+    "c3_side_floor": 0.23424867951982659,
+    "c3_down_ceiling": 0.04676047707994139,
+    "suspicious_down_floor": 0.02284153357560299,
+    "suspicious_motion_floor": 0.27528379193801616,
+    "suspicious_lower_floor": -0.10919798641680552
+  },
+  "search_trace": [
+    {
+      "source": "preselected grouped OOF result",
+      "selection_file": "C:\\Real-Time-Exam-Proctoring-System\\tmp\\causal_8fps_stage6_mix_multistart_20260827.json",
+      "selection_sha256": "20348D22CB6A9FC12621687D2C9F268872C61B1405D980F7F65CE24D4E3F6F3F",
+      "recorded_actor_macro_f1": 0.8469938154473259,
+      "exact_causal_parity": true
+    }
+  ]
+}
