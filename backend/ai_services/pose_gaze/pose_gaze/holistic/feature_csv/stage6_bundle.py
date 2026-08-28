@@ -41,7 +41,10 @@ def load_stage6_bundle(
     if manifest.get("format_version") != "causal_8fps_stage6_v1":
         raise ValueError("unsupported Stage 6 bundle format")
 
-    for relative, expected_hash in manifest.get("file_sha256", {}).items():
+    file_hashes = manifest.get("file_sha256")
+    if not isinstance(file_hashes, dict) or not file_hashes:
+        raise ValueError("Stage 6 bundle file hashes missing")
+    for relative, expected_hash in file_hashes.items():
         path = bundle_dir / relative
         if not path.is_file():
             raise ValueError(f"Stage 6 bundle file missing: {relative}")
@@ -52,8 +55,17 @@ def load_stage6_bundle(
                 f"expected {expected_hash}, got {actual_hash}"
             )
 
-    schemas = json.loads((bundle_dir / "feature_schemas.json").read_text(encoding="utf-8"))
-    policy = json.loads((bundle_dir / "temporal_policy.json").read_text(encoding="utf-8"))
+    schemas_path = bundle_dir / "feature_schemas.json"
+    policy_path = bundle_dir / "temporal_policy.json"
+    calibration_path = bundle_dir / "calibration.json"
+    for required_path in (schemas_path, policy_path, calibration_path):
+        relative = required_path.relative_to(bundle_dir).as_posix()
+        if relative not in file_hashes:
+            raise ValueError(f"Stage 6 bundle hash declaration missing: {relative}")
+
+    schemas = json.loads(schemas_path.read_text(encoding="utf-8"))
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
     if _canonical_hash(schemas) != manifest.get("feature_schema_hash"):
         raise ValueError("Stage 6 feature-schema hash mismatch")
     if _canonical_hash(policy) != manifest.get("temporal_policy_hash"):
@@ -63,7 +75,27 @@ def load_stage6_bundle(
     if expected_temporal_policy is not None and dict(expected_temporal_policy) != policy:
         raise ValueError("Stage 6 temporal policy does not match runtime policy")
 
-    return {"manifest": manifest, "feature_schemas": schemas, "temporal_policy": policy}
+    model_hashes = manifest.get("model_sha256")
+    if not isinstance(model_hashes, dict) or not model_hashes:
+        raise ValueError("Stage 6 model hashes missing")
+    for specialist, expected_hash in model_hashes.items():
+        relative = f"models/{specialist}.ubj"
+        if file_hashes.get(relative) != expected_hash:
+            raise ValueError(f"Stage 6 model hash declaration mismatch: {specialist}")
+
+    return {
+        "manifest": manifest,
+        "feature_schemas": schemas,
+        "temporal_policy": policy,
+        "calibration": calibration,
+        "hashes": {
+            "bundle_manifest": _sha256(manifest_path),
+            "models": dict(model_hashes),
+            "feature_schema": manifest["feature_schema_hash"],
+            "temporal_policy": manifest["temporal_policy_hash"],
+            "calibration": file_hashes["calibration.json"],
+        },
+    }
 
 
 def verify_grouped_oof_reproduction(bundle_dir: Path) -> dict[str, Any]:

@@ -44,8 +44,8 @@ def _timestamp_ms(row):
     return value if math.isfinite(value) else float("nan")
 
 
-def _rate(current, previous, dt_s, *, valid=True):
-    if not valid or current is None or previous is None or not math.isfinite(dt_s) or not 0.0 < dt_s <= 0.450:
+def _rate(current, previous, dt_s, *, valid=True, max_gap_s=0.450):
+    if not valid or current is None or previous is None or not math.isfinite(dt_s) or not 0.0 < dt_s <= max_gap_s:
         return float("nan"), 0
     try:
         current, previous = float(current), float(previous)
@@ -56,7 +56,7 @@ def _rate(current, previous, dt_s, *, valid=True):
     return (current - previous) / dt_s, 1
 
 
-def _apply_stage3_temporal_contract(rows):
+def _apply_stage3_temporal_contract(rows, max_derivative_gap_ms=450):
     """Normalize approved derivatives to timestamp and continuity semantics."""
     grouped = defaultdict(list)
     for row in rows:
@@ -66,6 +66,7 @@ def _apply_stage3_temporal_contract(rows):
         "finger_motion", "hand_finger_motion", "c3_pose_head_peer_velocity",
         "c3_pose_torso_peer_velocity", "hand_motion",
     )
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
     for group in grouped.values():
         group.sort(key=lambda row: (_sample_index(row), _timestamp_ms(row)))
         previous = None
@@ -86,7 +87,7 @@ def _apply_stage3_temporal_contract(rows):
                 previous_values.clear()
             for name in rate_names:
                 rate_valid = (
-                    continuous and 0.0 < dt_s <= 0.450
+                    continuous and 0.0 < dt_s <= max_gap_s
                     and _is_number(row.get(name))
                 )
                 row[f"{name}_valid"] = int(rate_valid)
@@ -104,6 +105,7 @@ def _apply_stage3_temporal_contract(rows):
                     previous_measurement[0] if previous_measurement is not None else None,
                     measurement_dt,
                     valid=continuous,
+                    max_gap_s=max_gap_s,
                 )
                 row[rate_name] = value
                 row[f"{rate_name}_valid"] = valid
@@ -317,7 +319,7 @@ def _head_pnp_pose(points):
     }
 
 
-def _head_pnp_features(rows):
+def _head_pnp_features(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
     """Add torso-relative SolvePnP directions and a common-motion camera gate."""
     grouped = defaultdict(list)
     for row in rows:
@@ -396,7 +398,7 @@ def _head_pnp_features(rows):
             })
             if valid:
                 for name in baseline_values:
-                    if len(baseline_values[name]) < CAUSAL_WARMUP_FRAMES:
+                    if len(baseline_values[name]) < baseline_frames:
                         baseline_values[name].append(pose[name])
     return rows
 
@@ -486,7 +488,7 @@ def _circular_delta(value, baseline):
     return math.atan2(math.sin(value - baseline), math.cos(value - baseline))
 
 
-def derive_face_c3_features(rows):
+def derive_face_c3_features(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
     """Derive normalized face geometry from selected face landmarks only."""
     grouped = defaultdict(list)
     for row in rows:
@@ -548,17 +550,18 @@ def derive_face_c3_features(rows):
             ):
                 row[f"{name}_delta"] = item[name] - baseline[name] if name in baseline else float("nan")
             for name, value in item.items():
-                if name in baseline_values and len(baseline_values[name]) < CAUSAL_WARMUP_FRAMES:
+                if name in baseline_values and len(baseline_values[name]) < baseline_frames:
                     baseline_values[name].append(value)
     return rows
 
 
-def derive_finger_motion(rows):
+def derive_finger_motion(rows, max_derivative_gap_ms=450):
     """Add actor-scale-normalized fingertip motion for c7 hand evidence."""
     grouped = defaultdict(list)
     for row in rows:
         grouped[(row["clip_id"], row["actor_id"])].append(row)
     finger_indices = (4, 8, 12, 16, 20)
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
     for group in grouped.values():
         group.sort(key=lambda row: _sample_index(row))
         previous = {}
@@ -589,7 +592,7 @@ def derive_finger_motion(rows):
                     if point and key in previous:
                         previous_point, previous_timestamp = previous[key]
                         dt_s = (timestamp - previous_timestamp) / 1000.0
-                        if 0.0 < dt_s <= 0.450:
+                        if 0.0 < dt_s <= max_gap_s:
                             motions.append(math.hypot(point[0] - previous_point[0], point[1] - previous_point[1]) / scale / dt_s)
                     if point:
                         previous[key] = (point, timestamp)
@@ -606,7 +609,11 @@ def derive_finger_motion(rows):
     return rows
 
 
-def derive_hand_shape_and_pair_cues(rows):
+def derive_hand_shape_and_pair_cues(
+    rows,
+    head_turn_baseline_frames=C2_HEAD_TURN_BASELINE_FRAMES,
+    max_derivative_gap_ms=450,
+):
     """Add landmark-only hand shape, raise and pair convergence cues.
 
     These are frame/actor geometry only.  No class, interval, or annotation
@@ -616,6 +623,7 @@ def derive_hand_shape_and_pair_cues(rows):
     for row in rows:
         grouped[(row["clip_id"], row["actor_id"])].append(row)
     finger_indices = (4, 8, 12, 16, 20)
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
     for group in grouped.values():
         group.sort(key=lambda row: _sample_index(row))
         previous_shape = None
@@ -638,7 +646,7 @@ def derive_hand_shape_and_pair_cues(rows):
             )
             if all(_is_number(value) for value in head_terms):
                 head_values.append(sum(abs(float(value)) for value in head_terms))
-                if len(head_values) == C2_HEAD_TURN_BASELINE_FRAMES:
+                if len(head_values) == head_turn_baseline_frames:
                     break
         head_threshold = (
             max(0.08, float(np.median(head_values) + 2.0 * np.std(head_values)))
@@ -689,7 +697,7 @@ def derive_hand_shape_and_pair_cues(rows):
             # c7 raise is a change from the actor's own normal prefix, not an
             # absolute image height.  With camera y increasing downward, only
             # a negative y delta is upward; downward motion must not qualify.
-            if wrist_points and len(wrist_baseline) < C2_HEAD_TURN_BASELINE_FRAMES:
+            if wrist_points and len(wrist_baseline) < head_turn_baseline_frames:
                 wrist_baseline.append(wrist_y)
             baseline_wrist_y = float(np.median(wrist_baseline)) if wrist_baseline else wrist_y
             if LEGACY_C7_FORMULA:
@@ -707,14 +715,14 @@ def derive_hand_shape_and_pair_cues(rows):
                          if previous_pair_timestamp is not None else float("nan"))
             row["pair_convergence"] = ((previous_pair - pair_distance) / pair_dt_s
                                         if previous_pair is not None and math.isfinite(pair_distance)
-                                        and 0.0 < pair_dt_s <= 0.450 else float("nan"))
+                                        and 0.0 < pair_dt_s <= max_gap_s else float("nan"))
             row["crossing_indicator"] = float(number(row.get("own_side_distance")) < 0.0)
             own_side = (float(row["own_side_distance"])
                         if _is_number(row.get("own_side_distance")) else float("nan"))
             own_dt_s = ((timestamp - previous_own_timestamp) / 1000.0
                         if previous_own_timestamp is not None else float("nan"))
             row["hand_direction"] = ((own_side - previous_own_side) / own_dt_s
-                                      if previous_own_side is not None and 0.0 < own_dt_s <= 0.450
+                                      if previous_own_side is not None and 0.0 < own_dt_s <= max_gap_s
                                       else float("nan"))
             head_terms = (
                 row.get("c3_face_roll_delta"), row.get("c3_ear_roll_delta"),
@@ -971,11 +979,16 @@ def _point(row, prefix, index):
     return x, y
 
 
-def derive_behavior_motion(rows):
+def derive_behavior_motion(
+    rows,
+    baseline_frames=CAUSAL_WARMUP_FRAMES,
+    max_derivative_gap_ms=450,
+):
     """Add actor-local motion/peer cues from raw landmarks only."""
     grouped = defaultdict(list)
     for row in rows:
         grouped[(row["clip_id"], row["actor_id"])].append(row)
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
     for group in grouped.values():
         group.sort(key=lambda row: _sample_index(row))
         last_frame = max(1, _sample_index(group[-1]))
@@ -1040,7 +1053,7 @@ def derive_behavior_motion(rows):
             timestamp = _timestamp_ms(row)
             dt_s = ((timestamp - previous_wrist_timestamp) / 1000.0
                     if previous_wrist_timestamp is not None else float("nan"))
-            if wrist and previous_wrist and 0.0 < dt_s <= 0.450:
+            if wrist and previous_wrist and 0.0 < dt_s <= max_gap_s:
                 speed = math.hypot(wrist[0] - previous_wrist[0], wrist[1] - previous_wrist[1]) / scale / dt_s
             if wrist:
                 previous_wrist = wrist
@@ -1079,17 +1092,17 @@ def derive_behavior_motion(rows):
                 row["c3_head_toward_peer_velocity"] = float("nan")
             else:
                 c3_dt = (timestamp - previous_c3_timestamp) / 1000.0
-                row["c3_face_roll_velocity"], _ = _rate(_circular_delta(face_roll, previous_c3[0]), 0.0, c3_dt)
-                row["c3_ear_roll_velocity"], _ = _rate(_circular_delta(ear_roll, previous_c3[1]), 0.0, c3_dt)
-                row["c3_shoulder_roll_velocity"], _ = _rate(_circular_delta(shoulder_roll, previous_c3[2]), 0.0, c3_dt)
-                row["c3_head_toward_peer_velocity"], _ = _rate(side * (nose_eye_lateral - previous_c3[3]), 0.0, c3_dt)
+                row["c3_face_roll_velocity"], _ = _rate(_circular_delta(face_roll, previous_c3[0]), 0.0, c3_dt, max_gap_s=max_gap_s)
+                row["c3_ear_roll_velocity"], _ = _rate(_circular_delta(ear_roll, previous_c3[1]), 0.0, c3_dt, max_gap_s=max_gap_s)
+                row["c3_shoulder_roll_velocity"], _ = _rate(_circular_delta(shoulder_roll, previous_c3[2]), 0.0, c3_dt, max_gap_s=max_gap_s)
+                row["c3_head_toward_peer_velocity"], _ = _rate(side * (nose_eye_lateral - previous_c3[3]), 0.0, c3_dt, max_gap_s=max_gap_s)
             previous_c3 = (face_roll, ear_roll, shoulder_roll, nose_eye_lateral)
             previous_c3_timestamp = timestamp
             previous_sample = sample
             previous_epoch = epoch
             previous_track = track
             for index, value in enumerate((nose_lateral, torso_x, face_roll, ear_roll, shoulder_roll, shoulder_dy, shoulder_dx)):
-                if value is not None and math.isfinite(float(value)) and len(baseline_values[index]) < 4:
+                if value is not None and math.isfinite(float(value)) and len(baseline_values[index]) < baseline_frames:
                     baseline_values[index].append(value)
             row["pose_quality_mask"] = float(number(row.get("pose_valid_ratio")) > 0.0)
     return rows
@@ -1159,7 +1172,11 @@ def _c3_pose_point(row, index):
         return None
 
 
-def derive_c3_pose_contract(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
+def derive_c3_pose_contract(
+    rows,
+    baseline_frames=CAUSAL_WARMUP_FRAMES,
+    max_derivative_gap_ms=450,
+):
     """Derive the causal, pose-only C3 contract for an explicit peer.
 
     The historical C3 specialist is intentionally untouched.  This branch
@@ -1179,6 +1196,7 @@ def derive_c3_pose_contract(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
         grouped[key].append(row)
         by_frame[(row["clip_id"], _sample_index(row))][row["actor_id"]] = row
 
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
     for (clip_id, actor_id), group in grouped.items():
         group.sort(key=lambda row: _sample_index(row))
         observations = []
@@ -1251,10 +1269,12 @@ def derive_c3_pose_contract(rows, baseline_frames=CAUSAL_WARMUP_FRAMES):
             head_velocity, head_velocity_valid = _rate(
                 head_delta, previous_head, dt_s,
                 valid=bool(item["head_valid"] and item["peer_valid"]),
+                max_gap_s=max_gap_s,
             )
             torso_velocity, torso_velocity_valid = _rate(
                 torso_delta, previous_torso, dt_s,
                 valid=bool(item["torso_valid"] and item["peer_valid"]),
+                max_gap_s=max_gap_s,
             )
             row.update({
                 "c3_pose_head_peer_delta": head_delta,
@@ -1508,6 +1528,7 @@ def causal_aggregate_rows(
     selected_features=None,
     warmup_frames=CAUSAL_WARMUP_FRAMES,
     window_frames=24,
+    max_derivative_gap_ms=450,
 ):
     """Build one actor rolling-window row per frame using only current/past values."""
     grouped = defaultdict(list)
@@ -1528,6 +1549,7 @@ def causal_aggregate_rows(
             max_frames=window_frames,
             warmup_frames=warmup_frames,
             derivative_feature_names=STAGE3_RATE_FEATURES,
+            max_derivative_gap_ms=max_derivative_gap_ms,
         )
         for row in ordered:
             track_present = bool(number(row.get("track_present", 1)))
