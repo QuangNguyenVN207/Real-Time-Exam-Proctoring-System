@@ -91,11 +91,17 @@ def init_system_resources():
         print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng OpenVINO...")
         # Trỏ tới thư mục chứa file .xml và .bin của OpenVINO
         try:
-            yolo_model = ObjectDetector(model_path="weights/best_openvino_model", device="GPU")
+            # Xóa tham số enable_smartphone_fallback
+            # Thêm confidence_threshold để dễ dàng test (giảm xuống 0.3 để OpenVINO nhạy hơn)
+            yolo_model = ObjectDetector(
+                model_path="weights/best_openvino_model", 
+                device="GPU",
+                confidence_threshold=0.55
+            )
             face_model = FaceVerifier(db_path="data/student_faces/")
         except Exception as e:
             print(f"[LỖI KHỞI TẠO AI THỊ GIÁC]: {e}")
-            vision_ready.set() # Bắt buộc gọi để giải phóng luồng chính không bị treo
+            vision_ready.set()
             return
         
         # ---> BÍ QUYẾT ĐỒNG BỘ: Tạo hàm Masking chung cho cả Camera và Đăng ký <---
@@ -192,10 +198,40 @@ def init_system_resources():
             data = frame_q.get()
             if data is None: break
             frame, timestamp = data
-            
+            # print(f"[DEBUG YOLO] Nhận frame từ queue: {timestamp}")
             result_yolo = yolo_model.process_frame(frame, timestamp)
-            if result_yolo and not result_q.full(): result_q.put(result_yolo)
+            # [DEBUG 1] In ra toàn bộ kết quả thô trả về từ mô hình
+            # print(f"[DEBUG YOLO] Kết quả thô từ ObjectDetector: {result_yolo}")
+    
+            if result_yolo is not None:
+                detections = result_yolo.get("detections", [])
+        
+                # [DEBUG 2] Kiểm tra số lượng vật thể bắt được
+                if len(detections) > 0:
+                    # print(f"[DEBUG YOLO] Đã bắt được {len(detections)} vật thể. Cập nhật status thành 'alert'.")
+                    result_yolo["status"] = "alert" # BẮT BUỘC: Đánh dấu là cảnh báo để hàm Main xử lý
+            
+                    # Đẩy vào queue nếu chưa đầy
+                    if not result_q.full():
+                        result_q.put(result_yolo)
+                        # print("[DEBUG YOLO] Đã đẩy cảnh báo vật thể vào RESULT_QUEUE thành công.")
+                    else:
+                        print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
+
+            if result_yolo:
+                # Ép key "module" để WebRTC nhận diện luồng
+                if "module" not in result_yolo:
+                    result_yolo["module"] = "object_detect"
                 
+                # Logic xác định dị thường cho ObjectDetector: có vật thể trong list 'detections'
+                has_anomaly = len(result_yolo.get("detections", [])) > 0
+                
+                if has_anomaly:
+                    result_yolo["status"] = "alert"
+                
+                # if not result_q.full(): 
+                #     result_q.put(result_yolo)
+
             # ---> ĐỒNG BỘ: Luồng Camera giám sát giờ cũng dùng Masking để quét người lạ <---
             result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
             if result_face and not result_q.full(): 
@@ -207,6 +243,7 @@ def init_system_resources():
         gaze_model = PoseGazeDetector()
         shared_state["gaze_model"] = gaze_model
         gaze_ready.set()
+        print("[INFO] ✅ Fast Gaze Thread đã nạp xong!")
         while True:
             data = gaze_q.get()
             if data is None: break
@@ -231,6 +268,7 @@ def init_system_resources():
                 
             audio_worker.pipeline.process_audio = hooked_process_audio
             audio_ready.set()
+            print("[INFO] ✅ Audio Thread đã nạp xong!")
             audio_worker.start()
         except Exception as e:
             print(f"[LỖI LUỒNG ÂM THANH] {e}")
@@ -254,7 +292,7 @@ def init_system_resources():
 # Kích hoạt Cache
 FRAME_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
-FPS_SKIP = 8
+FPS_SKIP = 2
 
 # ==========================================
 # 2. HÀM VẼ GIAO DIỆN (ĐƯỢC GỌI TRONG WEBRTC)
@@ -281,9 +319,23 @@ def draw_warning_overlays(frame):
             details = alert.get("details", {})
             
             if module == "object_detect":
-                for det in alert.get("detections", []):
+                # Lấy danh sách vật thể chuẩn từ ObjectDetector
+                detections = alert.get("detections", [])
+
+                # [DEBUG 4] Báo cáo số lượng bounding box đang được OpenCV vẽ
+                # if len(detections) > 0:
+                #     print(f"[DEBUG DRAW] Đang tiến hành vẽ {len(detections)} khung (Bounding Box) lên màn hình...")
+
+                for det in detections:
                     bbox = det.get("bbox")
-                    label = det.get("label", "Vat cam").upper()
+                    label = det.get("label", "VAT CAM")
+                    conf = det.get("confidence", 0.0)
+                    # [DEBUG 5] Kiểm tra xem tọa độ bbox có bị rỗng hay sai định dạng không
+                    # print(f"[DEBUG DRAW] Tọa độ vẽ: {bbox}, Nhãn: {label}, Confidence: {conf}")
+                    
+                    if isinstance(label, str):
+                        label = label.upper()
+
                     if bbox is not None and len(bbox) == 4:
                         x1, y1, x2, y2 = map(int, bbox)
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -317,10 +369,17 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
     while not RESULT_QUEUE.empty():
         try:
             alert = RESULT_QUEUE.get_nowait()
+
             module_name = alert.get("module", "")
+            status = alert.get("status")
             timestamp = alert.get("timestamp", current_time)
             details = alert.get("details", {})
-            
+            # [DEBUG 3] In ra xem Main Thread có bắt được alert từ YOLO không
+            # if module_name == "object_detect":
+            #     print(f"[DEBUG MAIN] Nhận được từ Queue - Module: {module_name}, Status: {status}, Detections: {alert.get('detections')}")
+            # CẬP NHẬT FIX: Đóng dấu thời gian lúc luồng main NHẬN ĐƯỢC cảnh báo
+            alert['display_timestamp'] = time.time()
+
             if module_name == "system":
                 SHARED_STATE["logs"].insert(0, f"**[{time.strftime('%H:%M:%S')}]** {alert.get('message')}")
                 continue
