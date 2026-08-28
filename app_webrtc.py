@@ -96,7 +96,7 @@ def init_system_resources():
             yolo_model = ObjectDetector(
                 model_path="weights/best_openvino_model", 
                 device="GPU",
-                confidence_threshold=0.55
+                confidence_threshold=0.5
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
         except Exception as e:
