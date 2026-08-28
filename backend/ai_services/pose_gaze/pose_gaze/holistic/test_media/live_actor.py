@@ -34,12 +34,19 @@ class CausalLiveActorClassifier:
         explicit_pairs: Iterable[tuple[str, str]] = (),
         warmup_frames: int = 15,
         window_frames: int = 90,
+        c3_threshold_override: float | None = None,
+        xgboost_device: str = "cuda:0",
     ) -> None:
         self.model_dir = Path(model_dir)
         self.clip_id = str(clip_id)
         self.student_prefix = student_prefix
         self.warmup_frames = int(warmup_frames)
         self.window_frames = int(window_frames)
+        self.xgboost_device = str(xgboost_device).strip().lower()
+        if self.xgboost_device == "gpu":
+            self.xgboost_device = "cuda:0"
+        if not self.xgboost_device.startswith("cuda"):
+            raise ValueError("Causal live XGBoost requires a CUDA device")
         metrics_path = self.model_dir / "causal_actor_metrics.json"
         if not metrics_path.is_file():
             raise FileNotFoundError(
@@ -49,7 +56,13 @@ class CausalLiveActorClassifier:
         if metrics.get("future_frames_used_for_decision") is not False:
             raise ValueError("model artifact is not certified causal")
         thresholds = metrics.get("specialist_thresholds_train_only", {})
-        self.c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        self.c2_threshold = float(thresholds.get("c2", metrics.get("c2_threshold", 0.5)))
+        artifact_c3_threshold = float(metrics.get("c3_threshold_train_only", thresholds.get("c3", 1.0)))
+        self.c3_threshold = (
+            float(c3_threshold_override)
+            if c3_threshold_override is not None
+            else artifact_c3_threshold
+        )
         self.suspicious_threshold = thresholds.get("suspicious_activity")
         # Extended suspicious artifacts predate the explicit metadata field,
         # but their C3 schema still requires this causal pose contract.
@@ -81,6 +94,7 @@ class CausalLiveActorClassifier:
         self.gates = metrics.get("gate_thresholds_train_only", {})
         self._state = CausalSpecialistState(
             (), c3_threshold=self.c3_threshold,
+            c2_threshold=self.c2_threshold,
             suspicious_threshold=self.suspicious_threshold,
             c3_gate=lambda values: bool(values.get("c3_gate", True)),
             suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
@@ -98,10 +112,14 @@ class CausalLiveActorClassifier:
         self._last_frame: int | None = None
         self._last_timestamp: int | None = None
         self._latest_scores: dict[str, dict[str, float]] = {}
+        self._latest_feature_rows: dict[str, dict[str, Any]] = {}
         self._window_sizes: dict[str, int] = {}
 
     def _load_model(self, model_name: str, names_name: str):
         import xgboost as xgb
+
+        if not xgb.build_info().get("USE_CUDA"):
+            raise RuntimeError("XGBoost was built without CUDA support")
 
         model_path = self.model_dir / model_name
         names_path = self.model_dir / names_name
@@ -111,6 +129,7 @@ class CausalLiveActorClassifier:
             )
         model = xgb.Booster()
         model.load_model(str(model_path))
+        model.set_param({"device": self.xgboost_device})
         names = tuple(json.loads(names_path.read_text(encoding="utf-8")))
         if len(names) % 5 != 0:
             raise ValueError(f"invalid causal feature schema: {names_path}")
@@ -201,6 +220,30 @@ class CausalLiveActorClassifier:
                     seen.add(frame)
         return output
 
+    def _legacy_c3_gate(self, row: dict[str, Any]) -> bool:
+        """Pre-B4 C3 gate retained for one-release diagnostic tracing."""
+        return (
+            row.get("strict_hand_quality__mean", 0.0) > 0.0
+            and row.get("hand_motion__q95", 0.0) <= self.gates.get("c3_motion_ceiling", 0.124559)
+            and row.get("finger_motion__q95", 0.0) <= self.gates.get("c3_motion_ceiling", 0.124559)
+            and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates.get("c3_side_floor", 0.05)
+            and row.get("strict_head_down_delta__q95", 0.0) <= self.gates.get("c3_down_ceiling", 0.05)
+        )
+
+    def _b4_c3_gate(self, row: dict[str, Any]) -> bool:
+        """Current-frame B4 C3 gate; rolling and hand features are diagnostic only."""
+        head_reliability = min(
+            float(row.get("current_c3_pose_head_valid", 0.0)),
+            float(row.get("current_c3_pose_peer_valid", 0.0)),
+        )
+        return (
+            head_reliability >= 0.5
+            and float(row.get("current_c3_pose_head_peer_delta", 0.0))
+            >= float(self.gates["c3_side_floor"])
+            and float(row.get("current_strict_head_down_delta", 0.0))
+            <= float(self.gates["c3_down_ceiling"])
+        )
+
     @staticmethod
     def _latest(rows: list[dict[str, Any]], frame_index: int) -> dict[str, dict[str, Any]]:
         return {
@@ -245,6 +288,9 @@ class CausalLiveActorClassifier:
             window_frames=self.window_frames,
         )
         latest = self._latest(aggregate_rows, frame_index)
+        self._latest_feature_rows = {
+            str(actor_id): dict(row) for actor_id, row in latest.items()
+        }
         scores, midpoint = {}, {}
         for actor_id, row in latest.items():
             self._state.register_actor(actor_id)
@@ -254,23 +300,26 @@ class CausalLiveActorClassifier:
             c2 = float(self.c2_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c2_names]], dtype=np.float32)))[0])
             c3 = float(self.c3_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.c3_names]], dtype=np.float32)))[0])
             scores[actor_id] = {"c2": c2, "c3": c3}
-            scores[actor_id]["c3_gate"] = (
-                row.get("strict_hand_quality__mean", 0.0) > 0.0
-                and row.get("hand_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and row.get("finger_motion__q95", 0.0) <= self.gates["c3_motion_ceiling"]
-                and row.get("c3_pose_head_peer_delta__max", 0.0) >= self.gates["c3_side_floor"]
-                and row.get("strict_head_down_delta__q95", 0.0) <= self.gates["c3_down_ceiling"]
-            )
+            scores[actor_id]["c3_gate"] = self._b4_c3_gate(row)
+            scores[actor_id]["legacy_c3_gate"] = self._legacy_c3_gate(row)
             if self.suspicious_names:
                 scores[actor_id]["suspicious_activity"] = float(self.suspicious_model.predict(xgb.DMatrix(np.asarray([[row[name] for name in self.suspicious_names]], dtype=np.float32)))[0])
                 scores[actor_id]["suspicious_gate"] = (
-                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates["suspicious_down_floor"]
-                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates["suspicious_motion_floor"]
-                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates["suspicious_lower_floor"]
+                    row.get("strict_head_down_delta__q95", 0.0) >= self.gates.get("suspicious_down_floor", 0.028485)
+                    and max(row.get("hand_motion__q95", 0.0), row.get("finger_motion__q95", 0.0)) >= self.gates.get("suspicious_motion_floor", 0.037612)
+                    and row.get("strict_hand_below_hip__max", 0.0) >= self.gates.get("suspicious_lower_floor", -0.187859)
                     and row.get("strict_own_side_outside_midpoint__max", 0.0) >= 1.0
                 )
-            midpoint[actor_id] = row.get("near_midpoint_pre_cross__max", 0.0)
-        self._latest_scores.update(scores)
+            midpoint[actor_id] = (
+                row.get("near_midpoint_pre_cross", 0.0)
+                if behavior.number(row.get("current_hand_quality_mask")) > 0.0
+                and behavior.number(row.get("current_pair_hand_distance")) > 0.0
+                and behavior.number(row.get("current_pair_margin_10pct")) > 0.0
+                else 0.0
+            )
+        self._latest_scores = {
+            actor_id: dict(values) for actor_id, values in scores.items()
+        }
         self._state.update(frame_index=frame_index, timestamp_ms=timestamp_ms, scores_by_actor=scores, explicit_pairs=self._explicit_pairs, near_midpoint_by_actor=midpoint)
         return self._decision_output(scores)
 
@@ -295,17 +344,44 @@ class CausalLiveActorClassifier:
             results=(TrackResult(dict(track)) for track in tracks),
         )
 
-    def _decision_output(self, scores):
+    def _decision_output(self, scores=None):
+        scores = scores or {}
         return {
             actor_id: {
-                "actor_id": actor_id, "predicted_class": decision.class_code,
+                "actor_id": actor_id,
+                "predicted_class": decision.class_code,
+                "candidate_class": decision.class_code,
+                "current_scores": {
+                    name: value
+                    for name, value in scores.get(actor_id, {}).items()
+                    if name in {"c2", "c3", "suspicious_activity"}
+                },
+                "current_gates": {
+                    name: bool(scores.get(actor_id, {}).get(f"{name}_gate", False))
+                    for name in ("c2", "c3", "suspicious_activity")
+                },
                 "c2_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c2", ""),
                 "c3_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("c3", ""),
                 "suspicious_activity_score": scores.get(actor_id, self._latest_scores.get(actor_id, {})).get("suspicious_activity", ""),
                 "warmup_frames_seen": self._window_sizes.get(actor_id, 0),
                 "warmup_frames_required": self.warmup_frames,
+                "history": [
+                    {
+                        "class_code": evidence.class_code,
+                        "frame_index": evidence.frame_index,
+                        "timestamp_ms": evidence.timestamp_ms,
+                        "score": evidence.score,
+                        "source_actor_id": evidence.source_actor_id or "",
+                        "source_score": evidence.source_score,
+                    }
+                    for evidence in decision.history
+                ],
+                "evidence_class": decision.evidence_class or "",
                 "evidence_score": decision.evidence_score if decision.evidence_score is not None else "",
                 "evidence_frame_index": decision.evidence_frame_index if decision.evidence_frame_index is not None else "",
+                "evidence_timestamp_ms": decision.evidence_timestamp_ms if decision.evidence_timestamp_ms is not None else "",
+                "evidence_source_score": decision.evidence_source_score if decision.evidence_source_score is not None else "",
+                "evidence_source_actor_id": decision.source_actor_id or "",
                 "first_flag_frame_index": decision.first_flag_frame_index if decision.first_flag_frame_index is not None else "",
                 "first_flag_timestamp_ms": decision.first_flag_timestamp_ms if decision.first_flag_timestamp_ms is not None else "",
                 "causal": True,
@@ -321,13 +397,24 @@ class CausalLiveActorClassifier:
         self._windows_c2.clear()
         self._windows_c3.clear()
         self._windows_suspicious.clear()
-        self._state = CausalSpecialistState((), c3_threshold=self.c3_threshold)
+        self._state = CausalSpecialistState(
+            (), c3_threshold=self.c3_threshold,
+            c2_threshold=self.c2_threshold,
+            suspicious_threshold=self.suspicious_threshold,
+            c3_gate=lambda values: bool(values.get("c3_gate", True)),
+            suspicious_gate=lambda values: bool(values.get("suspicious_gate", True)),
+        )
         self._baseline_rows.clear()
         self._tail_rows.clear()
         self._last_frame = None
         self._last_timestamp = None
         self._latest_scores.clear()
+        self._latest_feature_rows.clear()
         self._window_sizes.clear()
+
+    def diagnostic_snapshot(self, actor_id: str) -> dict[str, Any]:
+        """Return raw current-frame aggregate features for Stage A trace."""
+        return dict(self._latest_feature_rows.get(str(actor_id), {}))
 
 
 class CausalPoseActorClassifier:

@@ -14,6 +14,41 @@ import numpy as np
 from backend.core.config import settings
 
 
+def _resolve_yolo_device(device_setting: str | None, model: Any) -> str | int:
+    """Return a device parameter compatible with Ultralytics YOLO inference.
+
+    PyTorch models require 'cuda', 'cpu', or CUDA device index (0, 1, etc.).
+    OpenVINO models accept 'GPU' (Intel iGPU) or 'CPU'.
+    """
+    if not device_setting:
+        return "cpu"
+    dev_str = str(device_setting).strip()
+    dev_upper = dev_str.upper()
+
+    is_openvino = False
+    if model is not None:
+        model_repr = (
+            str(type(model)).lower()
+            + str(getattr(model, "model", "")).lower()
+            + str(getattr(model, "model_name", "")).lower()
+        )
+        is_openvino = "openvino" in model_repr
+
+    if dev_upper in ("CUDA", "GPU"):
+        if dev_upper == "GPU" and is_openvino:
+            return "GPU"
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            pass
+        return "cpu"
+    elif dev_upper == "CPU":
+        return "cpu"
+    return dev_str.lower()
+
+
 class ObjectDetector:
     """Small server-facing YOLO adapter for prohibited exam objects.
 
@@ -57,7 +92,10 @@ class ObjectDetector:
 
         self.model = model
         if hasattr(self.model, "to"):
-            self.model.to(self.device)
+            try:
+                self.model.to(self.device)
+            except Exception:
+                pass  # Bỏ qua nếu mô hình là OpenVINO/ONNX không hỗ trợ .to()
 
     def process_frame(
         self,
@@ -69,7 +107,6 @@ class ObjectDetector:
         A corrupt frame or inference failure is deliberately isolated here:
         the server receives ``None`` and its other worker threads keep running.
         """
-
         try:
             if (
                 not isinstance(frame, np.ndarray)
@@ -90,7 +127,7 @@ class ObjectDetector:
                 resized_frame,
                 imgsz=self.INPUT_SIZE,
                 conf=self.confidence_threshold,
-                device=self.device,
+                device=_resolve_yolo_device(self.device, self.model),
                 verbose=False,
             )
             detections = self._extract_server_detections(
@@ -118,14 +155,90 @@ class ObjectDetector:
                 "status": "alert",
                 "timestamp": float(timestamp),
                 "details": details,
-                # Kept at the top level as well to match the example contract.
                 "detections": detections,
             }
         except Exception:
-            # process_frame runs in a long-lived multi-module worker. A single
-            # damaged frame/model failure must not terminate that worker.
             return None
 
+    def _extract_server_detections_no_resize(
+        self,
+        results: Any,
+        *,
+        original_frame: np.ndarray,
+        original_width: int,
+        original_height: int,
+    ) -> list[dict[str, Any]]:
+        if not results:
+            return []
+
+        result = results[0]
+        boxes = getattr(result, "boxes", None)
+        if boxes is None:
+            return []
+        names = self._names_dict(
+            getattr(result, "names", getattr(self.model, "names", {}))
+        )
+        
+        detections: list[dict[str, Any]] = []
+
+        for box in boxes:
+            class_id = int(self._first_scalar(box.cls))
+            raw_name = names.get(class_id, class_id)
+
+            if not names and (isinstance(raw_name, (int, float)) or str(raw_name).isdigit()):
+                id_mapping = {
+                    0: "smartwatch",
+                    1: "earphone",
+                    2: "cheat_sheet",
+                    3: "smartphone",
+                    4: "calculator",
+                }
+                raw_name = id_mapping.get(int(class_id), str(class_id))
+
+            label = self._canonical_class_name(raw_name)
+            confidence = float(self._first_scalar(box.conf))
+            
+            if (
+                label not in self.BANNED_ITEMS
+                or confidence <= self.confidence_threshold
+            ):
+                continue
+
+            coordinates = self._first_row(box.xyxy)
+            model_x1, model_y1, model_x2, model_y2 = (
+                float(value) for value in coordinates
+            )
+            bbox = [
+                max(0, min(original_width, round(model_x1))),
+                max(0, min(original_height, round(model_y1))),
+                max(0, min(original_width, round(model_x2))),
+                max(0, min(original_height, round(model_y2))),
+            ]
+            
+            if (
+                label == "smartphone"
+                and (
+                    (
+                        settings.smartphone_calculator_grid_filter_enabled
+                        and _looks_like_calculator(original_frame, bbox)
+                    )
+                    or (
+                        settings.smartphone_pen_shape_filter_enabled
+                        and _looks_like_pen(original_frame, bbox)
+                    )
+                )
+            ):
+                continue
+                
+            detections.append(
+                {
+                    "label": label,
+                    "confidence": confidence,
+                    "bbox": bbox,
+                }
+            )
+        return detections
+    
     def _extract_server_detections(
         self,
         results: Any,
@@ -150,7 +263,19 @@ class ObjectDetector:
 
         for box in boxes:
             class_id = int(self._first_scalar(box.cls))
-            label = self._canonical_class_name(names.get(class_id, class_id))
+            raw_name = names.get(class_id, class_id)
+
+            if not names and (isinstance(raw_name, (int, float)) or str(raw_name).isdigit()):
+                id_mapping = {
+                    0: "smartwatch",
+                    1: "earphone",
+                    2: "cheat_sheet",
+                    3: "smartphone",
+                    4: "calculator",
+                }
+                raw_name = id_mapping.get(int(class_id), str(class_id))
+
+            label = self._canonical_class_name(raw_name)
             confidence = float(self._first_scalar(box.conf))
             if (
                 label not in self.BANNED_ITEMS
@@ -195,9 +320,17 @@ class ObjectDetector:
     def _automatic_device() -> str:
         try:
             import torch
-        except ImportError:  # pragma: no cover - ultralytics installs torch
-            return "cpu"
-        return "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                return "cuda"
+        except ImportError:
+            pass
+        try:
+            import openvino as ov
+            if "GPU" in ov.Core().available_devices:
+                return "GPU"
+        except Exception:
+            pass
+        return "cpu"
 
     @staticmethod
     def _suppress_ultralytics_logging() -> None:
@@ -317,18 +450,50 @@ class ObjectDetectModule:
                 raise RuntimeError(
                     "Install torch and ultralytics before creating ObjectDetectModule"
                 ) from error
-            self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            print(
-                f"[object_detect] Loading YOLO model from "
-                f"{settings.yolo_model_path}..."
-            )
-            self._model = YOLO(settings.yolo_model_path)
-            self._model.to(self._device)
+
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            detected_device = "cpu"
+            if torch.cuda.is_available():
+                detected_device = "cuda"
+            else:
+                try:
+                    import openvino as ov
+                    # Nếu tìm thấy chữ GPU trong danh sách thiết bị OpenVINO, đó là Intel iGPU
+                    if "GPU" in ov.Core().available_devices:
+                        detected_device = "GPU"
+                except ImportError:
+                    pass
+            
+            self._device = device or detected_device
+
+            # Tự động trỏ sang thư mục OpenVINO nếu đang dùng Intel iGPU
+            model_path = str(settings.yolo_model_path)
+            if self._device == "GPU" and model_path.endswith("best (1).pt"):
+                model_path = model_path.replace("best (1).pt", "best_openvino_model")
+            elif self._device == "GPU" and model_path.endswith(".pt"):
+                model_path = model_path.replace(".pt", "_openvino_model")
+            
+            print(f"[object_detect] Loading YOLO model from {model_path}...")
+            self._model = YOLO(model_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+
+            # self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            # print(
+            #     f"[object_detect] Loading YOLO model from "
+            #     f"{settings.yolo_model_path}..."
+            # )
+            # self._model = YOLO(settings.yolo_model_path)
+            try:
+                self._model.to(self._device)
+            except Exception:
+                pass  # Bỏ qua lỗi .to() đối với OpenVINO
             if self._device == "cuda":
                 print(
                     f"[object_detect] Inference device: cuda "
                     f"({torch.cuda.get_device_name(0)})"
                 )
+            elif self._device == "GPU":
+                print("[object_detect] Inference device: Intel iGPU (OpenVINO)")
             else:
                 print("[object_detect] Inference device: cpu")
         else:
@@ -347,20 +512,39 @@ class ObjectDetectModule:
             self._smartphone_model is None
             and fallback_enabled
             and load_default_models
-        ):
+        ):  
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            fallback_path = str(settings.smartphone_fallback_model_path)
+            if self._device == "GPU" and fallback_path.endswith(".pt"):
+                fallback_path = fallback_path.replace(".pt", "_openvino_model")
+
             print(
                 "[object_detect] Loading small-object smartphone fallback "
-                f"from {settings.smartphone_fallback_model_path}..."
+                f"from {fallback_path}..."
             )
-            self._smartphone_model = YOLO(
-                settings.smartphone_fallback_model_path
-            )
-            self._smartphone_model.to(self._device)
+            self._smartphone_model = YOLO(fallback_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
+
+            # print(
+            #     "[object_detect] Loading small-object smartphone fallback "
+            #     f"from {settings.smartphone_fallback_model_path}..."
+            # )
+            # self._smartphone_model = YOLO(
+            #     settings.smartphone_fallback_model_path
+            # )
+            # self._smartphone_model.to(self._device)
         elif self._smartphone_model is not None and hasattr(
             self._smartphone_model,
             "to",
         ):
-            self._smartphone_model.to(self._device)
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
         self._smartphone_fallback_enabled = (
             fallback_enabled and self._smartphone_model is not None
         )
@@ -448,6 +632,12 @@ class ObjectDetectModule:
             dict[str, deque[list[list[int]]]],
         ] = {}
 
+    def _yolo_device(self) -> str | int:
+        return _resolve_yolo_device(self._device, self._model)
+
+    def _yolo_smartphone_device(self) -> str | int:
+        return _resolve_yolo_device(self._device, self._smartphone_model)
+
     def process(
         self,
         frame: np.ndarray,
@@ -455,6 +645,7 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = True,
     ) -> dict[str, Any] | None:
         seen = self._frames_seen.get(session_id, 0) + 1
         self._frames_seen[session_id] = seen
@@ -473,6 +664,7 @@ class ObjectDetectModule:
             session_id,
             frame_id,
             person_rois=person_rois,
+            pose_suspicious_activity=pose_suspicious_activity,
         )
         result["inference_ran"] = True
         result["requested_frame_id"] = frame_id
@@ -486,11 +678,12 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = True,
     ) -> dict[str, Any]:
         predictions = self._model(
             frame,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            device=self._yolo_device(),
             conf=min(
                 settings.yolo_confidence_threshold,
                 settings.paper_detection_confidence_threshold,
@@ -539,6 +732,7 @@ class ObjectDetectModule:
                 self._direct_alert_candidate_boxes(raw_objects)
             ),
         )
+        result["pose_gate"] = pose_suspicious_activity
         result["raw_objects"] = raw_objects
         result["paper_detections"] = [
             {
@@ -638,7 +832,7 @@ class ObjectDetectModule:
                 for x1, y1, x2, y2 in roi_specs
             ],
             imgsz=settings.person_roi_custom_paper_inference_size,
-            device=self._device,
+            device=self._yolo_device(),
             conf=settings.person_roi_custom_paper_confidence_threshold,
             classes=self._custom_paper_class_ids,
             verbose=False,
@@ -737,7 +931,7 @@ class ObjectDetectModule:
         predictions = self._smartphone_model(
             crops,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            device=self._yolo_smartphone_device(),
             conf=min(
                 settings.smartphone_fallback_confidence_threshold,
                 settings.book_fallback_confidence_threshold,
@@ -771,7 +965,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in roi_specs
                 ],
                 imgsz=settings.person_roi_object_inference_size,
-                device=self._device,
+                device=self._yolo_smartphone_device(),
                 conf=min(
                     settings.person_roi_phone_confidence_threshold,
                     settings.person_roi_book_confidence_threshold,
@@ -833,7 +1027,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in detail_specs
                 ],
                 imgsz=settings.book_fallback_detail_inference_size,
-                device=self._device,
+                device=self._yolo_smartphone_device(),
                 conf=settings.book_fallback_confidence_threshold,
                 classes=self._book_class_ids,
                 verbose=False,

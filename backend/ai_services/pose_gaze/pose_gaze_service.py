@@ -2,6 +2,30 @@ import time
 from pathlib import Path
 from time import monotonic
 
+import os
+import sys
+import mediapipe as mp
+
+class SuppressOutput:
+    """Bịt miệng log C++ ở tầng OS, tuyệt đối an toàn cho đa luồng."""
+    def __enter__(self):
+        self.devnull = open(os.devnull, 'w')
+        # Lưu lại File Descriptor gốc của hệ điều hành
+        self.old_stdout_fd = os.dup(sys.stdout.fileno())
+        self.old_stderr_fd = os.dup(sys.stderr.fileno())
+        # Chuyển hướng stdout và stderr vào hố đen
+        os.dup2(self.devnull.fileno(), sys.stdout.fileno())
+        os.dup2(self.devnull.fileno(), sys.stderr.fileno())
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Trả lại luồng in chữ bình thường cho Python
+        os.dup2(self.old_stdout_fd, sys.stdout.fileno())
+        os.dup2(self.old_stderr_fd, sys.stderr.fileno())
+        os.close(self.old_stdout_fd)
+        os.close(self.old_stderr_fd)
+        self.devnull.close()
+
 # Yêu cầu cộng sự import đúng đường dẫn tương đối từ code của họ
 from backend.ai_services.pose_gaze.pose_gaze.holistic.landmark import HolisticLandmarkExtractor
 from backend.ai_services.pose_gaze.tracking.manager import TrackingManager
@@ -9,7 +33,7 @@ from backend.ai_services.pose_gaze.tracking.webcam import PersonTrackingConfig, 
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
 
 class PoseGazeDetector:
-    def __init__(self, causal_model_dir="tmp/behavior_actor_causal_pose_only_20260812"):
+    def __init__(self, causal_model_dir="tmp/benchmark_face_mesh_restored_cuda_snapshot_verify_final_20260820"):
         print("[INFO] Đang khởi tạo PoseGazeDetector (Thực tế)...")
         self.session_id = TrackingManager.generate_session_id("webcam_holistic")
         
@@ -32,16 +56,23 @@ class PoseGazeDetector:
             c4_model_dir = None
             c7_model_dir = None
         self.live_classifier = create_live_classifier(DummyArgs(), clip_id=f"webcam_{self.session_id}")
-        
+
+        with SuppressOutput():
         # 3. Khởi tạo Holistic
-        self.holistic = HolisticLandmarkExtractor(
-            static_image_mode=False,
-            model_complexity=2,
-            smooth_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        self.holistic.__enter__() # Khởi động context manager
+            self.holistic = HolisticLandmarkExtractor(
+                static_image_mode=False,
+                model_complexity=2,
+                smooth_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+            self.holistic.__enter__() # Khởi động context manager
+            # ---> BỔ SUNG BƯỚC KHỞI ĐỘNG NÓNG (WARM-UP) <---
+            # Tạo 1 ảnh đen để ép lõi C++ chạy và xả hết log rác vào lỗ đen
+            import numpy as np
+            dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            dummy_packet = self.tracking.process_frame(dummy_frame)
+            self.holistic.process_packet(dummy_frame, dummy_packet)
 
     def process_frame(self, frame, timestamp):
         """Hàm này sẽ được app.py gọi liên tục ở luồng Vision"""
