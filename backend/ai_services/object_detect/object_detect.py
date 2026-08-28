@@ -67,50 +67,44 @@ class ObjectDetector:
         frame: np.ndarray,
         timestamp: float,
     ) -> dict[str, Any] | None:
-        """Return prohibited objects in original-frame coordinates.
-
-        A corrupt frame or inference failure is deliberately isolated here:
-        the server receives ``None`` and its other worker threads keep running.
-        """
-
+        """Return prohibited objects in original-frame coordinates without forcing 640x640 resize."""
+        # print("\n[DEBUG YOLO] ---> BẮT ĐẦU VÀO HÀM process_frame")
         try:
             if (
                 not isinstance(frame, np.ndarray)
                 or frame.ndim not in (2, 3)
                 or frame.size == 0
             ):
+                # print(f"[DEBUG YOLO] Lỗi: Frame đầu vào không hợp lệ! Type: {type(frame)}")
                 return None
 
-            import cv2
-
             original_height, original_width = frame.shape[:2]
-            resized_frame = cv2.resize(
-                frame,
-                (self.INPUT_SIZE, self.INPUT_SIZE),
-                interpolation=cv2.INTER_LINEAR,
-            )
+            # print(f"[DEBUG YOLO] Kích thước frame: {original_width}x{original_height}")
+
+            # GIỮ NGUYÊN KÍCH THƯỚC GỐC: Không resize về 640x640 nữa để giữ chi tiết vật thể nhỏ (smartphone)
+            # print(f"[DEBUG YOLO] Đưa vào model với device={self.device}, conf={self.confidence_threshold}...")
             results = self.model(
-                resized_frame,
-                imgsz=self.INPUT_SIZE,
+                frame,
                 conf=self.confidence_threshold,
-                device=self.device,
+                # device=self.device,
                 verbose=False,
             )
-            detections = self._extract_server_detections(
+            # print(f"[DEBUG YOLO] Kết quả thô từ model.predict: {results}")
+            # Vì không resize nên tỉ lệ scale = 1.0
+            # print("[DEBUG YOLO] Đang chạy hàm trích xuất _extract_server_detections_no_resize...")
+            detections = self._extract_server_detections_no_resize(
                 results,
                 original_frame=frame,
                 original_width=original_width,
                 original_height=original_height,
             )
             if not detections:
+                # print("[DEBUG YOLO] Cảnh báo: Không có vật thể nào (hoặc đã bị lọc hết ở hàm _extract). Trả về None.")
                 return None
+            # print(f"[DEBUG YOLO] THÀNH CÔNG: Trích xuất được {len(detections)} vật thể!")
 
             details = {
                 "detections": detections,
-                "model_input_size": [
-                    self.INPUT_SIZE,
-                    self.INPUT_SIZE,
-                ],
                 "original_frame_size": [
                     original_width,
                     original_height,
@@ -121,14 +115,94 @@ class ObjectDetector:
                 "status": "alert",
                 "timestamp": float(timestamp),
                 "details": details,
-                # Kept at the top level as well to match the example contract.
                 "detections": detections,
             }
-        except Exception:
-            # process_frame runs in a long-lived multi-module worker. A single
-            # damaged frame/model failure must not terminate that worker.
+        except Exception as e:
+            # SỬA LỖI LOGIC: Không được giấu lỗi. Phải in ra toàn bộ stack trace để bắt tận gốc
+            import traceback
+            print(f"\n[DEBUG YOLO] ❌ CÓ LỖI CRASH (EXCEPTION) BÊN TRONG HÀM process_frame: {e}")
+            print(traceback.format_exc())
             return None
 
+    def _extract_server_detections_no_resize(
+        self,
+        results: Any,
+        *,
+        original_frame: np.ndarray,
+        original_width: int,
+        original_height: int,
+    ) -> list[dict[str, Any]]:
+        if not results:
+            return []
+
+        result = results[0]
+        boxes = getattr(result, "boxes", None)
+        if boxes is None:
+            return []
+        names = self._names_dict(
+            getattr(result, "names", getattr(self.model, "names", {}))
+        )
+        
+        detections: list[dict[str, Any]] = []
+
+        for box in boxes:
+            class_id = int(self._first_scalar(box.cls))
+            raw_name = names.get(class_id, class_id)
+
+            # PHÒNG HỜI OPENVINO MẤT FILE .NAMES (Trả về số nguyên)
+            if isinstance(raw_name, (int, float)) or str(raw_name).isdigit():
+                # Nếu model của bạn đặt smartphone ở index 0 (hoặc chỉnh lại theo index thực tế của bạn)
+                id_mapping = {0: "smartphone", 1: "cheat_sheet", 2: "earphone", 3: "smartwatch"}
+                raw_name = id_mapping.get(int(class_id), str(class_id))
+
+            label = self._canonical_class_name(raw_name)
+
+            # label = self._canonical_class_name(names.get(class_id, class_id))
+            confidence = float(self._first_scalar(box.conf))
+            
+            if (
+                label not in self.BANNED_ITEMS
+                or confidence <= self.confidence_threshold
+            ):
+                continue
+
+            # Lấy trực tiếp tọa độ thực tế trên khung hình gốc (vì không resize)
+            coordinates = self._first_row(box.xyxy)
+            model_x1, model_y1, model_x2, model_y2 = (
+                float(value) for value in coordinates
+            )
+            bbox = [
+                max(0, min(original_width, round(model_x1))),
+                max(0, min(original_height, round(model_y1))),
+                max(0, min(original_width, round(model_x2))),
+                max(0, min(original_height, round(model_y2))),
+            ]
+            
+            # Bộ lọc phụ (nếu cần thiết có thể bật/tắt trong settings)
+            if (
+                label == "smartphone"
+                and (
+                    (
+                        settings.smartphone_calculator_grid_filter_enabled
+                        and _looks_like_calculator(original_frame, bbox)
+                    )
+                    or (
+                        settings.smartphone_pen_shape_filter_enabled
+                        and _looks_like_pen(original_frame, bbox)
+                    )
+                )
+            ):
+                continue
+                
+            detections.append(
+                {
+                    "label": label,
+                    "confidence": confidence,
+                    "bbox": bbox,
+                }
+            )
+        return detections
+    
     def _extract_server_detections(
         self,
         results: Any,
@@ -320,12 +394,39 @@ class ObjectDetectModule:
                 raise RuntimeError(
                     "Install torch and ultralytics before creating ObjectDetectModule"
                 ) from error
-            self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            print(
-                f"[object_detect] Loading YOLO model from "
-                f"{settings.yolo_model_path}..."
-            )
-            self._model = YOLO(settings.yolo_model_path)
+
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            detected_device = "cpu"
+            if torch.cuda.is_available():
+                detected_device = "cuda"
+            else:
+                try:
+                    import openvino as ov
+                    # Nếu tìm thấy chữ GPU trong danh sách thiết bị OpenVINO, đó là Intel iGPU
+                    if "GPU" in ov.Core().available_devices:
+                        detected_device = "GPU"
+                except ImportError:
+                    pass
+            
+            self._device = device or detected_device
+
+            # Tự động trỏ sang thư mục OpenVINO nếu đang dùng Intel iGPU
+            model_path = str(settings.yolo_model_path)
+            if self._device == "GPU" and model_path.endswith("best (1).pt"):
+                model_path = model_path.replace("best (1).pt", "best_openvino_model")
+            elif self._device == "GPU" and model_path.endswith(".pt"):
+                model_path = model_path.replace(".pt", "_openvino_model")
+            
+            print(f"[object_detect] Loading YOLO model from {model_path}...")
+            self._model = YOLO(model_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+
+            # self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            # print(
+            #     f"[object_detect] Loading YOLO model from "
+            #     f"{settings.yolo_model_path}..."
+            # )
+            # self._model = YOLO(settings.yolo_model_path)
             try:
                 self._model.to(self._device)
             except Exception:
@@ -335,6 +436,8 @@ class ObjectDetectModule:
                     f"[object_detect] Inference device: cuda "
                     f"({torch.cuda.get_device_name(0)})"
                 )
+            elif self._device == "GPU":
+                print("[object_detect] Inference device: Intel iGPU (OpenVINO)")
             else:
                 print("[object_detect] Inference device: cpu")
         else:
@@ -353,15 +456,31 @@ class ObjectDetectModule:
             self._smartphone_model is None
             and fallback_enabled
             and load_default_models
-        ):
+        ):  
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            fallback_path = str(settings.smartphone_fallback_model_path)
+            if self._device == "GPU" and fallback_path.endswith(".pt"):
+                fallback_path = fallback_path.replace(".pt", "_openvino_model")
+
             print(
                 "[object_detect] Loading small-object smartphone fallback "
-                f"from {settings.smartphone_fallback_model_path}..."
+                f"from {fallback_path}..."
             )
-            self._smartphone_model = YOLO(
-                settings.smartphone_fallback_model_path
-            )
-            self._smartphone_model.to(self._device)
+            self._smartphone_model = YOLO(fallback_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
+
+            # print(
+            #     "[object_detect] Loading small-object smartphone fallback "
+            #     f"from {settings.smartphone_fallback_model_path}..."
+            # )
+            # self._smartphone_model = YOLO(
+            #     settings.smartphone_fallback_model_path
+            # )
+            # self._smartphone_model.to(self._device)
         elif self._smartphone_model is not None and hasattr(
             self._smartphone_model,
             "to",
@@ -499,7 +618,7 @@ class ObjectDetectModule:
         predictions = self._model(
             frame,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=min(
                 settings.yolo_confidence_threshold,
                 settings.paper_detection_confidence_threshold,
@@ -647,7 +766,7 @@ class ObjectDetectModule:
                 for x1, y1, x2, y2 in roi_specs
             ],
             imgsz=settings.person_roi_custom_paper_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=settings.person_roi_custom_paper_confidence_threshold,
             classes=self._custom_paper_class_ids,
             verbose=False,
@@ -746,7 +865,7 @@ class ObjectDetectModule:
         predictions = self._smartphone_model(
             crops,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=min(
                 settings.smartphone_fallback_confidence_threshold,
                 settings.book_fallback_confidence_threshold,
@@ -780,7 +899,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in roi_specs
                 ],
                 imgsz=settings.person_roi_object_inference_size,
-                device=self._device,
+                # device=self._device,
                 conf=min(
                     settings.person_roi_phone_confidence_threshold,
                     settings.person_roi_book_confidence_threshold,
@@ -842,7 +961,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in detail_specs
                 ],
                 imgsz=settings.book_fallback_detail_inference_size,
-                device=self._device,
+                # device=self._device,
                 conf=settings.book_fallback_confidence_threshold,
                 classes=self._book_class_ids,
                 verbose=False,
