@@ -183,9 +183,32 @@ def main() -> None:
     try:
         import torch
     except ImportError as error:
-        raise RuntimeError("PyTorch CUDA is required for YOLO GPU inference") from error
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is unavailable; YOLO and XGBoost GPU mode cannot start")
+        raise RuntimeError("PyTorch is required for inference") from error
+
+    # Kiểm tra CUDA (NVIDIA) và OpenVINO (Intel GPU)
+    has_cuda = torch.cuda.is_available()
+    has_intel_gpu = False
+    try:
+        import openvino as ov
+        if "GPU" in ov.Core().available_devices:
+            has_intel_gpu = True
+    except ImportError:
+        pass
+
+    if not has_cuda:
+        if has_intel_gpu:
+            print("[INFO] Đã nhận diện Intel GPU (OpenVINO). Tự động cấu hình thiết bị...")
+            if args.device == "0":
+                args.device = "GPU"
+            if args.xgboost_device.startswith("cuda"):
+                args.xgboost_device = "cpu"
+        else:
+            print("[WARNING] Không tìm thấy CUDA hoặc Intel GPU. Chuyển sang chế độ CPU.")
+            if args.device == "0":
+                args.device = "cpu"
+            if args.xgboost_device.startswith("cuda"):
+                args.xgboost_device = "cpu"
+
     session_id = args.session_id or TrackingManager.generate_session_id(
         "webcam_holistic"
     )
