@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import librosa
 
-from transformers import AutoProcessor #, AutoModelForSpeechSeq2Seq
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from optimum.intel import OVModelForSpeechSeq2Seq
 
 from backend.ai_services.whisper.config import PHOWHISPER_MODEL
@@ -17,32 +17,32 @@ class PhoWhisperService:
                 # self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         
                 # print(f"[PhoWhisper] Device: {self.device}")
+        if torch.cuda.is_available():
+            self.run_mode = "cuda"
+            self.device = "cuda"
+            self.dtype = torch.float16
+            print("[PhoWhisper] Device: CUDA")
+            
+            self.processor = AutoProcessor.from_pretrained("vinai/PhoWhisper-small")
+            self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                "vinai/PhoWhisper-small",
+                torch_dtype=self.dtype,
+            ).to(self.device)
+        else:
+            self.run_mode = "openvino"
+            import openvino as ov
+            try:
+                core = ov.Core()
+                self.device = "GPU" if "GPU" in core.available_devices else "CPU"
+            except Exception:
+                self.device = "CPU"
+            print(f"[PhoWhisper] Device: OpenVINO {self.device}")
 
-        import openvino as ov
-        
-        # Kiểm tra xem OpenVINO có nhìn thấy GPU hay không
-        try:
-            core = ov.Core()
-            available_devices = core.available_devices
-            self.device = "GPU" if "GPU" in available_devices else "CPU"
-        except Exception:
-            self.device = "CPU"
-        # self.dtype = torch.float16 if self.device == "cuda" else torch.float32
-
-        print(f"[PhoWhisper] Device: {self.device}")
-
-        self.processor = AutoProcessor.from_pretrained(PHOWHISPER_MODEL)
-
-        # self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        #     PHOWHISPER_MODEL,
-        #     torch_dtype=self.dtype,
-        # ).to(self.device)
-        self.model = OVModelForSpeechSeq2Seq.from_pretrained(
-            PHOWHISPER_MODEL,
-            device=self.device,  # Sẽ nhận giá trị "GPU" hoặc "CPU"
-            # export=True,         # Tự động export sang OpenVINO IR lần đầu tiên
-        )
-
+            self.processor = AutoProcessor.from_pretrained(PHOWHISPER_MODEL)
+            self.model = OVModelForSpeechSeq2Seq.from_pretrained(
+                PHOWHISPER_MODEL,
+                device=self.device,
+            )
 
         self.model.eval()
 
@@ -83,10 +83,14 @@ class PhoWhisperService:
             return_tensors="pt",
         )
 
-        input_features = inputs["input_features"]   #.to(
-        #     self.device,
-        #     dtype=self.dtype,
-        # )
+        input_features = inputs["input_features"]
+        
+        # Chỉ đẩy tensor lên phần cứng nếu chạy CUDA, OpenVINO xử lý trực tiếp
+        if hasattr(self, 'run_mode') and self.run_mode == "cuda":
+            input_features = input_features.to(
+                self.device,
+                dtype=self.dtype,
+            )
 
         generate_kwargs = dict(
             input_features=input_features,
