@@ -59,8 +59,18 @@ def main() -> None:
     is_live_webcam = isinstance(source, int)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        try:
+            import openvino as ov
+            if "GPU" in ov.Core().available_devices:
+                device = "GPU"
+        except ImportError:
+            print("[INFO] OpenVINO not installed; falling back to CPU-only inference.")
+            pass
+    # 2. Tự động dùng model OpenVINO cho nhận diện người nếu đang dùng GPU Intel
+    person_model_path = "weights/yolov8n_openvino_model" if device == "GPU" else "weights/yolov8n.pt"
     person_detector = UltralyticsPersonDetector(
-        model_path=Path("weights/yolov8n.pt"),
+        model_path=Path(person_model_path),
         confidence_threshold=0.55,
         device=device,
     )
