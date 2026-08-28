@@ -3,13 +3,27 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from optimum.intel import OVModelForSequenceClassification
 from underthesea import word_tokenize
 
 class PhobertService:
     def __init__(self, model_path=None):
         print("[PhoBERT] Loading model...")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"[PhoBERT] Device: {self.device}")
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # print(f"[PhoBERT] Device: {self.device}")
+        if torch.cuda.is_available():
+            self.run_mode = "cuda"
+            self.device = torch.device("cuda")
+        else:
+            self.run_mode = "openvino"
+            try:
+                import openvino as ov
+                core = ov.Core()
+                self.device = "GPU" if "GPU" in core.available_devices else "CPU"
+            except Exception:
+                self.device = "CPU"
+                
+        print(f"[PhoBERT] Thiết bị được chọn: {self.device} (Mode: {self.run_mode})")
         
         # 1. Xử lý đường dẫn tuyệt đối để không bao giờ bị lỗi do khác thư mục đứng
         if model_path is None:
@@ -19,17 +33,27 @@ class PhobertService:
             
         # 2. Kiểm tra xem thư mục weights đã có file cấu hình (model đã được train) chưa
         config_file = os.path.join(model_path, "config.json")
-        if not os.path.exists(config_file):
+
+        is_pretrained = not os.path.exists(config_file)
+        if is_pretrained:
             print(f"[PhoBERT] CẢNH BÁO: Chưa có model tại {model_path}!")
             print("[PhoBERT] Đang tải model gốc 'vinai/phobert-base-v2'...")
             model_path = "vinai/phobert-base-v2"
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            # CHỈNH VỀ 2 NHÃN
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2).to(self.device)
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
             
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+        if self.run_mode == "cuda":
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_path, num_labels=2 if is_pretrained else None
+            ).to(self.device)
+        else:
+            self.model = OVModelForSequenceClassification.from_pretrained(
+                model_path, 
+                num_labels=2 if is_pretrained else None, 
+                device=self.device, 
+                export=True
+            )
+
         self.model.eval()
         
         # CHỈNH LẠI LABEL MAP: 0 là Normal, 1 là Cheating
@@ -58,7 +82,10 @@ class PhobertService:
             truncation=True, 
             padding=True, 
             max_length=self.MAX_LEN
-        ).to(self.device)
+        )               # .to(self.device)
+        # Nếu đang chạy CUDA, cần đẩy dữ liệu (inputs) lên card đồ họa
+        if hasattr(self, 'run_mode') and self.run_mode == "cuda":
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
             outputs = self.model(**inputs)

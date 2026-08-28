@@ -80,3 +80,4 @@ wandb>=0.28
 # openvino
 # mkl 
 # intel-openmp
+# optimum[openvino]
