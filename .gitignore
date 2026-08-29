@@ -80,3 +80,7 @@ site/build-meta.js
 
 audio_log.jsonl
 cheating_detected.jsonl
+backend/ai_services/whisper/weights/
+weights/best_openvion_model/
+weights/yolov8n_openvino_model/
+kernel.errors.txt

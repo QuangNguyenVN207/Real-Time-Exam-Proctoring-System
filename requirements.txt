@@ -74,3 +74,10 @@ streamlit-autorefresh
 
 sahi>=0.12.5
 wandb>=0.28
+# dành cho GPU tích hợp trên Intel
+# uv pip install intel-extension-for-pytorch --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+# onnxruntime-openvino
+# openvino
+# mkl 
+# intel-openmp
+# optimum[openvino]
