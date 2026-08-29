@@ -99,6 +99,20 @@ class FrameTraceRecord:
     # Full current aggregate row, retained so scalar mappings remain auditable.
     raw_feature_values: dict[str, Any] = field(default_factory=dict)
 
+    # Stage 6 runtime telemetry. Defaults preserve older trace fixtures.
+    inference_ms: float | None = None
+    end_to_end_latency_ms: float | None = None
+    actor_track_id: int | None = None
+    peer_track_id: int | None = None
+    current_scores: dict[str, float] = field(default_factory=dict)
+    current_gates: dict[str, bool] = field(default_factory=dict)
+    current_class: str = "c5"
+    alert_history: list[dict[str, Any]] = field(default_factory=list)
+    evidence_class: str | None = None
+    evidence_score: float | None = None
+    compute_mode: str = "CPU"
+    compute_status: str = "COMPUTE: CPU"
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 

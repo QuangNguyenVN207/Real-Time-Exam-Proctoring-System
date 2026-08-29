@@ -104,9 +104,9 @@ def compute_model_artifacts_hashes(model_dir: Path | str) -> dict[str, str]:
         raise FileNotFoundError(f"Model directory not found: {model_dir}")
     hashes: dict[str, str] = {}
     for ext in ("*.json", "*.ubj", "*.pkl", "*.pt"):
-        for fp in sorted(model_dir.glob(ext)):
+        for fp in sorted(model_dir.rglob(ext)):
             if fp.is_file():
-                hashes[fp.name] = sha256_file(fp)
+                hashes[fp.relative_to(model_dir).as_posix()] = sha256_file(fp)
     return hashes
 
 
@@ -155,6 +155,8 @@ class SessionManifest:
     wall_clock_end: str
     video_path: str | None = None
     trace_path: str | None = None
+    bundle_provenance: dict[str, Any] | None = None
+    compute_switches: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -202,7 +204,13 @@ class SessionManifest:
             )
 
         # Model artifacts required
-        if not isinstance(self.model_artifacts, dict) or not self.model_artifacts:
+        model_unavailable = bool(
+            (self.runtime_arguments or {}).get("model_unavailable_error")
+        )
+        if (
+            not isinstance(self.model_artifacts, dict)
+            or (not self.model_artifacts and not model_unavailable)
+        ):
             raise ValueError(
                 "Manifest requires non-empty model_artifacts hashes"
             )
@@ -265,12 +273,60 @@ class SessionManifestRecorder:
         self.trace_path = str(trace_path) if trace_path else None
         self.start_time = datetime.now(timezone.utc).isoformat()
         self._latencies_ms: list[float] = []
+        self._end_to_end_latencies_ms: list[float] = []
+        self._observation_gaps_ms: list[float] = []
+        self._last_observation_timestamp_ms: int | None = None
         self._frame_count = 0
+        self._skipped_observation_count = 0
+        self.bundle_provenance: dict[str, Any] = {}
+        self.compute_switches: list[dict[str, Any]] = []
         self._start_perf_time = time.perf_counter()
 
-    def record_frame_latency(self, latency_ms: float) -> None:
+    def record_frame_latency(
+        self,
+        latency_ms: float,
+        *,
+        end_to_end_latency_ms: float | None = None,
+        observation_timestamp_ms: int | None = None,
+    ) -> None:
         self._latencies_ms.append(float(latency_ms))
+        if end_to_end_latency_ms is not None:
+            self._end_to_end_latencies_ms.append(float(end_to_end_latency_ms))
+        if observation_timestamp_ms is not None:
+            timestamp = int(observation_timestamp_ms)
+            if self._last_observation_timestamp_ms is not None:
+                self._observation_gaps_ms.append(
+                    float(timestamp - self._last_observation_timestamp_ms)
+                )
+            self._last_observation_timestamp_ms = timestamp
         self._frame_count += 1
+
+    def record_skipped_observation(self) -> None:
+        self._skipped_observation_count += 1
+
+    def set_bundle_provenance(self, provenance: Mapping[str, Any]) -> None:
+        self.bundle_provenance = dict(provenance)
+
+    def record_compute_switch(
+        self,
+        *,
+        timestamp_ms: int,
+        requested_mode: str,
+        active_mode: str,
+        result: str,
+        devices_before: Mapping[str, Any],
+        devices_after: Mapping[str, Any],
+        error: str | None,
+    ) -> None:
+        self.compute_switches.append({
+            "timestamp_ms": int(timestamp_ms),
+            "requested_mode": str(requested_mode),
+            "active_mode": str(active_mode),
+            "result": str(result),
+            "devices_before": dict(devices_before),
+            "devices_after": dict(devices_after),
+            "error": error,
+        })
 
     def compute_performance_metrics(self) -> dict[str, Any]:
         elapsed = time.perf_counter() - self._start_perf_time
@@ -282,19 +338,35 @@ class SessionManifestRecorder:
             mean_lat = sum(sl) / len(sl)
         else:
             p50 = p95 = mean_lat = 0.0
+        def distribution(values: list[float]) -> dict[str, float]:
+            if not values:
+                return {"p50": 0.0, "p95": 0.0, "max": 0.0}
+            ordered = sorted(values)
+            return {
+                "p50": round(ordered[int(0.50 * len(ordered))], 2),
+                "p95": round(ordered[min(len(ordered) - 1, int(0.95 * len(ordered)))], 2),
+                "max": round(max(ordered), 2),
+            }
+
         return {
             "frame_count": self._frame_count,
+            "processed_observation_count": self._frame_count,
+            "skipped_observation_count": self._skipped_observation_count,
             "elapsed_seconds": round(elapsed, 4),
             "measured_fps": round(measured_fps, 2),
             "latency_ms_p50": round(p50, 2),
             "latency_ms_p95": round(p95, 2),
             "latency_ms_mean": round(mean_lat, 2),
+            "observation_gap_ms": distribution(self._observation_gaps_ms),
+            "end_to_end_latency_ms": distribution(self._end_to_end_latencies_ms),
         }
 
     def build_manifest(self, end_time: str | None = None) -> SessionManifest:
         model_hashes: dict[str, str] = {}
         if self.model_dir and self.model_dir.is_dir():
             model_hashes = compute_model_artifacts_hashes(self.model_dir)
+        for specialist, digest in self.bundle_provenance.get("models", {}).items():
+            model_hashes[f"models/{specialist}.ubj"] = str(digest).lower()
         git_info = get_git_provenance(self.working_directory)
         metrics = self.compute_performance_metrics()
         return SessionManifest(
@@ -310,4 +382,6 @@ class SessionManifestRecorder:
             wall_clock_end=end_time or datetime.now(timezone.utc).isoformat(),
             video_path=self.video_path,
             trace_path=self.trace_path,
+            bundle_provenance=dict(self.bundle_provenance),
+            compute_switches=list(self.compute_switches),
         )

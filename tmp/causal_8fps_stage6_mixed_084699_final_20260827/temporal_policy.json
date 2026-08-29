@@ -1,0 +1,7 @@
+{
+  "target_fps": 8,
+  "baseline_valid_frames": 4,
+  "head_turn_baseline_valid_frames": 8,
+  "window_frames": 24,
+  "max_derivative_gap_ms": 450
+}

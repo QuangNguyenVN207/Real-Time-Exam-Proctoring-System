@@ -1,0 +1,371 @@
+{
+  "group_01": {
+    "fit_groups": [
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_01",
+    "fit_rows": 11070,
+    "validation_rows": 9441,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 10148,
+        "positive_rows": 922,
+        "negative_weight": 0.5454276704769413,
+        "positive_weight": 6.003253796095445,
+        "actor_count": 124
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 9922,
+        "positive_rows": 1148,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 124
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 7602,
+        "positive_rows": 3468,
+        "negative_weight": 0.7280978689818469,
+        "positive_weight": 1.5960207612456747,
+        "actor_count": 124
+      }
+    }
+  },
+  "group_02": {
+    "fit_groups": [
+      "group_01",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_02",
+    "fit_rows": 19037,
+    "validation_rows": 1474,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16695,
+        "positive_rows": 2342,
+        "negative_weight": 0.5701407607067984,
+        "positive_weight": 4.064261315115286,
+        "actor_count": 130
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16603,
+        "positive_rows": 2434,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 130
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12659,
+        "positive_rows": 6378,
+        "negative_weight": 0.7519156331463781,
+        "positive_weight": 1.492395735340232,
+        "actor_count": 130
+      }
+    }
+  },
+  "group_03": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_03",
+    "fit_rows": 19321,
+    "validation_rows": 1190,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16951,
+        "positive_rows": 2370,
+        "negative_weight": 0.5699073800955696,
+        "positive_weight": 4.076160337552743,
+        "actor_count": 132
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16924,
+        "positive_rows": 2397,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 132
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12705,
+        "positive_rows": 6616,
+        "negative_weight": 0.7603699330972058,
+        "positive_weight": 1.4601723095525998,
+        "actor_count": 132
+      }
+    }
+  },
+  "group_04": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_04",
+    "fit_rows": 19243,
+    "validation_rows": 1268,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16971,
+        "positive_rows": 2272,
+        "negative_weight": 0.5669377172824229,
+        "positive_weight": 4.23481514084507,
+        "actor_count": 132
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16854,
+        "positive_rows": 2389,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 132
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12659,
+        "positive_rows": 6584,
+        "negative_weight": 0.760052136819654,
+        "positive_weight": 1.461345686512758,
+        "actor_count": 132
+      }
+    }
+  },
+  "group_05": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_07",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_05",
+    "fit_rows": 19153,
+    "validation_rows": 1358,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16847,
+        "positive_rows": 2306,
+        "negative_weight": 0.5684394847747374,
+        "positive_weight": 4.1528620988725065,
+        "actor_count": 132
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16765,
+        "positive_rows": 2388,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 132
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12619,
+        "positive_rows": 6534,
+        "negative_weight": 0.7588953165861003,
+        "positive_weight": 1.4656412610958065,
+        "actor_count": 132
+      }
+    }
+  },
+  "group_07": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_10",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_07",
+    "fit_rows": 18683,
+    "validation_rows": 1828,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16243,
+        "positive_rows": 2440,
+        "negative_weight": 0.575109277842763,
+        "positive_weight": 3.828483606557377,
+        "actor_count": 134
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16357,
+        "positive_rows": 2326,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 134
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12632,
+        "positive_rows": 6051,
+        "negative_weight": 0.7395107663077898,
+        "positive_weight": 1.5437944141464222,
+        "actor_count": 134
+      }
+    }
+  },
+  "group_10": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_11",
+      "group_12"
+    ],
+    "held_out_group": "group_10",
+    "fit_rows": 19347,
+    "validation_rows": 1164,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 17115,
+        "positive_rows": 2232,
+        "negative_weight": 0.5652059596844873,
+        "positive_weight": 4.334005376344086,
+        "actor_count": 140
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16925,
+        "positive_rows": 2422,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 140
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12591,
+        "positive_rows": 6756,
+        "negative_weight": 0.7682868715749345,
+        "positive_weight": 1.4318383658969804,
+        "actor_count": 140
+      }
+    }
+  },
+  "group_11": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_12"
+    ],
+    "held_out_group": "group_11",
+    "fit_rows": 18857,
+    "validation_rows": 1654,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16661,
+        "positive_rows": 2196,
+        "negative_weight": 0.5659024068183183,
+        "positive_weight": 4.293488160291439,
+        "actor_count": 136
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16574,
+        "positive_rows": 2283,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 136
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12086,
+        "positive_rows": 6771,
+        "negative_weight": 0.7801174913122622,
+        "positive_weight": 1.3924826465810072,
+        "actor_count": 136
+      }
+    }
+  },
+  "group_12": {
+    "fit_groups": [
+      "group_01",
+      "group_02",
+      "group_03",
+      "group_04",
+      "group_05",
+      "group_07",
+      "group_10",
+      "group_11"
+    ],
+    "held_out_group": "group_12",
+    "fit_rows": 19377,
+    "validation_rows": 1134,
+    "class_weights": {
+      "c2": {
+        "policy": "balanced",
+        "negative_rows": 16937,
+        "positive_rows": 2440,
+        "negative_weight": 0.5720316466906772,
+        "positive_weight": 3.970696721311475,
+        "actor_count": 140
+      },
+      "c3": {
+        "policy": "unweighted",
+        "negative_rows": 16836,
+        "positive_rows": 2541,
+        "negative_weight": 1.0,
+        "positive_weight": 1.0,
+        "actor_count": 140
+      },
+      "suspicious_activity": {
+        "policy": "balanced",
+        "negative_rows": 12591,
+        "positive_rows": 6786,
+        "negative_weight": 0.7694781987133666,
+        "positive_weight": 1.4277188328912467,
+        "actor_count": 140
+      }
+    }
+  }
+}
