@@ -31,7 +31,7 @@ from ...tracking.webcam import (
 
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "extended": PROJECT_ROOT / "tmp" / "causal_8fps_stage6_mixed_084699_final_20260827",
+    "extended": PROJECT_ROOT / "stage6_bundle_exact" / "causal_8fps_stage6_mixed_084699_final_20260827",
 }
 SUPPORTED_ACTIONS = ("c2", "c3", "c5", "suspicious_activity")
 

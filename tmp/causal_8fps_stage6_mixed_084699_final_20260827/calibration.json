@@ -16,7 +16,7 @@
   "search_trace": [
     {
       "source": "preselected grouped OOF result",
-      "selection_file": "C:\\Real-Time-Exam-Proctoring-System\\tmp\\causal_8fps_stage6_mix_multistart_20260827.json",
+      "selection_file": "tmp/causal_8fps_stage6_mix_multistart_20260827.json",
       "selection_sha256": "20348D22CB6A9FC12621687D2C9F268872C61B1405D980F7F65CE24D4E3F6F3F",
       "recorded_actor_macro_f1": 0.8469938154473259,
       "exact_causal_parity": true

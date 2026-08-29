@@ -175,6 +175,7 @@ class FaceVerifier:
 
             for face in faces:
                 _, best_score = self._best_match(face.normed_embedding)
+                # print(f"[DEBUG FACE] Điểm số so khớp thực tế: {best_score} (Ngưỡng yêu cầu: {self.similarity_threshold})") # <--- Thêm dòng này
                 if best_score < self.similarity_threshold:
                     bbox = [int(v) for v in face.bbox]
                     return {

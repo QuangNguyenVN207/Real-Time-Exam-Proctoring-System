@@ -84,3 +84,4 @@ backend/ai_services/whisper/weights/
 weights/best_openvion_model/
 weights/yolov8n_openvino_model/
 kernel.errors.txt
+stage6_bundle_exact/
