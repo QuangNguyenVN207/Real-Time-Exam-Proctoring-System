@@ -47,19 +47,37 @@ class UltralyticsPersonDetector:
             raise RuntimeError("Install ultralytics to use UltralyticsPersonDetector") from error
         self._model = YOLO(str(model_path))
         self._confidence_threshold = confidence_threshold
-        self._device = device
+
+        # CẬP NHẬT Ở ĐÂY: Tự động chuẩn hóa device an toàn cho cả CUDA và OpenVINO/CPU
+        if device is None:
+            import torch
+            self._device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        else:
+            dev = str(device).strip().lower()
+            if dev == "gpu":
+                import torch
+                self._device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            else:
+                self._device = device
+
         self._nms_iou = nms_iou
         self._max_det = max_det
 
     def detect(self, frame) -> list[PersonDetection]:
-        result = self._model(
-            frame,
-            conf=self._confidence_threshold,
-            iou=self._nms_iou,
-            max_det=self._max_det,
-            device=self._device,
-            verbose=False,
-        )[0]
+        # CẬP NHẬT Ở ĐÂY: Chỉ truyền tham số device nếu không phải đang dùng OpenVINO hoặc xử lý linh hoạt
+        predict_kwargs = {
+            "conf": self._confidence_threshold,
+            "iou": self._nms_iou,
+            "max_det": self._max_det,
+            "verbose": False,
+        }
+        
+        # Nếu thiết bị là cuda hoặc cpu thuần, ta truyền device; nếu là OpenVINO (thường là thư mục) thì để YOLO tự nhận diện
+        if self._device:
+            predict_kwargs["device"] = self._device
+
+        result = self._model(frame, **predict_kwargs)[0]
+
         if result.boxes is None:
             return []
         detections: list[PersonDetection] = []

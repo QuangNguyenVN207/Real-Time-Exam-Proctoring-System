@@ -45,8 +45,17 @@ class CausalLiveActorClassifier:
         self.xgboost_device = str(xgboost_device).strip().lower()
         if self.xgboost_device == "gpu":
             self.xgboost_device = "cuda:0"
-        if not self.xgboost_device.startswith("cuda"):
-            raise ValueError("Causal live XGBoost requires a CUDA device")
+
+        import xgboost as xgb
+        import torch
+        # Tự động check: Nếu cấu hình dùng cuda nhưng thực tế máy/XGBoost không hỗ trợ -> Fallback về CPU
+        if self.xgboost_device.startswith("cuda"):
+            if not (torch.cuda.is_available() and xgb.build_info().get("USE_CUDA")):
+                print(f"[CausalLiveActorClassifier] Cảnh báo: Không tìm thấy CUDA hoặc XGBoost không hỗ trợ CUDA. Tự động chuyển về CPU.")
+                self.xgboost_device = "cpu"
+        else:
+            self.xgboost_device = "cpu"
+
         metrics_path = self.model_dir / "causal_actor_metrics.json"
         if not metrics_path.is_file():
             raise FileNotFoundError(
@@ -118,8 +127,8 @@ class CausalLiveActorClassifier:
     def _load_model(self, model_name: str, names_name: str):
         import xgboost as xgb
 
-        if not xgb.build_info().get("USE_CUDA"):
-            raise RuntimeError("XGBoost was built without CUDA support")
+        # if not xgb.build_info().get("USE_CUDA"):
+        #     raise RuntimeError("XGBoost was built without CUDA support")
 
         model_path = self.model_dir / model_name
         names_path = self.model_dir / names_name
@@ -129,7 +138,14 @@ class CausalLiveActorClassifier:
             )
         model = xgb.Booster()
         model.load_model(str(model_path))
-        model.set_param({"device": self.xgboost_device})
+        # Thiết lập device cho model, nếu lỗi device thì gán an toàn về cpu
+        try:
+            model.set_param({"device": self.xgboost_device})
+        except Exception as e:
+            print(f"[CausalLiveActorClassifier] Không thể set device là {self.xgboost_device}, chuyển về CPU. Lỗi: {e}")
+            self.xgboost_device = "cpu"
+            model.set_param({"device": "cpu"})
+            
         names = tuple(json.loads(names_path.read_text(encoding="utf-8")))
         if len(names) % 5 != 0:
             raise ValueError(f"invalid causal feature schema: {names_path}")
