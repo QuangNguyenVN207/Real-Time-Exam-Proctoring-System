@@ -1,6 +1,6 @@
 SPEECH_MODEL  = "phowhisper"
-
-PHOWHISPER_MODEL = "vinai/PhoWhisper-small"
+PHOWHISPER_MODEL = "backend/ai_services/whisper/weights/phowhisper_ov"
+# PHOWHISPER_MODEL = "backend/ai_services/whisper/weights/phowhisper-small" # "vinai/PhoWhisper-small"
 
 WHISPER_MODEL = "small"
 WHISPER_LANGUAGE = "vi"

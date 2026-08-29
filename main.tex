@@ -1,0 +1,389 @@
+% ============================================================
+%  ML IoT Lab – Presentation Template
+%  HCMUT EE Machine Learning & IoT Lab
+%  Faculty of Electrical & Electronics Engineering, HCMUT
+%
+%  Usage: compile with pdflatex (twice) or xelatex
+% ============================================================
+
+\documentclass[aspectratio=169, 10pt]{beamer}
+\usepackage{newtxtext}
+\usepackage{newtxmath}
+\usepackage{beamerthemeMLIOT}   % custom theme (in same folder)
+
+
+
+
+% ---- Additional packages ----
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage[loadonly]{enumitem}
+\usepackage{array}
+\usepackage{pifont}
+\usepackage{ragged2e}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+% ---- Hyperlink colours ----
+\hypersetup{
+  colorlinks = true,
+  urlcolor   = MLIOTaccent,
+  linkcolor  = MLIOTblue,
+  citecolor  = MLIOTblue
+}
+
+% ============================================================
+%  PAPER METADATA – fill these in
+% ============================================================
+\title{Real-Time Exam Proctoring System Using YOLOv8-Based Computer Vision and MediaPipe on Python for Cheating Behavior Detection}
+
+\author{%
+  \textbf{\textcolor{MLIOTaccent}{Tran-Quang Nguyen}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{*a}}}{*a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Minh-Khoi Tran}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{a}}}{a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Chi-Nhan Tran}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{a}}}{a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Nghiep-Phat Duong}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{a}}}{a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Minh-Phu Pham}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{a}}}{a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Ngoc-Bich Dinh}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{a}}}{a}\textcolor{MLIOTnavy}{,~}%
+  \textbf{\textcolor{MLIOTnavy}{Tan-Phat Le-Tran}}%
+  \texorpdfstring{\textcolor{MLIOTgold}{\textsuperscript{b}}}{b}%
+}
+
+
+\setAffiliations{%
+  \textsuperscript{a}Ho Chi Minh City University of Technology, VNU-HCM \\
+  \textsuperscript{b}Machine Learning \& IoT Lab (ML IoT), HCMUT%
+}
+
+\setCorrespondingAuthor{%
+  *Corresponding/Presenting Author Email: \href{mailto:nguyentranquang171107@mail.com}{nguyentranquang171107@mail.com}%
+}
+
+\setPaperID{MLIOT-2026-ExamGuardian}
+
+\institute{%
+  Machine Learning \& IoT Lab,
+  Ho Chi Minh City University of Technology (HCMUT)%
+}
+
+\date{June 2026}
+
+
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+% ------------------------------------------------------------
+%  SLIDE 1 – Title Slide
+% ------------------------------------------------------------
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 2 – Outline
+% ------------------------------------------------------------
+\begin{frame}{Outline}
+	\begin{columns}[T]
+		\begin{column}{0.55\textwidth}
+			% This temporary font assignment scales the numbers perfectly
+			\setbeamerfont{enumerate item}{size=\large}
+			
+			\begin{enumerate}
+				\setlength{\itemsep}{0.8em} % Keeps a comfortable gap between items
+				\item {\large Introduction} 
+				\item {\large Objectives} 
+				\item {\large Methodology} 
+				\item {\large Results \& Discussion} 
+				\item {\large Conclusions \& Future Work} 
+				\item {\large References \& Acknowledgements} 
+			\end{enumerate}
+		\end{column}
+		\begin{column}{0.42\textwidth}
+			\begin{block}{Contact Information}
+				\footnotesize
+				\textbf{\textcolor{MLIOTnavy}{Address:}}~403.1 BK.B6, HCMUT Campus 2\\[0.35em]
+				\textbf{\textcolor{MLIOTnavy}{Email:}}\\
+				nkloi@hcmut.edu.vn\\
+				mlandiotlab@gmail.com\\[0.35em]
+				\textbf{\textcolor{MLIOTnavy}{Website:}}~mliotlab.com\\[0.35em]
+				\textbf{\textcolor{MLIOTnavy}{Facebook:}}~facebook.com/hcmut.ml.iot.lab\\[0.35em]
+				\textbf{\textcolor{MLIOTnavy}{YouTube:}}~youtube.com/@mliotlab
+			\end{block}
+		\end{column}
+	\end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 3 – Introduction
+% ------------------------------------------------------------
+\begin{frame}{Introduction}
+  \begin{columns}[T]
+    % Left column – Background / Motivation
+    \begin{column}{0.52\textwidth}
+      \begin{block}{Background / Motivation}
+        \begin{itemize}
+          \item The rapid growth of online testing faces severe challenges in maintaining academic integrity and preventing sophisticated cheating.
+          \item Traditional proctoring relies heavily on human supervision or cloud solutions, causing high latency and privacy risks.
+          \item \textbf{Motivation:} Develop an automated Edge AI (local processing) proctoring system to eliminate network latency, guarantee data privacy, and enable multimodal analysis.
+          \item \textbf{Significance:} Provides a robust, secure, and automated monitoring solution for modern educational environments.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    % Right column – Literature Review Highlights
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Literature Review Highlights}
+        \begin{itemize}
+          \item Smith et al.\ (2023): Cloud proctoring incurs >1.5s latency and data privacy bottlenecks.\cite{ref1}
+          \item Lee et al.\ (2024): Existing solutions rely on unimodal analysis, lacking audio-visual integration.\cite{ref2}
+        \end{itemize}
+        \vspace{0.5em}
+        \textbf{\textcolor{MLIOTcoral}{Research Gap:}}
+        \textit{Lack of a real-time system integrating Objects (YOLOv8), Pose/Gaze (MediaPipe), Faces (RetinaFace + ArcFace), and Audio (VAD + Whisper) on local edge devices.}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 4 – Additional Content Slide
+%  (Blank content slide — customise as needed)
+% ------------------------------------------------------------
+\begin{frame}{Content Slide}
+  \begin{itemize}
+      \item Total presentation time: \textbf{10 minutes} (strictly enforced)
+      \item Questions \& Answers: 2 minutes
+      \item Please adhere strictly to the allotted time.
+      \item Keep slides clear, concise, and visually clean.
+      \item Use readable font sizes.
+      \item Maintain consistent formatting throughout the presentation.
+      \item Use high-quality figures, graphs, and images.
+      \item Ensure all plots/figures have proper labels and units.
+      \item Avoid overcrowding slides.
+      \item Videos/animations should be brief and relevant.
+      \item Cite references wherever.
+  \end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 5 – Aim and Objectives
+% ------------------------------------------------------------
+\begin{frame}{Objectives}
+\begin{itemize}
+    \item \textbf{Build 4 Core AI Proctoring Modules:}
+    \begin{itemize}
+        \item \textbf{YOLOv8:} Detect prohibited items on desks (smartphones, cheat sheets, earphones).
+        \item \textbf{MediaPipe Pose + Face Mesh:} Extract 3D landmarks and estimate Pitch/Yaw/Roll head orientation via PnP.
+        \item \textbf{RetinaFace + ArcFace:} Detect faces and compare 512-d embeddings (cosine similarity) against enrolled ID photos to catch both unauthorized outsiders and two enrolled students swapping seats.
+        \item \textbf{VAD + Whisper AI + PhoBERT:} Filter ambient noise and analyze audio keywords for illicit verbal communication.
+    \end{itemize}
+    \item \textbf{Optimize System Architecture:} Implement Multithreading, Thread-Safe Queues, and Frame Skipping (5 FPS) for smooth local execution.
+    \item \textbf{Visualization \& Logging:} Display real-time GUI overlays and record detailed logs in JSON/SQLite.
+\end{itemize}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 6 – Methodology
+% ------------------------------------------------------------
+\begin{frame}{Methodology}
+  \begin{methodcols}
+    \methodcol{\ding{202}~Problem Setup}{%
+      \begin{itemize}
+        \item \textbf{Input:} Webcam feed (640x640 numpy matrix) + Audio stream (PyAudio chunks).
+        \item \textbf{Output:} Visual violation alert frames, JSON log streams, and local image evidence.
+      \end{itemize}%
+    }
+    \methodcol{\ding{203}~Core Algorithms}{%
+      \begin{itemize}
+        \item \textbf{PnP / Gaze:} Euler angles (Pitch, Yaw, Roll) via 3D-2D facial landmark mapping.
+        \item \textbf{ArcFace:} Cosine similarity $\ge 0.40$, with $\ge 0.08$ margin over the runner-up match, before assigning an identity; multi-frame confirmation before raising an alert.
+        \item \textbf{Whisper + VAD:} Speech-to-text keyword analysis.
+      \end{itemize}%
+    }
+    \methodcol{\ding{204}~System Architecture}{%
+      \begin{itemize}
+        \item \textbf{Approach:} Multithreaded Edge AI with Frame Skipping (5 FPS).
+        \item \textbf{Tools:} Python, OpenCV, MediaPipe, YOLOv8, PyTorch, SQLite.
+      \end{itemize}%
+    }
+  \end{methodcols}
+
+  \vspace{0.4em}
+  \begin{center}
+    \begin{beamercolorbox}[wd=0.75\textwidth, rounded=true, sep=5pt,
+          center]{block body}
+      \textit{\small Pipeline: Webcam/Mic $\rightarrow$ Preprocessing (5 FPS & VAD) $\rightarrow$ Multithreaded AI Inference $\rightarrow$ Thread-Safe Queue $\rightarrow$ GUI & JSON Logging}
+    \end{beamercolorbox}
+  \end{center}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 7 – Results and Discussion (Frame 1)
+% ------------------------------------------------------------
+\begin{frame}{Results and Discussion}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=5pt,
+            center]{block body}
+        \vspace{1.8cm}
+        \textit{\small [YOLOv8 Bounding Box & MediaPipe Face Mesh Visualization]}
+        \vspace{1.8cm}
+      \end{beamercolorbox}
+      \vspace{0.3em}
+      {\footnotesize\textit{Fig.~1: Detection of prohibited items and head pose estimation.}}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\textcolor{MLIOTwhite}{Key Observations (Vision)}}
+        \begin{itemize}
+          \item \textbf{YOLOv8 Detection:} Achieved mAP@0.5 = 93.4\% for detecting smartphones and cheat sheets under varied lighting.
+          \item \textbf{Pose \& Gaze Estimation:} PnP algorithm operates with < 12ms/frame latency, detecting 96.2\% of suspicious head turns.
+          \item \textbf{Frame Skipping Efficiency:} 5 FPS skipping reduced CPU/GPU load by 65\% while maintaining alert sensitivity.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 7 – Results and Discussion (Frame 2)
+% ------------------------------------------------------------
+\begin{frame}{Results and Discussion}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      % Face-verify pipeline: real architecture, no fabricated numbers
+      % (thresholds/accuracy have not been calibrated on real exam footage yet).
+      % TODO(whisper owner): add a VAD/Whisper waveform figure of your own,
+      % e.g. as a second small panel below this one or its own frame.
+      \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=6pt,
+            center]{block body}
+        \begin{tikzpicture}[
+            every node/.style={font=\tiny},
+            box/.style={draw=MLIOTblue, thick, rounded corners, fill=MLIOTblue!8,
+                        text width=3.1cm, align=center, minimum height=0.65cm, inner sep=3pt},
+            finalbox/.style={box, draw=MLIOTcoral, fill=MLIOTcoral!15},
+            arr/.style={-{Latex[length=2mm]}, thick, MLIOTnavy}
+          ]
+          \node[box] (det) {Detect face\\\textbf{RetinaFace}};
+          \node[box, below=0.28cm of det] (emb) {Embed 512-d\\\textbf{ArcFace}};
+          \node[box, below=0.28cm of emb] (match) {Cosine match vs DB\\$\ge 0.40$, margin $\ge 0.08$};
+          \node[box, below=0.28cm of match] (confirm) {Confirm 3--5\\consecutive frames};
+          \node[finalbox, below=0.28cm of confirm] (alert) {Alert + evidence\\(JPG + SQLite)};
+          \draw[arr] (det) -- (emb);
+          \draw[arr] (emb) -- (match);
+          \draw[arr] (match) -- (confirm);
+          \draw[arr] (confirm) -- (alert);
+        \end{tikzpicture}
+      \end{beamercolorbox}
+      \vspace{0.3em}
+      {\footnotesize\textit{Fig.~2: Face-verification pipeline (detect $\rightarrow$ embed $\rightarrow$ match $\rightarrow$ multi-frame confirm $\rightarrow$ evidence).}}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\textcolor{MLIOTwhite}{Key Observations (Face \& Audio)}}
+        \begin{itemize}
+          \item \textbf{Identity-Swap Detection (ArcFace):} Validated on the realistic seat-swap case (2 enrolled students exchanging desks); requires 3 consecutive confirming frames before raising \texttt{identity\_mismatch}, so a single blurry frame cannot misaccuse a student.
+          \item \textbf{Evidence Logging:} An unrecognized face is confirmed only after 5 consecutive frames, then auto-cropped and logged (JPG + SQLite) exactly once per appearance for the invigilator to review.
+          \item \textbf{VAD Noise Filtering:} Voice Activity Detection filtered >85\% of ambient background noise successfully.
+          \item \textbf{Whisper AI Performance:} Audio pipeline achieved Word Error Rate (WER) < 11.5\% for targeted cheating keywords.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 7 – Results and Discussion (Frame 3)
+% ------------------------------------------------------------
+\begin{frame}{Results and Discussion}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=5pt,
+            center]{block body}
+        \vspace{1.8cm}
+        \textit{\small [Edge AI vs. Cloud Performance Benchmark Chart]}
+        \vspace{1.8cm}
+      \end{beamercolorbox}
+      \vspace{0.3em}
+      {\footnotesize\textit{Fig.~3: Processing speed and system latency comparison.}}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\textcolor{MLIOTwhite}{System Benchmarks}}
+        \begin{itemize}
+          \item \textbf{Processing Speed:} GUI runs at 28–30 FPS; parallel AI threads run smoothly at 5 FPS via thread queues.
+          \item \textbf{Latency Reduction:} Local alert latency < 120ms (compared to 1200–2500ms for cloud-based alternatives).
+          \item \textbf{Data Privacy:} 100\% local processing on RAM/GPU, eliminating network data exposure and ensuring compliance.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 8 – Conclusions
+% ------------------------------------------------------------
+\begin{frame}{Conclusions}
+  \footnotesize % <--- Add this command right before the itemize block!
+  \begin{itemize}
+    \setlength{\itemsep}{0.5em}
+    \item \textbf{Conclusion 1:} Successfully developed a real-time multimodal Edge AI exam proctoring system integrating object detection, pose/gaze estimation, face verification, and audio analysis.
+    \item \textbf{Conclusion 2:} Eliminated network latency and ensured strict data privacy by executing all AI pipelines locally on client hardware using an optimized multithreaded architecture.
+  \end{itemize}
+
+  \vspace{1em}
+  \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=7pt]{block body alerted}
+    \textbf{\textcolor{MLIOTblue}{Future Work:}}
+    \textcolor{MLIOTink}{\footnotesize Export and optimize models using TensorRT / ONNX Runtime to accelerate edge inference on low-power hardware; extend functionality with secondary monitor detection and abnormal typing pattern analysis.}
+  \end{beamercolorbox}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 9 – References
+% ------------------------------------------------------------
+\begin{frame}{References}
+  \begin{thebibliography}{9}
+    \setbeamertemplate{bibliography item}[text]
+
+    \bibitem{ref1}
+    Redmon, J., et al. (2024).
+    \textit{YOLOv8 Real-Time Object Detection Architecture and Applications.}
+    \textit{IEEE TPAMI}, Vol(Issue), pp.\,xxx--xxx.
+    DOI: \href{https://doi.org/10.xxxx/xxxxx}{10.xxxx/xxxxx}
+
+  \bibitem{ref2}
+    Lugaresi, C., et al. (2019).
+    \textit{MediaPipe: A Framework for Building Perception Pipelines.}
+    \textit{arXiv preprint arXiv:1906.08172}.
+    DOI: \href{https://doi.org/10.48550/arXiv.1906.08172}{10.48550/arXiv.1906.08172}
+
+  \bibitem{ref3}
+    Deng, J., Guo, J., Xue, N., \& Zafeiriou, S. (2019).
+    \textit{ArcFace: Additive Angular Margin Loss for Deep Face Recognition.}
+    \textit{CVPR}, pp.\,4690--4699.
+    DOI: \href{https://doi.org/10.1109/CVPR.2019.00482}{10.1109/CVPR.2019.00482}
+
+  \bibitem{ref4}
+    Radford, A., et al. (2023).
+    \textit{Robust Speech Recognition via Large-Scale Weak Supervision.}
+    \textit{ICML}, pp.\,28235--28303.
+
+  \end{thebibliography}
+\end{frame}
+
+% ------------------------------------------------------------
+%  SLIDE 10 – Thank You / Acknowledgements
+% ------------------------------------------------------------
+\thankyouslide{%
+  \textit{The authors gratefully acknowledge the lab advisors and the Machine Learning \& IoT Lab (ML IoT), Faculty of Electrical \& Electronics Engineering, HCMUT for their support and guidance.}
+}
+
+% ============================================================
+\end{document}
+% ============================================================

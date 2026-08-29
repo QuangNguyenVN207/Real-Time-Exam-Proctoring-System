@@ -1,0 +1,73 @@
+{
+  "protocol": "actor_only_causal_live_feed_rolling_replay_extended_suspicious",
+  "primary_unit": "(video, actor_id) and explicit actor pair",
+  "metric_labels": [
+    "suspicious_activity",
+    "c2",
+    "c3",
+    "c5"
+  ],
+  "grouped_oof": {
+    "actor_macro_f1": 0.8469938154473259,
+    "actor_metrics": {
+      "suspicious_activity": {
+        "precision": 0.6721311475409836,
+        "recall": 0.8723404255319149,
+        "f1-score": 0.7592592592592593,
+        "support": 47.0
+      },
+      "c2": {
+        "precision": 0.9090909090909091,
+        "recall": 1.0,
+        "f1-score": 0.9523809523809523,
+        "support": 20.0
+      },
+      "c3": {
+        "precision": 0.9333333333333333,
+        "recall": 0.875,
+        "f1-score": 0.9032258064516129,
+        "support": 16.0
+      },
+      "c5": {
+        "precision": 0.8846153846153846,
+        "recall": 0.6865671641791045,
+        "f1-score": 0.773109243697479,
+        "support": 67.0
+      }
+    },
+    "actor_confusion_matrix": [
+      [
+        41,
+        1,
+        0,
+        5
+      ],
+      [
+        0,
+        20,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        14,
+        1
+      ],
+      [
+        19,
+        1,
+        1,
+        46
+      ]
+    ],
+    "actor_count": 150,
+    "pair_count": 60,
+    "pair_exact_accuracy": 0.7166666666666667,
+    "pair_endpoint_macro_f1": 0.8680990387508511
+  },
+  "locked_test": "not evaluated in Stage 6; owned by Step 7",
+  "comparison_30fps_actor_macro_f1": 0.826448522100696,
+  "acceptance_actor_macro_f1_strictly_greater_than": 0.8,
+  "acceptance_pass": true
+}

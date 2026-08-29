@@ -73,6 +73,7 @@ def main() -> None:
     source = _capture_source(args.source)
     is_live_webcam = isinstance(source, int)
     module = ObjectDetectModule(
+        enable_smartphone_fallback=False,
         detect_every_n_frames=(
             settings.webcam_object_detect_every_n_frames
             if is_live_webcam

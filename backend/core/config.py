@@ -42,7 +42,7 @@ class Settings:
     object_confirm_frames: int = 3         # số lần phát hiện cần có trong cửa sổ xác nhận
     object_confirm_window: int = 5         # chịu được tối đa hai inference hụt detection
     object_detect_every_n_frames: int = 2  # chạy YOLO mỗi N frame, đỡ tốn CPU
-    smartphone_fallback_enabled: bool = True
+    smartphone_fallback_enabled: bool = False
     smartphone_fallback_model_path: str = str(
         BASE_DIR / "weights" / "yolov8n.pt"
     )

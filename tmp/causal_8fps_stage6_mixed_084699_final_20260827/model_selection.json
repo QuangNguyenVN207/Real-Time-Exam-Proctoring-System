@@ -1,0 +1,283 @@
+{
+  "selection_data": "grouped OOF training prefixes only",
+  "locked_test_read_or_scored": false,
+  "specialists": [
+    "c2",
+    "c3",
+    "suspicious_activity"
+  ],
+  "candidate_names": [
+    "balanced",
+    "depth4",
+    "unweighted"
+  ],
+  "combination_count": 10,
+  "global_trials_per_combination": 10000,
+  "search_seeds": [
+    20260821,
+    20260822,
+    20260823,
+    20260824,
+    20260825,
+    20260826,
+    20260827,
+    20260828,
+    20260829,
+    20260830
+  ],
+  "best": {
+    "profiles": {
+      "c2": "balanced",
+      "c3": "unweighted",
+      "suspicious_activity": "depth4"
+    },
+    "search_seed": 20260823,
+    "actor_macro_f1": 0.8469938154473259,
+    "thresholds": {
+      "c2": 0.31567803025245667,
+      "c3": 0.22652508318424225,
+      "suspicious_activity": 0.6603246927261353
+    },
+    "gate_thresholds": {
+      "c3_motion_ceiling": 2.127486297745217,
+      "c3_side_floor": 0.23424867951982659,
+      "c3_down_ceiling": 0.04676047707994139,
+      "suspicious_down_floor": 0.02284153357560299,
+      "suspicious_motion_floor": 0.27528379193801616,
+      "suspicious_lower_floor": -0.10919798641680552
+    },
+    "exact_causal_parity": true
+  },
+  "results": [
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260823,
+      "actor_macro_f1": 0.8469938154473259,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.22652508318424225,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.04676047707994139,
+        "suspicious_down_floor": 0.02284153357560299,
+        "suspicious_motion_floor": 0.27528379193801616,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260827,
+      "actor_macro_f1": 0.8469938154473259,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.26187554001808167,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.09248476895362058,
+        "suspicious_down_floor": 0.02284153357560299,
+        "suspicious_motion_floor": 0.27528379193801616,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260828,
+      "actor_macro_f1": 0.8469938154473259,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.22652508318424225,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.04676047707994139,
+        "suspicious_down_floor": 0.02284153357560299,
+        "suspicious_motion_floor": 0.27528379193801616,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260821,
+      "actor_macro_f1": 0.8415144509842689,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.22652508318424225,
+        "suspicious_activity": 0.7065230011940002
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.04676047707994139,
+        "suspicious_down_floor": 0.02284153357560299,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10453411101266613
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260829,
+      "actor_macro_f1": 0.8410323715263232,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.22652508318424225,
+        "suspicious_activity": 0.692798376083374
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.04676047707994139,
+        "suspicious_down_floor": 0.0256976681658573,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10453411101266613
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260822,
+      "actor_macro_f1": 0.8354808590102707,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.29449114203453064,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.0,
+        "suspicious_down_floor": 0.027757419155057333,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260826,
+      "actor_macro_f1": 0.8354808590102707,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.29449114203453064,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.0,
+        "suspicious_down_floor": 0.027757419155057333,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260830,
+      "actor_macro_f1": 0.829753314738459,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.27848222851753235,
+        "suspicious_activity": 0.7345006465911865
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.18382678488477167,
+        "c3_down_ceiling": 0.08739050157895566,
+        "suspicious_down_floor": 0.03424788650645261,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10453411101266613
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260824,
+      "actor_macro_f1": 0.8284775558969107,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.29449114203453064,
+        "suspicious_activity": 0.7441494464874268
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": 0.23424867951982659,
+        "c3_down_ceiling": 0.0,
+        "suspicious_down_floor": 0.03424788650645261,
+        "suspicious_motion_floor": 0.32108125249019615,
+        "suspicious_lower_floor": -0.10453411101266613
+      },
+      "exact_causal_parity": true
+    },
+    {
+      "profiles": {
+        "c2": "balanced",
+        "c3": "unweighted",
+        "suspicious_activity": "depth4"
+      },
+      "search_seed": 20260825,
+      "actor_macro_f1": 0.8260471672539984,
+      "thresholds": {
+        "c2": 0.31567803025245667,
+        "c3": 0.3524845540523529,
+        "suspicious_activity": 0.6603246927261353
+      },
+      "gate_thresholds": {
+        "c3_motion_ceiling": 2.127486297745217,
+        "c3_side_floor": -0.08218096399782768,
+        "c3_down_ceiling": 0.0,
+        "suspicious_down_floor": 0.027757419155057333,
+        "suspicious_motion_floor": 0.3519474246641887,
+        "suspicious_lower_floor": -0.10919798641680552
+      },
+      "exact_causal_parity": true
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+description: Ultralytics best (1) model trained on merged_dataset/data.yaml
+author: Ultralytics
+date: '2026-08-25T11:30:20.912851'
+version: 8.4.102
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+head: Detect
+batch: 1
+imgsz:
+- 640
+- 640
+names:
+  0: smartwatch
+  1: earphone
+  2: cheat_sheet
+  3: smartphone
+  4: calculator
+args:
+  data: null
+  batch: 1
+  fraction: 1.0
+  quantize: null
+  dynamic: false
+  nms: false
+channels: 3
+end2end: false

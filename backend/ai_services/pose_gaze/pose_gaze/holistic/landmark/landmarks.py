@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 from time import monotonic
 from types import SimpleNamespace
-from typing import Any, Collection, Iterable
+from typing import Any, Callable, Collection, Iterable
 from urllib.request import Request, urlopen
 
 from ...settings import (
@@ -341,6 +341,7 @@ class HolisticLandmarkExtractor:
         task_model_path: str | Path | None = None,
         task_model_url: str = DEFAULT_TASK_MODEL_URL,
         task_input_size: int = 512,
+        processor_factory: Callable[[], Any] | None = None,
     ) -> None:
         if not 0.0 <= crop_padding <= 1.0:
             raise ValueError("crop_padding must be in [0, 1]")
@@ -394,6 +395,7 @@ class HolisticLandmarkExtractor:
         self._face_fallback_processor: Any | None = None
         self._face_fallback_timestamp = -1
         self._task_input_size = int(task_input_size)
+        self._processor_factory = processor_factory
         self._processors: dict[int, Any] = {}
         self._crop_bboxes: dict[int, BoundingBox] = {}
         self._last_face_landmarks: dict[int, tuple[LandmarkPoint, ...]] = {}
@@ -516,6 +518,8 @@ class HolisticLandmarkExtractor:
             ) from error
 
     def _new_processor(self) -> Any:
+        if self._processor_factory is not None:
+            return self._processor_factory()
         if self._backend == "legacy-solutions":
             return self._holistic_api.Holistic(
                 static_image_mode=self._static_image_mode,
@@ -552,7 +556,9 @@ class HolisticLandmarkExtractor:
     ) -> tuple[TrackHolisticResult, ...]:
         """Extract landmarks for all visible tracks in a tracking packet."""
 
-        packet_track_ids = {track.track_id for track in packet.tracks}
+        packet_track_ids = {
+            track.track_id for track in packet.tracks if track.is_present
+        }
         self._close_processors_not_in(packet_track_ids)
 
         output: list[TrackHolisticResult] = []
@@ -760,6 +766,11 @@ class HolisticLandmarkExtractor:
                 )
             else:
                 selected_face = observed_face
+                if held_face and missing_frames > self._face_hold_frames:
+                    self._last_face_landmarks.pop(track.track_id, None)
+                    self._last_face_bboxes.pop(track.track_id, None)
+                    self._smoothed_face_landmarks.pop(track.track_id, None)
+                    self._face_filters.pop(track.track_id, None)
 
         return TrackHolisticResult(
             track_id=track.track_id,
@@ -1499,9 +1510,25 @@ class HolisticLandmarkExtractor:
                 exc_info=True,
             )
 
-    def close(self) -> None:
-        for track_id in tuple(self._processors):
+    def face_trace_state(self, track_id: int) -> dict[str, int | bool]:
+        """Return non-coordinate face-hold telemetry for one current track."""
+
+        missing_frames = int(self._face_missing_frames.get(int(track_id), 0))
+        return {
+            "missing_frames": missing_frames,
+            "hold_frames": int(self._face_hold_frames),
+            "hold_expired": missing_frames > self._face_hold_frames,
+        }
+
+    def reset(self) -> None:
+        """Clear every per-track landmark, smoothing, and held-face state."""
+
+        track_ids = set(self._processors) | set(self._last_face_landmarks)
+        for track_id in tuple(track_ids):
             self._discard_processor(track_id)
+
+    def close(self) -> None:
+        self.reset()
         if self._face_fallback_processor is not None:
             self._face_fallback_processor.close()
             self._face_fallback_processor = None
