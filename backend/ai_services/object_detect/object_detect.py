@@ -57,57 +57,54 @@ class ObjectDetector:
 
         self.model = model
         if hasattr(self.model, "to"):
-            self.model.to(self.device)
+            try:
+                self.model.to(self.device)
+            except Exception:
+                pass  # Bỏ qua nếu mô hình là OpenVINO/ONNX không hỗ trợ .to()
 
     def process_frame(
         self,
         frame: np.ndarray,
         timestamp: float,
     ) -> dict[str, Any] | None:
-        """Return prohibited objects in original-frame coordinates.
-
-        A corrupt frame or inference failure is deliberately isolated here:
-        the server receives ``None`` and its other worker threads keep running.
-        """
-
+        """Return prohibited objects in original-frame coordinates without forcing 640x640 resize."""
+        # print("\n[DEBUG YOLO] ---> BẮT ĐẦU VÀO HÀM process_frame")
         try:
             if (
                 not isinstance(frame, np.ndarray)
                 or frame.ndim not in (2, 3)
                 or frame.size == 0
             ):
+                # print(f"[DEBUG YOLO] Lỗi: Frame đầu vào không hợp lệ! Type: {type(frame)}")
                 return None
 
-            import cv2
-
             original_height, original_width = frame.shape[:2]
-            resized_frame = cv2.resize(
-                frame,
-                (self.INPUT_SIZE, self.INPUT_SIZE),
-                interpolation=cv2.INTER_LINEAR,
-            )
+            # print(f"[DEBUG YOLO] Kích thước frame: {original_width}x{original_height}")
+
+            # GIỮ NGUYÊN KÍCH THƯỚC GỐC: Không resize về 640x640 nữa để giữ chi tiết vật thể nhỏ (smartphone)
+            # print(f"[DEBUG YOLO] Đưa vào model với device={self.device}, conf={self.confidence_threshold}...")
             results = self.model(
-                resized_frame,
-                imgsz=self.INPUT_SIZE,
+                frame,
                 conf=self.confidence_threshold,
-                device=self.device,
+                # device=self.device,
                 verbose=False,
             )
-            detections = self._extract_server_detections(
+            # print(f"[DEBUG YOLO] Kết quả thô từ model.predict: {results}")
+            # Vì không resize nên tỉ lệ scale = 1.0
+            # print("[DEBUG YOLO] Đang chạy hàm trích xuất _extract_server_detections_no_resize...")
+            detections = self._extract_server_detections_no_resize(
                 results,
                 original_frame=frame,
                 original_width=original_width,
                 original_height=original_height,
             )
             if not detections:
+                # print("[DEBUG YOLO] Cảnh báo: Không có vật thể nào (hoặc đã bị lọc hết ở hàm _extract). Trả về None.")
                 return None
+            # print(f"[DEBUG YOLO] THÀNH CÔNG: Trích xuất được {len(detections)} vật thể!")
 
             details = {
                 "detections": detections,
-                "model_input_size": [
-                    self.INPUT_SIZE,
-                    self.INPUT_SIZE,
-                ],
                 "original_frame_size": [
                     original_width,
                     original_height,
@@ -118,14 +115,94 @@ class ObjectDetector:
                 "status": "alert",
                 "timestamp": float(timestamp),
                 "details": details,
-                # Kept at the top level as well to match the example contract.
                 "detections": detections,
             }
-        except Exception:
-            # process_frame runs in a long-lived multi-module worker. A single
-            # damaged frame/model failure must not terminate that worker.
+        except Exception as e:
+            # SỬA LỖI LOGIC: Không được giấu lỗi. Phải in ra toàn bộ stack trace để bắt tận gốc
+            import traceback
+            print(f"\n[DEBUG YOLO] ❌ CÓ LỖI CRASH (EXCEPTION) BÊN TRONG HÀM process_frame: {e}")
+            print(traceback.format_exc())
             return None
 
+    def _extract_server_detections_no_resize(
+        self,
+        results: Any,
+        *,
+        original_frame: np.ndarray,
+        original_width: int,
+        original_height: int,
+    ) -> list[dict[str, Any]]:
+        if not results:
+            return []
+
+        result = results[0]
+        boxes = getattr(result, "boxes", None)
+        if boxes is None:
+            return []
+        names = self._names_dict(
+            getattr(result, "names", getattr(self.model, "names", {}))
+        )
+        
+        detections: list[dict[str, Any]] = []
+
+        for box in boxes:
+            class_id = int(self._first_scalar(box.cls))
+            raw_name = names.get(class_id, class_id)
+
+            # PHÒNG HỜI OPENVINO MẤT FILE .NAMES (Trả về số nguyên)
+            if isinstance(raw_name, (int, float)) or str(raw_name).isdigit():
+                # Nếu model của bạn đặt smartphone ở index 0 (hoặc chỉnh lại theo index thực tế của bạn)
+                id_mapping = {0: "smartphone", 1: "cheat_sheet", 2: "earphone", 3: "smartwatch"}
+                raw_name = id_mapping.get(int(class_id), str(class_id))
+
+            label = self._canonical_class_name(raw_name)
+
+            # label = self._canonical_class_name(names.get(class_id, class_id))
+            confidence = float(self._first_scalar(box.conf))
+            
+            if (
+                label not in self.BANNED_ITEMS
+                or confidence <= self.confidence_threshold
+            ):
+                continue
+
+            # Lấy trực tiếp tọa độ thực tế trên khung hình gốc (vì không resize)
+            coordinates = self._first_row(box.xyxy)
+            model_x1, model_y1, model_x2, model_y2 = (
+                float(value) for value in coordinates
+            )
+            bbox = [
+                max(0, min(original_width, round(model_x1))),
+                max(0, min(original_height, round(model_y1))),
+                max(0, min(original_width, round(model_x2))),
+                max(0, min(original_height, round(model_y2))),
+            ]
+            
+            # Bộ lọc phụ (nếu cần thiết có thể bật/tắt trong settings)
+            if (
+                label == "smartphone"
+                and (
+                    (
+                        settings.smartphone_calculator_grid_filter_enabled
+                        and _looks_like_calculator(original_frame, bbox)
+                    )
+                    or (
+                        settings.smartphone_pen_shape_filter_enabled
+                        and _looks_like_pen(original_frame, bbox)
+                    )
+                )
+            ):
+                continue
+                
+            detections.append(
+                {
+                    "label": label,
+                    "confidence": confidence,
+                    "bbox": bbox,
+                }
+            )
+        return detections
+    
     def _extract_server_detections(
         self,
         results: Any,
@@ -170,8 +247,16 @@ class ObjectDetector:
             ]
             if (
                 label == "smartphone"
-                and settings.smartphone_calculator_grid_filter_enabled
-                and _looks_like_calculator(original_frame, bbox)
+                and (
+                    (
+                        settings.smartphone_calculator_grid_filter_enabled
+                        and _looks_like_calculator(original_frame, bbox)
+                    )
+                    or (
+                        settings.smartphone_pen_shape_filter_enabled
+                        and _looks_like_pen(original_frame, bbox)
+                    )
+                )
             ):
                 continue
             detections.append(
@@ -188,8 +273,8 @@ class ObjectDetector:
         try:
             import torch
         except ImportError:  # pragma: no cover - ultralytics installs torch
-            return "cpu"
-        return "cuda" if torch.cuda.is_available() else "cpu"
+            return "gpu"
+        return "cuda" if torch.cuda.is_available() else "gpu"
 
     @staticmethod
     def _suppress_ultralytics_logging() -> None:
@@ -309,18 +394,50 @@ class ObjectDetectModule:
                 raise RuntimeError(
                     "Install torch and ultralytics before creating ObjectDetectModule"
                 ) from error
-            self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-            print(
-                f"[object_detect] Loading YOLO model from "
-                f"{settings.yolo_model_path}..."
-            )
-            self._model = YOLO(settings.yolo_model_path)
-            self._model.to(self._device)
+
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            detected_device = "cpu"
+            if torch.cuda.is_available():
+                detected_device = "cuda"
+            else:
+                try:
+                    import openvino as ov
+                    # Nếu tìm thấy chữ GPU trong danh sách thiết bị OpenVINO, đó là Intel iGPU
+                    if "GPU" in ov.Core().available_devices:
+                        detected_device = "GPU"
+                except ImportError:
+                    pass
+            
+            self._device = device or detected_device
+
+            # Tự động trỏ sang thư mục OpenVINO nếu đang dùng Intel iGPU
+            model_path = str(settings.yolo_model_path)
+            if self._device == "GPU" and model_path.endswith("best (1).pt"):
+                model_path = model_path.replace("best (1).pt", "best_openvino_model")
+            elif self._device == "GPU" and model_path.endswith(".pt"):
+                model_path = model_path.replace(".pt", "_openvino_model")
+            
+            print(f"[object_detect] Loading YOLO model from {model_path}...")
+            self._model = YOLO(model_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+
+            # self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+            # print(
+            #     f"[object_detect] Loading YOLO model from "
+            #     f"{settings.yolo_model_path}..."
+            # )
+            # self._model = YOLO(settings.yolo_model_path)
+            try:
+                self._model.to(self._device)
+            except Exception:
+                pass  # Bỏ qua lỗi .to() đối với OpenVINO
             if self._device == "cuda":
                 print(
                     f"[object_detect] Inference device: cuda "
                     f"({torch.cuda.get_device_name(0)})"
                 )
+            elif self._device == "GPU":
+                print("[object_detect] Inference device: Intel iGPU (OpenVINO)")
             else:
                 print("[object_detect] Inference device: cpu")
         else:
@@ -339,20 +456,39 @@ class ObjectDetectModule:
             self._smartphone_model is None
             and fallback_enabled
             and load_default_models
-        ):
+        ):  
+            # --- BẮT ĐẦU ĐOẠN SỬA ---
+            fallback_path = str(settings.smartphone_fallback_model_path)
+            if self._device == "GPU" and fallback_path.endswith(".pt"):
+                fallback_path = fallback_path.replace(".pt", "_openvino_model")
+
             print(
                 "[object_detect] Loading small-object smartphone fallback "
-                f"from {settings.smartphone_fallback_model_path}..."
+                f"from {fallback_path}..."
             )
-            self._smartphone_model = YOLO(
-                settings.smartphone_fallback_model_path
-            )
-            self._smartphone_model.to(self._device)
+            self._smartphone_model = YOLO(fallback_path, task="detect")
+            # --- KẾT THÚC ĐOẠN SỬA ---
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
+
+            # print(
+            #     "[object_detect] Loading small-object smartphone fallback "
+            #     f"from {settings.smartphone_fallback_model_path}..."
+            # )
+            # self._smartphone_model = YOLO(
+            #     settings.smartphone_fallback_model_path
+            # )
+            # self._smartphone_model.to(self._device)
         elif self._smartphone_model is not None and hasattr(
             self._smartphone_model,
             "to",
         ):
-            self._smartphone_model.to(self._device)
+            try:
+                self._smartphone_model.to(self._device)
+            except Exception:
+                pass
         self._smartphone_fallback_enabled = (
             fallback_enabled and self._smartphone_model is not None
         )
@@ -429,7 +565,7 @@ class ObjectDetectModule:
             print(
                 "[object_detect][INFO] This checkpoint has no test_paper class. "
                 "Paper labels will be exposed as paper_unknown and decisions "
-                "will rely on stable paper_id + paper count."
+                "will be made by the configured downstream paper policy."
             )
 
         self._frames_seen: dict[str, int] = {}
@@ -437,7 +573,7 @@ class ObjectDetectModule:
         self._previously_confirmed: dict[str, set[str]] = {}
         self._recent_presence: dict[
             str,
-            dict[str, deque[bool]],
+            dict[str, deque[list[list[int]]]],
         ] = {}
 
     def process(
@@ -482,7 +618,7 @@ class ObjectDetectModule:
         predictions = self._model(
             frame,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=min(
                 settings.yolo_confidence_threshold,
                 settings.paper_detection_confidence_threshold,
@@ -527,6 +663,9 @@ class ObjectDetectModule:
             frame,
             session_id,
             frame_id,
+            candidate_boxes_this_frame=(
+                self._direct_alert_candidate_boxes(raw_objects)
+            ),
         )
         result["raw_objects"] = raw_objects
         result["paper_detections"] = [
@@ -627,7 +766,7 @@ class ObjectDetectModule:
                 for x1, y1, x2, y2 in roi_specs
             ],
             imgsz=settings.person_roi_custom_paper_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=settings.person_roi_custom_paper_confidence_threshold,
             classes=self._custom_paper_class_ids,
             verbose=False,
@@ -726,7 +865,7 @@ class ObjectDetectModule:
         predictions = self._smartphone_model(
             crops,
             imgsz=settings.object_inference_size,
-            device=self._device,
+            # device=self._device,
             conf=min(
                 settings.smartphone_fallback_confidence_threshold,
                 settings.book_fallback_confidence_threshold,
@@ -760,7 +899,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in roi_specs
                 ],
                 imgsz=settings.person_roi_object_inference_size,
-                device=self._device,
+                # device=self._device,
                 conf=min(
                     settings.person_roi_phone_confidence_threshold,
                     settings.person_roi_book_confidence_threshold,
@@ -822,7 +961,7 @@ class ObjectDetectModule:
                     for x1, y1, x2, y2 in detail_specs
                 ],
                 imgsz=settings.book_fallback_detail_inference_size,
-                device=self._device,
+                # device=self._device,
                 conf=settings.book_fallback_confidence_threshold,
                 classes=self._book_class_ids,
                 verbose=False,
@@ -985,7 +1124,7 @@ class ObjectDetectModule:
         frame: np.ndarray,
         detections: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Drop remote/calculator-like candidates before temporal confirmation."""
+        """Drop remote/calculator/pen-like candidates before confirmation."""
 
         confusers = [
             item
@@ -1015,7 +1154,15 @@ class ObjectDetectModule:
                 settings.smartphone_calculator_grid_filter_enabled
                 and _looks_like_calculator(frame, bbox)
             )
-            if not overlaps_pretrained_confuser and not has_calculator_grid:
+            has_pen_shape = (
+                settings.smartphone_pen_shape_filter_enabled
+                and _looks_like_pen(frame, bbox)
+            )
+            if (
+                not overlaps_pretrained_confuser
+                and not has_calculator_grid
+                and not has_pen_shape
+            ):
                 accepted.append(item)
         return accepted
 
@@ -1237,6 +1384,22 @@ class ObjectDetectModule:
                 boxes[class_name] = list(item["bbox_xyxy"])
         return detected, boxes
 
+    def _direct_alert_candidate_boxes(
+        self,
+        raw_objects: list[dict[str, Any]],
+    ) -> dict[str, list[list[int]]]:
+        """Keep every candidate so parallel phones get separate histories."""
+
+        candidates: dict[str, list[list[int]]] = {}
+        for item in raw_objects:
+            class_name = item["class_name"]
+            if class_name not in self._flagged:
+                continue
+            candidates.setdefault(class_name, []).append(
+                list(item["bbox_xyxy"])
+            )
+        return candidates
+
     def _evaluate(
         self,
         detected_this_frame: dict[str, float],
@@ -1244,16 +1407,26 @@ class ObjectDetectModule:
         raw_frame: np.ndarray,
         session_id: str,
         frame_id: int,
+        *,
+        candidate_boxes_this_frame: (
+            dict[str, list[list[int]]] | None
+        ) = None,
     ) -> dict[str, Any]:
         histories = self._recent_presence.setdefault(session_id, {})
         counters: dict[str, int] = {}
+        resolved_candidates = candidate_boxes_this_frame or {
+            class_name: [bbox]
+            for class_name, bbox in boxes_this_frame.items()
+        }
         for class_name in self._flagged:
             history = histories.setdefault(
                 class_name,
                 deque(maxlen=settings.object_confirm_window),
             )
-            history.append(class_name in detected_this_frame)
-            counters[class_name] = sum(history)
+            history.append(resolved_candidates.get(class_name, []))
+            counters[class_name] = _max_spatially_consistent_detections(
+                history
+            )
 
         confirmed = sorted(
             class_name
@@ -1446,6 +1619,159 @@ def _bbox_intersection_over_smaller(
     )
     smaller = min(first_area, second_area)
     return intersection / smaller if smaller > 0 else 0.0
+
+
+def _same_physical_object(
+    first: list[int],
+    second: list[int],
+) -> bool:
+    """Match two recent detections without requiring pixel-perfect IoU.
+
+    Hand-held objects can move between inference frames. An overlap match is
+    preferred, while the normalized centre-distance fallback tolerates that
+    motion without joining detections from different desks or hands.
+    """
+
+    if (
+        _bbox_intersection_over_smaller(first, second)
+        >= settings.object_spatial_match_overlap_threshold
+    ):
+        return True
+
+    first_center = (
+        (first[0] + first[2]) / 2.0,
+        (first[1] + first[3]) / 2.0,
+    )
+    second_center = (
+        (second[0] + second[2]) / 2.0,
+        (second[1] + second[3]) / 2.0,
+    )
+    center_distance = float(
+        np.hypot(
+            first_center[0] - second_center[0],
+            first_center[1] - second_center[1],
+        )
+    )
+    reference_size = max(
+        first[2] - first[0],
+        first[3] - first[1],
+        second[2] - second[0],
+        second[3] - second[1],
+        1,
+    )
+    return (
+        center_distance
+        <= settings.object_spatial_match_center_distance_ratio
+        * reference_size
+    )
+
+
+def _max_spatially_consistent_detections(
+    history: deque[list[list[int]]],
+) -> int:
+    """Count matching frames, never multiple boxes from the same frame."""
+
+    frames = list(history)
+    anchors = [bbox for frame_boxes in frames for bbox in frame_boxes]
+    if not anchors:
+        return 0
+    return max(
+        sum(
+            any(
+                _same_physical_object(anchor, candidate)
+                for candidate in frame_boxes
+            )
+            for frame_boxes in frames
+        )
+        for anchor in anchors
+    )
+
+
+def _looks_like_pen(
+    frame: np.ndarray,
+    bbox_xyxy: list[int],
+) -> bool:
+    """Conservatively reject a bright narrow pen/marker phone false positive.
+
+    The guard intentionally applies only to moderately elongated detection
+    boxes containing a much thinner, low-saturation bright component. A real
+    phone that fills its box, including one with a bright screen or case, does
+    not satisfy the component-area and width constraints.
+    """
+
+    try:
+        import cv2
+
+        frame_height, frame_width = frame.shape[:2]
+        x1 = max(0, min(frame_width, int(bbox_xyxy[0])))
+        y1 = max(0, min(frame_height, int(bbox_xyxy[1])))
+        x2 = max(0, min(frame_width, int(bbox_xyxy[2])))
+        y2 = max(0, min(frame_height, int(bbox_xyxy[3])))
+        crop = frame[y1:y2, x1:x2]
+        if crop.size == 0 or min(crop.shape[:2]) < 12:
+            return False
+
+        crop_height, crop_width = crop.shape[:2]
+        if crop_height <= crop_width:
+            return False
+        bbox_aspect = max(crop_width, crop_height) / max(
+            min(crop_width, crop_height),
+            1,
+        )
+        # Pens in the observed false positives form a portrait-ish proposal.
+        # More elongated landscape proposals are usually actual phones.
+        if not 1.30 <= bbox_aspect <= 2.10:
+            return False
+
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        bright_neutral = (
+            (gray >= 130) & (hsv[:, :, 1] <= 110)
+        ).astype(np.uint8) * 255
+        bright_neutral_ratio = (
+            np.count_nonzero(bright_neutral) / bright_neutral.size
+        )
+        # A tight YOLO proposal around a white marker can contain more bright
+        # pixels than the older, looser proposals.  Keep the upper bound below
+        # a bright phone that fills almost its complete box, while allowing the
+        # observed tight marker crop (about 0.43 bright-neutral coverage).
+        if not 0.10 <= bright_neutral_ratio <= 0.50:
+            return False
+        bright_neutral = cv2.morphologyEx(
+            bright_neutral,
+            cv2.MORPH_CLOSE,
+            np.ones((3, 3), dtype=np.uint8),
+        )
+        contours, _ = cv2.findContours(
+            bright_neutral,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        crop_area = crop_width * crop_height
+        short_crop_side = min(crop_width, crop_height)
+        long_crop_side = max(crop_width, crop_height)
+        for contour in contours:
+            area_ratio = cv2.contourArea(contour) / max(crop_area, 1)
+            component_width, component_height = cv2.minAreaRect(contour)[1]
+            component_short = min(component_width, component_height)
+            component_long = max(component_width, component_height)
+            if component_short <= 0:
+                continue
+            component_aspect = component_long / component_short
+            short_side_ratio = component_short / short_crop_side
+            long_side_ratio = component_long / long_crop_side
+            if (
+                0.035 <= area_ratio <= 0.48
+                and component_aspect >= 2.30
+                and short_side_ratio <= 0.62
+                and 0.52 <= long_side_ratio <= 1.06
+            ):
+                return True
+        return False
+    except Exception:
+        # This is an optional post-filter; a malformed crop must never stop the
+        # long-lived camera worker.
+        return False
 
 
 def _looks_like_calculator(

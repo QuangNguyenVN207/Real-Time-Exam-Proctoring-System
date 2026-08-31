@@ -240,19 +240,7 @@ def parse_args() -> argparse.Namespace:
         "--xgboost-model-dir",
         type=Path,
         default=None,
-        help="Optional actor-level c2/c3/c7 XGBoost model directory",
-    )
-    parser.add_argument(
-        "--c1-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C1 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c4-model-dir", type=Path, default=None,
-        help="Optional causal pose-only C4 specialist artifact directory",
-    )
-    parser.add_argument(
-        "--c7-model-dir", type=Path, default=None,
-        help="Optional causal per-hand C7 specialist artifact directory",
+        help="Optional actor-level c2/c3/suspicious_activity XGBoost model directory",
     )
     parser.add_argument(
         "--causal-live",
@@ -339,16 +327,10 @@ def validate_args(args: argparse.Namespace, kind: str) -> None:
     if args.causal_live:
         if kind != "video":
             raise ValueError("--causal-live requires a video or camera stream")
-        if not any((args.xgboost_model_dir, args.c1_model_dir, args.c4_model_dir, args.c7_model_dir)):
-            raise ValueError(
-                "--causal-live requires at least one of --xgboost-model-dir, "
-                "--c1-model-dir, --c4-model-dir, or --c7-model-dir"
-            )
-        if args.c7_model_dir is not None and not args.live_pair:
-            raise ValueError("--c7-model-dir requires at least one explicit --live-pair")
+        if args.xgboost_model_dir is None:
+            raise ValueError("--causal-live requires --xgboost-model-dir")
         if any(":" not in pair or pair.count(":") != 1 for pair in args.live_pair):
             raise ValueError("--live-pair must use ACTOR:ACTOR")
-
     if not args.no_save_annotated:
         output_suffix = args.output.suffix.lower()
         allowed = IMAGE_EXTENSIONS if kind == "image" else VIDEO_EXTENSIONS
@@ -497,7 +479,6 @@ def process_one_frame(
         student_prefix,
     )
     results = holistic.process_packet(frame, packet)
-    inference_ms = (monotonic() - started_at) * 1000.0
     classifications = (
         live_classifier.update(
             frame_index=source_frame_index,

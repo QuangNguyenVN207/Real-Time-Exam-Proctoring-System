@@ -1,0 +1,36 @@
+{
+  "input_path": "C:\\Real-Time-Exam-Proctoring-System\\data\\processed\\behavior_stage1_stage2_features_8fps\\temporal_geometry_features.csv",
+  "input_sha256": "D1A570496F5AED727EF32550402D7C88AC08980E789F0925F2550A62EB9758B6",
+  "feature_manifest_path": "C:\\Real-Time-Exam-Proctoring-System\\data\\processed\\behavior_stage1_stage2_features_8fps\\feature_manifest.json",
+  "feature_manifest_sha256": "7A3C3EE63AF5607152AF646BBD8C5A51564A435D45C4AF231296BBD504111B9F",
+  "manifest_path": "C:\\Real-Time-Exam-Proctoring-System\\data\\raw_video\\processed\\holistic_manifest_front_v4.csv",
+  "manifest_sha256": "6B13FA3D728032C6193B8E6E65ED932BD20439B74E2D196136517F6A28929FD0",
+  "json_root": "C:\\Real-Time-Exam-Proctoring-System\\data\\raw_video\\processed\\holistic_output_8fps",
+  "landmark_root_hash": {
+    "algorithm": "sha256(sorted relative path, content length, content)",
+    "file_count": 104,
+    "sha256": "015BF9DA5B56CDABF5DC48481B2624944739C22BC81CEB9FBEB565173EEAE60D"
+  },
+  "split_assignment_hash": "81611F7781461FDAB5214EEDE4B594AEF3C176D4EA0888CE8F8E3616942D934D",
+  "train_split_groups": [
+    "group_01",
+    "group_02",
+    "group_03",
+    "group_04",
+    "group_05",
+    "group_07",
+    "group_10",
+    "group_11",
+    "group_12"
+  ],
+  "locked_test_split_groups": [
+    "group_06",
+    "group_08",
+    "group_09"
+  ],
+  "train_prefix_rows": 20511,
+  "locked_test_model_scores_computed": false,
+  "locked_test_used_for_model_selection_or_calibration": false,
+  "calibration_selection_path": "C:\\Real-Time-Exam-Proctoring-System\\tmp\\causal_8fps_stage6_mix_multistart_20260827.json",
+  "calibration_selection_sha256": "20348D22CB6A9FC12621687D2C9F268872C61B1405D980F7F65CE24D4E3F6F3F"
+}

@@ -463,3 +463,21 @@ Co che:
     - Nguoi di ra va quay lai se duoc dua ve track_id/person_id cu.
     - Sai danh tinh 3 lan quet lien tiep moi phat identity_mismatch.
     - Session cu duoc restore tu data/sessions hoac storage_root cua test.
+
+
+11. TEST PAPER COUNT KHONG DUNG PAPER_ID (VIDEO)
+------------------------------------------------
+    python -m backend.ai_services.object_detect.test_video_paper_count ...\data\phone.mp4
+Chay tu thu muc develop-paper-count:
+
+    python -m backend.ai_services.object_detect.test_video_paper_count "C:\Users\Admin\Desktop\Presentation\develop\data\smartphone.mp4" "C:\Users\Admin\Desktop\Presentation\develop\data\cheatsheet.mp4" --setup-seconds 3 --frame-stride 3
+
+Output:
+
+    data\paper_count_results\outputs\smartphone_paper_count_output.mp4
+    data\paper_count_results\outputs\cheatsheet_paper_count_output.mp4
+    data\paper_count_results\outputs\smartphone_paper_count_report.json
+    data\paper_count_results\outputs\cheatsheet_paper_count_report.json
+
+Co che: hoc tong paper trong SETUP, gom bbox trung nhau, xac nhan thay doi
+qua 3 lan inference lien tiep, roi gan paper moi cho person_id gan nhat.

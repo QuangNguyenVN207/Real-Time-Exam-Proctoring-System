@@ -1,0 +1,103 @@
+{
+  "created_at_utc": "2026-08-27T14:36:53.502020+00:00",
+  "reproducible_command": "C:\\Real-Time-Exam-Proctoring-System\\.venv\\Scripts\\python.exe -m pose_gaze.holistic.feature_csv.stage6_retrain --input data\\processed\\behavior_stage1_stage2_features_8fps\\temporal_geometry_features.csv --feature-manifest data\\processed\\behavior_stage1_stage2_features_8fps\\feature_manifest.json --manifest data\\raw_video\\processed\\holistic_manifest_front_v4.csv --json-root data\\raw_video\\processed\\holistic_output_8fps --output-dir tmp\\causal_8fps_stage6_mixed_084699_final_20260827 --xgb-device cuda --c2-profile balanced_depth3 --c3-profile unweighted_depth3 --suspicious-profile balanced_depth4 --calibration-selection tmp\\causal_8fps_stage6_mix_multistart_20260827.json --minimum-actor-macro-f1 0.8",
+  "python_executable": "C:\\Real-Time-Exam-Proctoring-System\\.venv\\Scripts\\python.exe",
+  "python_version": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "xgboost_version": "3.4.0",
+  "sklearn_version": "1.9.0",
+  "xgboost_device": "cuda",
+  "selected_model_profiles": {
+    "c2": "balanced_depth3",
+    "c3": "unweighted_depth3",
+    "suspicious_activity": "balanced_depth4"
+  },
+  "git_head": "f87d0bcb68193eb68b323ac5545b08f66de77f5f",
+  "git_branch": "retrain-8fps",
+  "git_status_porcelain_sha256": "31115C52DDBE7FBD3F730B495613ABC6FECF81CA9A7FEFE5A30CE59D0392964B",
+  "model_profiles": {
+    "c2": {
+      "weight_policy": "balanced",
+      "params": {},
+      "rounds": 300
+    },
+    "c3": {
+      "weight_policy": "unweighted",
+      "params": {},
+      "rounds": 300
+    },
+    "suspicious_activity": {
+      "weight_policy": "balanced",
+      "params": {
+        "max_depth": 4
+      },
+      "rounds": 300
+    }
+  },
+  "model_params": {
+    "c2": {
+      "objective": "binary:logistic",
+      "tree_method": "hist",
+      "max_depth": 3,
+      "min_child_weight": 2,
+      "eta": 0.035,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "seed": 20260811,
+      "device": "cuda"
+    },
+    "c3": {
+      "objective": "binary:logistic",
+      "tree_method": "hist",
+      "max_depth": 3,
+      "min_child_weight": 2,
+      "eta": 0.035,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "seed": 20260811,
+      "device": "cuda"
+    },
+    "suspicious_activity": {
+      "objective": "binary:logistic",
+      "tree_method": "hist",
+      "max_depth": 4,
+      "min_child_weight": 2,
+      "eta": 0.035,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9,
+      "seed": 20260811,
+      "device": "cuda"
+    }
+  },
+  "boost_rounds": {
+    "c2": 300,
+    "c3": 300,
+    "suspicious_activity": 300
+  },
+  "final_class_weights": {
+    "c2": {
+      "policy": "balanced",
+      "negative_rows": 18071,
+      "positive_rows": 2440,
+      "negative_weight": 0.5675114824857507,
+      "positive_weight": 4.2030737704918035,
+      "actor_count": 150
+    },
+    "c3": {
+      "policy": "unweighted",
+      "negative_rows": 17970,
+      "positive_rows": 2541,
+      "negative_weight": 1.0,
+      "positive_weight": 1.0,
+      "actor_count": 150
+    },
+    "suspicious_activity": {
+      "policy": "balanced",
+      "negative_rows": 13518,
+      "positive_rows": 6993,
+      "negative_weight": 0.7586551264980027,
+      "positive_weight": 1.4665379665379665,
+      "actor_count": 150
+    }
+  }
+}

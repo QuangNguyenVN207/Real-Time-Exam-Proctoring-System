@@ -52,19 +52,6 @@ def main() -> None:
         help="Webcam index or path to an MP4/video file.",
     )
     parser.add_argument("--session-id", default=None)
-    parser.add_argument(
-        "--enable-face-identity",
-        action="store_true",
-        help=(
-            "Use RetinaFace/ArcFace for automatic stable person IDs and "
-            "identity-mismatch alerts."
-        ),
-    )
-    parser.add_argument(
-        "--face-db",
-        default=settings.face_db_path,
-        help="Directory of reference images named <person_id>.jpg/png.",
-    )
     args = parser.parse_args()
     source: int | str = (
         int(args.source) if args.source.isdigit() else args.source
@@ -72,8 +59,18 @@ def main() -> None:
     is_live_webcam = isinstance(source, int)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if device == "cpu":
+        try:
+            import openvino as ov
+            if "GPU" in ov.Core().available_devices:
+                device = "GPU"
+        except ImportError:
+            print("[INFO] OpenVINO not installed; falling back to CPU-only inference.")
+            pass
+    # 2. Tự động dùng model OpenVINO cho nhận diện người nếu đang dùng GPU Intel
+    person_model_path = "weights/yolov8n_openvino_model" if device == "GPU" else "weights/yolov8n.pt"
     person_detector = UltralyticsPersonDetector(
-        model_path=Path("weights/yolov8n.pt"),
+        model_path=Path(person_model_path),
         confidence_threshold=0.55,
         device=device,
     )
@@ -90,11 +87,6 @@ def main() -> None:
             else None
         ),
     )
-    face_verifier = None
-    if args.enable_face_identity:
-        from backend.ai_services.face_verify.face_verify import FaceVerifier
-
-        face_verifier = FaceVerifier(db_path=args.face_db)
     pipeline = PoseGazePaperPipeline(
         person_detector=person_detector,
         object_detector=object_detector,
@@ -105,7 +97,6 @@ def main() -> None:
             if is_live_webcam
             else 1
         ),
-        face_verifier=face_verifier,
     )
     source_stem = (
         "webcam"
@@ -113,7 +104,7 @@ def main() -> None:
         else Path(str(source)).stem
     )
     session_id = args.session_id or f"paper_tracking_{source_stem}"
-    pipeline.create_session(session_id, restore_existing=True)
+    pipeline.create_session(session_id)
 
     capture = cv2.VideoCapture(source)
     if is_live_webcam:

@@ -21,10 +21,10 @@ class Settings:
     yolo_model_path: str = str(BASE_DIR / "weights" / "best (1).pt")
     yolo_confidence_threshold: float = 0.5
     object_class_confidence_thresholds: dict[str, float] = {
-        "earphone": 0.55,
+        "earphone": 0.75,
         "smartphone": 0.55,
     }
-    paper_detection_confidence_threshold: float = 0.30
+    paper_detection_confidence_threshold: float = 0.20
     object_inference_size: int = 640
     frame_resize_width: int = 640
     # Paper classes are tracked by physical paper_id. They must not go through
@@ -41,8 +41,8 @@ class Settings:
     ]
     object_confirm_frames: int = 3         # số lần phát hiện cần có trong cửa sổ xác nhận
     object_confirm_window: int = 5         # chịu được tối đa hai inference hụt detection
-    object_detect_every_n_frames: int = 3  # chạy YOLO mỗi N frame, đỡ tốn CPU
-    smartphone_fallback_enabled: bool = True
+    object_detect_every_n_frames: int = 2  # chạy YOLO mỗi N frame, đỡ tốn CPU
+    smartphone_fallback_enabled: bool = False
     smartphone_fallback_model_path: str = str(
         BASE_DIR / "weights" / "yolov8n.pt"
     )
@@ -55,6 +55,14 @@ class Settings:
     smartphone_confuser_confidence_threshold: float = 0.20
     smartphone_confuser_overlap_threshold: float = 0.20
     smartphone_calculator_grid_filter_enabled: bool = True
+    # COCO occasionally labels a bright marker/pen as ``cell phone`` when a
+    # person ROI magnifies it. Reject only the narrow bright-component pattern
+    # seen in those false positives; broad light-coloured phones remain valid.
+    smartphone_pen_shape_filter_enabled: bool = True
+    # Class presence alone is not enough for a temporal alert: detections in
+    # the rolling window must also refer to the same physical image region.
+    object_spatial_match_overlap_threshold: float = 0.20
+    object_spatial_match_center_distance_ratio: float = 1.25
     # The COCO fallback calls notebooks/books ``book``. In this exam domain a
     # visible book is treated exactly like a cheat sheet and routed through the
     # paper identity tracker instead of the legacy object alert counter.
@@ -65,7 +73,11 @@ class Settings:
     book_fallback_max_aspect_ratio: float = 3.5
     person_roi_object_enabled: bool = True
     person_roi_object_inference_size: int = 960
-    person_roi_phone_confidence_threshold: float = 0.35
+    # A phone held edge-on or partly covered by a hand is often only 0.20-0.30
+    # confident even after the person ROI is enlarged. Keep the full-frame
+    # threshold conservative, but recover these hand-held phones inside the
+    # tracked interaction ROI; temporal/spatial confirmation still applies.
+    person_roi_phone_confidence_threshold: float = 0.15
     person_roi_book_confidence_threshold: float = 0.10
     person_roi_phone_min_short_side_ratio: float = 0.0125
     person_roi_phone_min_aspect_ratio: float = 1.55
@@ -75,7 +87,7 @@ class Settings:
     # classes again inside each tracked person's interaction ROI.
     person_roi_custom_paper_enabled: bool = True
     person_roi_custom_paper_inference_size: int = 768
-    person_roi_custom_paper_confidence_threshold: float = 0.20
+    person_roi_custom_paper_confidence_threshold: float = 0.15
     person_roi_horizontal_expansion: float = 0.15
     person_roi_top_expansion: float = 0.08
     person_roi_full_body_bottom_ratio: float = 0.82
@@ -93,7 +105,9 @@ class Settings:
     webcam_max_height: int = 540
     webcam_person_detect_every_n_frames: int = 2
     webcam_object_detect_every_n_frames: int = 4
-    webcam_phone_confidence_floor: float = 0.50
+    # Do not override the ROI threshold with a stricter live-only floor. The
+    # calculator/remote/marker guards and 3-in-5 confirmation reject confusers.
+    webcam_phone_confidence_floor: float = 0.15
 
     person_appearance_match_threshold: float = 0.78
     paper_registration_frames: int = 5
@@ -101,6 +115,13 @@ class Settings:
     paper_max_missed_frames: int = 12
     paper_auto_register_first: bool = True
     paper_appearance_match_threshold: float = 0.86
+
+    # Count-only paper experiment. Duplicate/partial boxes are clustered into
+    # one physical observation; a changed count must persist across two
+    # actual object-inference frames before it becomes an alert.
+    paper_count_confirm_inferences: int = 2
+    paper_count_duplicate_overlap_threshold: float = 0.35
+    paper_count_duplicate_center_distance_ratio: float = 0.70
 
     object_class_aliases: dict[str, str] = {
         "cheatsheet": "cheat_sheet",

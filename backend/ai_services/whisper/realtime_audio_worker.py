@@ -5,8 +5,9 @@ from math import gcd
 
 import numpy as np
 import sounddevice as sd
-from scipy.signal import butter, sosfiltfilt, resample_poly
+from scipy.signal import resample_poly
 
+# Đảm bảo đường dẫn import đúng với cấu trúc thư mục của bạn
 from backend.ai_services.whisper.audio_pipeline import AudioPipeline
 
 class RealtimeAudioWorker:
@@ -122,7 +123,7 @@ class RealtimeAudioWorker:
     # Worker loop (🔥 LOGIC CẮT CÂU MỚI NẰM Ở ĐÂY)
     # =========================
     def _worker_loop(self):
-        print("[Worker] Started.")
+        print("[Worker] Started. Đang chờ âm thanh...")
 
         while not self.stop_event.is_set():
             try:
