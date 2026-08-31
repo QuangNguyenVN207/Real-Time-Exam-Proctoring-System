@@ -679,14 +679,7 @@ def process_video_from_json(args: argparse.Namespace) -> int:
                     x1, y1, x2, y2 = map(round, bbox)
                     classification = (
                         classifications.get(str(track_id))
-<<<<<<< HEAD
-                        or classifications.get(str(
-                            track.get("student_id")
-                            or f"{args.student_prefix}{track_id:02d}"
-                        ))
-=======
                         or classifications.get(str(track.get("student_id")))
->>>>>>> 1168bab (Revert "Merge branch 'main' into develop")
                     )
                     if classification:
                         activation = classification.get(
