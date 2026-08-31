@@ -31,10 +31,38 @@ from ...tracking.webcam import (
 
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "c2c3": PROJECT_ROOT / "tmp" / "behavior_actor_causal_pose_only_20260812",
-    "extended": PROJECT_ROOT / "tmp" / "behavior_actor_extended_suspicious_readiness15_baseline15_20260814",
+    "extended": PROJECT_ROOT / "stage6_bundle_exact" / "causal_8fps_stage6_mixed_084699_final_20260827",
 }
-SUPPORTED_ACTIONS = ("c1", "c2", "c3", "c4", "c5", "c7", "suspicious_activity")
+SUPPORTED_ACTIONS = ("c2", "c3", "c5", "suspicious_activity")
+
+
+class DemoWebcamInteractionController(WebcamInteractionController):
+    """Add demo compute hotkey while preserving prompt text semantics."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.compute_switch_requested = False
+
+    def handle_key(self, raw_key: int) -> None:
+        key = raw_key & 0xFF
+        if self.prompt_mode is None and key in (ord("c"), ord("C")):
+            self.compute_switch_requested = True
+            return
+        super().handle_key(raw_key)
+
+    def consume_compute_switch(self) -> bool:
+        requested = self.compute_switch_requested
+        self.compute_switch_requested = False
+        return requested
+
+# Lazy imports so webcam still starts without debug deps installed
+try:
+    from ..debug.frame_trace import FrameTraceLogger, FrameTraceRecord
+    from ..debug.events import C3Trial, OcclusionEvent, SessionEvents, TimeInterval, TrackResetEvent
+    from ..debug.session_manifest import SessionManifestRecorder
+    _DEBUG_AVAILABLE = True
+except ImportError:
+    _DEBUG_AVAILABLE = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -144,10 +172,9 @@ def configure_action_models(args: argparse.Namespace) -> tuple[str, ...]:
     if "suspicious_activity" in enabled:
         args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
     elif {"c2", "c3"} & set(enabled):
-        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["c2c3"]
-    # Only the locked C2/C3 benchmark artifact is bundled.  Other specialists
-    # require an explicit artifact directory instead of silently referencing
-    # local, uncommitted experiment outputs.
+        # The promoted extended artifact contains the deployed C2/C3
+        # specialists as well as suspicious_activity.
+        args.causal_model_dir = args.causal_model_dir or DEFAULT_ACTION_ARTIFACTS["extended"]
     if not ({"c2", "c3", "suspicious_activity"} & set(enabled)):
         args.causal_model_dir = None
     if not args.live_pair and "c2" in enabled:
@@ -455,6 +482,8 @@ def main() -> None:
 
                 inference_started_at = monotonic()
                 latest_packet = tracking.process_frame(frame)
+                if _capture_start_ms is None:
+                    _capture_start_ms = int(latest_packet.timestamp_ms)
                 # Live causal classifiers require stable actor IDs.  The old
                 # interactive prompt blocks the frame loop before any model
                 # can warm up, so assign deterministic demo IDs immediately.

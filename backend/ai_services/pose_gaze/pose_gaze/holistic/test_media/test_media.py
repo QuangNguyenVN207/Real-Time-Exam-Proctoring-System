@@ -488,6 +488,8 @@ def process_one_frame(
         if live_classifier is not None
         else None
     )
+    inference_ms = (monotonic() - started_at) * 1000.0
+
     write_landmark_record(
         landmark_writer,
         source_frame_index=source_frame_index,
@@ -509,39 +511,28 @@ def process_one_frame(
     return annotated, packet
 
 
-def create_live_classifier(args: argparse.Namespace, *, clip_id: str):
+def create_live_classifier(
+    args: argparse.Namespace,
+    *,
+    clip_id: str,
+    structured: bool = False,
+):
     """Build one shared causal classifier for media replay or live capture."""
-    from .live_actor import (
-        CausalLiveActorClassifier,
-        CausalPoseActorClassifier,
-        CausalC7ActorClassifier,
-        CombinedCausalActorClassifier,
-    )
+    from .live_actor import load_causal_live_actor_classifier
 
-    classifiers = []
-    if args.xgboost_model_dir is not None:
-        classifiers.append(CausalLiveActorClassifier(
-            args.xgboost_model_dir.resolve(),
-            clip_id=clip_id,
-            student_prefix=args.student_prefix,
-            explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
-        ))
-    pose_dirs = {
-        class_code: path.resolve()
-        for class_code, path in (("c1", args.c1_model_dir), ("c4", args.c4_model_dir))
-        if path is not None
-    }
-    if pose_dirs:
-        classifiers.append(CausalPoseActorClassifier(
-            pose_dirs, student_prefix=args.student_prefix
-        ))
-    if args.c7_model_dir is not None:
-        classifiers.append(CausalC7ActorClassifier(
-            args.c7_model_dir.resolve(),
-            student_prefix=args.student_prefix,
-            explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
-        ))
-    return classifiers[0] if len(classifiers) == 1 else CombinedCausalActorClassifier(classifiers)
+    result = load_causal_live_actor_classifier(
+        args.xgboost_model_dir.resolve(),
+        clip_id=clip_id,
+        student_prefix=args.student_prefix,
+        explicit_pairs=[tuple(pair.split(":", 1)) for pair in args.live_pair],
+        c3_threshold_override=getattr(args, "c3_threshold_override", None),
+        xgboost_device=getattr(args, "xgboost_device", "cpu"),
+    )
+    if structured:
+        return result
+    if not result.available or result.classifier is None:
+        raise RuntimeError(result.error or "causal live model unavailable")
+    return result.classifier
 
 def open_landmark_writer(
     args: argparse.Namespace,

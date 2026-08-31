@@ -30,7 +30,95 @@ MODEL_CLASSES = ("c2", "c3", "c5", "c7")
 EXCLUDE_C7 = False
 EXTENDED_SUSPICIOUS = False
 FRAME_FLAG_THRESHOLD = 0.5
-CAUSAL_WARMUP_FRAMES = 15
+CAUSAL_WARMUP_FRAMES = 4
+C2_HEAD_TURN_BASELINE_FRAMES = 8
+XGBOOST_DEVICE = "cpu"
+
+
+def _sample_index(row):
+    return int(row.get("sample_index", row.get("source_frame_index", 0)))
+
+
+def _timestamp_ms(row):
+    value = float(row.get("timestamp_ms", 0.0))
+    return value if math.isfinite(value) else float("nan")
+
+
+def _rate(current, previous, dt_s, *, valid=True, max_gap_s=0.450):
+    if not valid or current is None or previous is None or not math.isfinite(dt_s) or not 0.0 < dt_s <= max_gap_s:
+        return float("nan"), 0
+    try:
+        current, previous = float(current), float(previous)
+    except (TypeError, ValueError):
+        return float("nan"), 0
+    if not math.isfinite(current) or not math.isfinite(previous):
+        return float("nan"), 0
+    return (current - previous) / dt_s, 1
+
+
+def _apply_stage3_temporal_contract(rows, max_derivative_gap_ms=450):
+    """Normalize approved derivatives to timestamp and continuity semantics."""
+    grouped = defaultdict(list)
+    for row in rows:
+        grouped[(row["clip_id"], row["actor_id"])].append(row)
+    rate_names = (
+        "pair_convergence", "hand_direction", "hand_speed", "finger_speed",
+        "finger_motion", "hand_finger_motion", "c3_pose_head_peer_velocity",
+        "c3_pose_torso_peer_velocity", "hand_motion",
+    )
+    max_gap_s = float(max_derivative_gap_ms) / 1000.0
+    for group in grouped.values():
+        group.sort(key=lambda row: (_sample_index(row), _timestamp_ms(row)))
+        previous = None
+        previous_track = None
+        previous_epoch = None
+        previous_values = {}
+        for row in group:
+            sample = _sample_index(row)
+            timestamp = _timestamp_ms(row)
+            track = str(row.get("track_id", row.get("actor_id", "")))
+            epoch = row.get("continuity_epoch", row.get("track_continuity_epoch", 0))
+            continuous = (previous is not None and sample == previous["sample"] + 1
+                          and track == previous_track and epoch == previous_epoch)
+            dt_s = (timestamp - previous["timestamp"]) / 1000.0 if previous is not None else float("nan")
+            row["dt_s"] = dt_s
+            row["continuity_valid"] = int(continuous)
+            if not continuous:
+                previous_values.clear()
+            for name in rate_names:
+                rate_valid = (
+                    continuous and 0.0 < dt_s <= max_gap_s
+                    and _is_number(row.get(name))
+                )
+                row[f"{name}_valid"] = int(rate_valid)
+                if not rate_valid:
+                    row[name] = float("nan")
+            for rate_name, value_name in (
+                ("c3_pose_head_peer_velocity", "c3_pose_head_peer_delta"),
+                ("c3_pose_torso_peer_velocity", "c3_pose_torso_peer_delta"),
+            ):
+                previous_measurement = previous_values.get(value_name)
+                measurement_dt = ((timestamp - previous_measurement[1]) / 1000.0
+                                  if previous_measurement is not None else float("nan"))
+                value, valid = _rate(
+                    row.get(value_name),
+                    previous_measurement[0] if previous_measurement is not None else None,
+                    measurement_dt,
+                    valid=continuous,
+                    max_gap_s=max_gap_s,
+                )
+                row[rate_name] = value
+                row[f"{rate_name}_valid"] = valid
+            for value_name in ("c3_pose_head_peer_delta", "c3_pose_torso_peer_delta"):
+                try:
+                    if math.isfinite(float(row.get(value_name))):
+                        previous_values[value_name] = (float(row[value_name]), timestamp)
+                except (TypeError, ValueError):
+                    pass
+            previous = {"sample": sample, "timestamp": timestamp}
+            previous_track = track
+            previous_epoch = epoch
+    return rows
 
 # Selected at runtime from numeric actor-frame geometry columns. Labels,
 # identity, time, semantic flags, and video metadata are excluded.
