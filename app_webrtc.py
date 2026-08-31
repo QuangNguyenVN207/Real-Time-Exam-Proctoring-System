@@ -562,7 +562,7 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
     # 3. Đẩy ảnh mới vào Queue cho AI xử lý (Frame Skipping)
 
     # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 2 frame ~ 10 FPS)
-    if SHARED_STATE["frame_count"] % 2 == 0:
+    if SHARED_STATE["frame_count"] % 1 == 0:
         if GAZE_QUEUE.full():
             try: GAZE_QUEUE.get_nowait()
             except queue.Empty: pass

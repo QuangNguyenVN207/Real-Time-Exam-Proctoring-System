@@ -21,7 +21,7 @@ class Settings:
     yolo_model_path: str = str(BASE_DIR / "weights" / "best (1).pt")
     yolo_confidence_threshold: float = 0.5
     object_class_confidence_thresholds: dict[str, float] = {
-        "earphone": 0.55,
+        "earphone": 0.75,
         "smartphone": 0.55,
     }
     paper_detection_confidence_threshold: float = 0.20
