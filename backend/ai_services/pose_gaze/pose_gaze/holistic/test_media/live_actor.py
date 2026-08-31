@@ -123,6 +123,12 @@ class CausalLiveActorClassifier:
         self.suspicious_model, self.suspicious_names = self._load_model(
             "suspicious_activity", schemas["suspicious_activity"]
         )
+        self.suspicious_model = self.suspicious_names = None
+        if self.suspicious_threshold is not None:
+            self.suspicious_model, self.suspicious_names = self._load_model(
+                "causal_suspicious_activity_specialist.ubj",
+                "causal_suspicious_activity_feature_names.json",
+            )
         self.c2_bases = tuple(name.rsplit("__", 1)[0] for name in self.c2_names[::5])
         self.c3_bases = tuple(name.rsplit("__", 1)[0] for name in self.c3_names[::5])
         self.suspicious_bases = tuple(name.rsplit("__", 1)[0] for name in self.suspicious_names[::5]) if self.suspicious_names else ()
