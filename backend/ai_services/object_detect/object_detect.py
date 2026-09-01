@@ -583,6 +583,8 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = False,
+        **kwargs: Any,
     ) -> dict[str, Any] | None:
         seen = self._frames_seen.get(session_id, 0) + 1
         self._frames_seen[session_id] = seen
@@ -594,6 +596,7 @@ class ObjectDetectModule:
             skipped_result = dict(cached)
             skipped_result["inference_ran"] = False
             skipped_result["requested_frame_id"] = frame_id
+            skipped_result["pose_gate"] = pose_suspicious_activity
             return skipped_result
 
         result = self._process_sync(
@@ -601,9 +604,12 @@ class ObjectDetectModule:
             session_id,
             frame_id,
             person_rois=person_rois,
+            pose_suspicious_activity=pose_suspicious_activity,
+            **kwargs,
         )
         result["inference_ran"] = True
         result["requested_frame_id"] = frame_id
+        result["pose_gate"] = pose_suspicious_activity
         self._last_result[session_id] = result
         return result
 
@@ -614,6 +620,8 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = False,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         predictions = self._model(
             frame,
@@ -685,6 +693,7 @@ class ObjectDetectModule:
                 else "identity_and_count_only"
             ),
         }
+        result["pose_gate"] = pose_suspicious_activity
         return result
 
     def _extract_detections(self, predictions: Any) -> list[dict[str, Any]]:
