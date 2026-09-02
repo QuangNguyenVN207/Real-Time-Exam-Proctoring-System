@@ -24,7 +24,7 @@ class ObjectDetector:
     """
 
     BANNED_ITEMS = [
-        "cheat_sheet",
+        # "cheat_sheet",
         "earphone",
         "smartwatch",
         "smartphone",
@@ -159,7 +159,10 @@ class ObjectDetector:
 
             # label = self._canonical_class_name(names.get(class_id, class_id))
             confidence = float(self._first_scalar(box.conf))
-            
+            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL CŨ BẮT GIẤY / CHEATSHEET
+            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper"]:
+                continue
+
             if (
                 label not in self.BANNED_ITEMS
                 or confidence <= self.confidence_threshold
@@ -229,6 +232,10 @@ class ObjectDetector:
             class_id = int(self._first_scalar(box.cls))
             label = self._canonical_class_name(names.get(class_id, class_id))
             confidence = float(self._first_scalar(box.conf))
+            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL CŨ BẮT GIẤY / CHEATSHEET
+            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper"]:
+                continue
+            
             if (
                 label not in self.BANNED_ITEMS
                 or confidence <= self.confidence_threshold

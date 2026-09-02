@@ -3,6 +3,14 @@ import logging
 import warnings
 
 # ==========================================
+# KHỐI LỆNH TẮT TRIỆT ĐỂ LOG RÁC (C++ & TENSORFLOW)
+# ==========================================
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt toàn bộ log C++ của TensorFlow / TFLite
+os.environ["GLOG_minloglevel"] = "3"             # Tắt toàn bộ log C++ của Google Logging / MediaPipe
+os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log của ONNX Runtime (4 = FATAL)
+
+
+# ==========================================
 # KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
 # ==========================================
 # Tối ưu hóa driver SYCL cho Intel Arc (Giảm độ trễ giao tiếp)
@@ -23,11 +31,6 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
-
-# ---> THÊM 3 DÒNG NÀY ĐỂ DIỆT GỌN LOG CỦA MEDIAPIPE, TENSORFLOW VÀ ONNX <---
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
-os.environ["GLOG_minloglevel"] = "3"
-os.environ["ORT_LOGGING_LEVEL"] = "4"
 
 import cv2
 import threading
@@ -55,7 +58,11 @@ def initialize_openvino():
 core, devices = initialize_openvino()
 
 # Import các module AI của bạn
-from backend.ai_services.object_detect.object_detect import ObjectDetector
+from pathlib import Path
+from backend.ai_services.pose_gaze import paper_pipeline
+from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
+from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
+from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
 from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
@@ -100,6 +107,10 @@ def init_system_resources():
         "holistic_model": None,       # <--- THÊM MỚI
         "live_classifier": None,     # <--- THÊM MỚI
         "tracking_manager": None,    # <--- THÊM MỚI
+        # Bổ sung vào dictionary SHARED_STATE / shared_state hiện có
+        "action_arm_paper": False,       # Thay cho phím A
+        "action_disarm_paper": False,    # Thay cho phím D
+        "paper_status_msg": "SETUP - Đang chờ cố định baseline",
         "frame_count": 0,
         "logs": []
     }
@@ -117,7 +128,25 @@ def init_system_resources():
                 device="GPU",
                 confidence_threshold=0.5
             )
+            paper_object_detector = ObjectDetectModule(
+                # model=yolo_model.model,
+                device="cpu"
+            )
             face_model = FaceVerifier(db_path="data/student_faces/")
+            # Khởi tạo pipeline như trong test_paper_count_webcam
+            person_detector = UltralyticsPersonDetector(
+                model_path=Path("weights/yolov8n.pt"), # Sửa theo đường dẫn model pose của bạn
+                confidence_threshold=0.55, 
+                device="cpu"
+            )
+            session_id = f"paper_session_{int(time.time())}"
+            paper_pipeline = PaperCountPipeline(
+                person_detector=person_detector,
+                object_detector=paper_object_detector, # Đối tượng ObjectDetectModule đang có sẵn trong luồng
+                storage_root=Path("test_data_tracking"),
+                max_people=2
+        )
+            paper_pipeline.create_session(session_id, restore_existing=True)
         except Exception as e:
             print(f"[LỖI KHỞI TẠO AI THỊ GIÁC]: {e}")
             vision_ready.set()
@@ -229,12 +258,21 @@ def init_system_resources():
     
             if result_yolo is not None:
                 detections = result_yolo.get("detections", [])
+                # 🛑 LỌC BỎ CÁC NHÃN LIÊN QUAN ĐẾN GIẤY / TÀI LIỆU CỦA MODEL CŨ
+                filtered_detections = []
+                for det in detections:
+                    label = str(det.get("label", "")).lower()
+                    # Nếu nhãn KHÔNG PHẢI là giấy/tài liệu thì giữ lại (như phone, earphone, smartwatch...)
+                    if label not in ["paper", "document", "cheatsheet", "sheet", "tai_lieu", "giay"]:
+                        filtered_detections.append(det)
+                
+                result_yolo["detections"] = filtered_detections
         
                 # [DEBUG 2] Kiểm tra số lượng vật thể bắt được
-                if len(detections) > 0:
+                if len(filtered_detections) > 0:
                     # print(f"[DEBUG YOLO] Đã bắt được {len(detections)} vật thể. Cập nhật status thành 'alert'.")
                     result_yolo["status"] = "alert" # BẮT BUỘC: Đánh dấu là cảnh báo để hàm Main xử lý
-            
+                    result_yolo["module"] = "object_detect"
                     # Đẩy vào queue nếu chưa đầy
                     if not result_q.full():
                         result_q.put(result_yolo)
@@ -256,6 +294,50 @@ def init_system_resources():
                 # if not result_q.full(): 
                 #     result_q.put(result_yolo)
 
+            # =========================================================
+            # ---> XỬ LÝ AN TOÀN NÚT BẤM ĐẾM GIẤY (ARM / DISARM) <---
+            # =========================================================
+            try:
+                if shared_state.get("action_arm_paper"):
+                    state_info = paper_pipeline.arm_paper_monitoring(session_id)
+                    baseline_count = state_info.get('baseline_count', 0) if isinstance(state_info, dict) else 0
+                    shared_state["paper_status_msg"] = f"ARMED! Baseline: {baseline_count} giấy."
+                    shared_state["action_arm_paper"] = False
+                    
+                if shared_state.get("action_disarm_paper"):
+                    # Gọi chuẩn phương thức reset session của pipeline thay vì gọi ngầm
+                    paper_pipeline.create_session(session_id, restore_existing=False)
+                    shared_state["paper_status_msg"] = "DISARMED! Đã quay lại chế độ SETUP (Baseline = 0)."
+                    shared_state["action_disarm_paper"] = False
+            except Exception as ex:
+                print(f"[LỖI ĐIỀU KHIỂN PIPELINE GIẤY]: {ex}")
+                shared_state["action_arm_paper"] = False
+                shared_state["action_disarm_paper"] = False
+
+            # 2. Chạy pipeline đếm giấy an toàn với try-except
+            try:
+                result_paper = paper_pipeline.process_frame(
+                    frame, 
+                    session_id=session_id, 
+                    frame_id=shared_state["frame_count"], 
+                    timestamp_ms=int(timestamp * 1000)
+                )
+            except Exception as ex:
+                # Bắt lỗi để luồng Vision không bao giờ bị chết ngầm làm sập cam
+                print(f"[LỖI XỬ LÝ FRAME GIẤY]: {ex}")
+                result_paper = None
+
+            # 3. Đẩy kết quả giấy & cảnh báo vào RESULT_QUEUE
+            if result_paper and not result_q.full():
+                paper_data = {
+                    "module": "paper_count",
+                    "status": "alert" if result_paper.get("alerts") else "info",
+                    "timestamp": timestamp,
+                    "alerts": result_paper.get("alerts", []),
+                    "papers": result_paper.get("papers", [])
+                }
+                result_q.put(paper_data)
+
             # ---> ĐỒNG BỘ: Luồng Camera giám sát giờ cũng dùng Masking để quét người lạ <---
             result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
             if result_face and not result_q.full(): 
@@ -270,7 +352,7 @@ def init_system_resources():
         gaze_model = PoseGazeDetector()
         shared_state["gaze_model"] = gaze_model
         # 2. Khởi tạo Tracking & Holistic từ test_webcam.py (Dùng session động để tránh trùng lặp)
-        session_id = f"webrtc_session_{int(time.time())}"
+        session_id = f"gaze_session_{int(time.time())}"
         # 2. Khởi tạo Tracking & Holistic từ test_webcam.py
         tracking_module = PersonTrackingModule(
             PersonTrackingConfig(
@@ -280,6 +362,11 @@ def init_system_resources():
                 max_tracks=2,
             )
         )
+        # Thêm dòng này để xử lý an toàn nếu manager giữ lại session cũ
+        try:
+            tracking_module.manager.create_session(session_id, restore_existing=True)
+        except Exception:
+            pass
         shared_state["tracking_manager"] = tracking_module.manager
         
         holistic = HolisticLandmarkExtractor(
@@ -484,6 +571,27 @@ def draw_warning_overlays(frame):
                 cv2.rectangle(frame, (0, frame.shape[0] - 40), (frame.shape[1], frame.shape[0]), (0, 0, 200), -1)
                 cv2.putText(frame, f"[CANH BAO TU THE]: {action}", (20, frame.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
+            # =========================================================
+            # ---> BẮT ĐẦU CHÈN LOGIC 5: VẼ KHUNG GIẤY Ở ĐÂY <---
+            # =========================================================
+            elif module == "paper_count" and alert.get("papers"):
+                for paper in alert["papers"]:
+                    x1, y1, x2, y2 = paper["bbox_xyxy"]
+                    status_paper = paper["status"]
+                    
+                    # Phân biệt Baseline (màu Vàng/Cyan) và Cheatsheet (Màu Đỏ)
+                    is_suspicious = (status_paper == "suspicious_new_paper")
+                    color = (0, 0, 255) if is_suspicious else (0, 255, 255)
+                    
+                    # Nhãn text
+                    label = "CHEAT SHEET (NEW)" if is_suspicious else f"Paper #{paper.get('observation_index', '?')}"
+                    
+                    # Vẽ Box và Text
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                    cv2.putText(frame, label, (x1, max(18, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # =========================================================
+            # ---> KẾT THÚC LOGIC 5 <---
+            # =========================================================
     return frame
 
 # ==========================================
@@ -533,6 +641,8 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
                 # print(f"[DEBUG MAIN] 🚨 Kích hoạt log 'PHÁT HIỆN NGƯỜI LẠ' lên giao diện lịch sử!")
             elif module_name == "object_detect" and status == "alert":
                 log_msg = f"**[{time_str}]** 📱 PHÁT HIỆN VẬT CẤM!"
+            elif module_name == "paper_count" and status == "alert":
+                log_msg = f"**[{time_str}]** <span style='color:red'>📄 PHÁT HIỆN TÀI LIỆU LẠ (CHEATSHEET)!</span>"
             # elif module_name == "pose_gaze" and status == "warning":
             #     log_msg = f"**[{time_str}]** ⚠️ TƯ THẾ: {details.get('action', 'Bất thường')}"
             elif module_name == "pose_gaze" and status == "warning":
@@ -599,7 +709,17 @@ with col1:
     # Nút bấm đăng ký khuôn mặt
     if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
         SHARED_STATE["save_face_flag"] = True
-
+    st.markdown("#### 📄 Cấu hình Giấy thi & Cheatsheet")
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("🔒 Cố định Baseline (A)", use_container_width=True):
+            SHARED_STATE["action_arm_paper"] = True
+    with btn_col2:
+        if st.button("🔄 Reset Setup (D)", use_container_width=True):
+            SHARED_STATE["action_disarm_paper"] = True
+            
+    # Hiển thị trạng thái đếm giấy hiện tại
+    st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
     # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
     webrtc_streamer(
         key="exam-proctor",
