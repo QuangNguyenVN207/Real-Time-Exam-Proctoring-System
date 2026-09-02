@@ -769,17 +769,27 @@ class ObjectDetectModule:
         if not roi_specs:
             return []
 
-        predictions = self._model(
-            [
-                frame[y1:y2, x1:x2]
-                for x1, y1, x2, y2 in roi_specs
-            ],
-            imgsz=settings.person_roi_custom_paper_inference_size,
-            # device=self._device,
-            conf=settings.person_roi_custom_paper_confidence_threshold,
-            classes=self._custom_paper_class_ids,
-            verbose=False,
-        )
+        # predictions = self._model(
+        #     [
+        #         frame[y1:y2, x1:x2]
+        #         for x1, y1, x2, y2 in roi_specs
+        #     ],
+        #     imgsz=settings.person_roi_custom_paper_inference_size,
+        #     # device=self._device,
+        #     conf=settings.person_roi_custom_paper_confidence_threshold,
+        #     classes=self._custom_paper_class_ids,
+        #     verbose=False,
+        # )
+        predictions = []
+        for x1, y1, x2, y2 in roi_specs:
+            pred = self._model(
+                frame[y1:y2, x1:x2],
+                imgsz=settings.person_roi_custom_paper_inference_size,
+                conf=settings.person_roi_custom_paper_confidence_threshold,
+                classes=self._custom_paper_class_ids,
+                verbose=False,
+            )
+            predictions.append(pred[0]) # Gộp kết quả lại để tương thích với phần code bên dưới
         detections: list[dict[str, Any]] = []
         for (offset_x, offset_y, _, _), result, owner_hint in zip(
             roi_specs,
