@@ -159,8 +159,8 @@ class ObjectDetector:
 
             # label = self._canonical_class_name(names.get(class_id, class_id))
             confidence = float(self._first_scalar(box.conf))
-            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL CŨ BẮT GIẤY / CHEATSHEET
-            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper"]:
+            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL NHẬN DIỆN GIẤY THÀNH SMARTPHONE
+            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper", "book"]:
                 continue
 
             if (
