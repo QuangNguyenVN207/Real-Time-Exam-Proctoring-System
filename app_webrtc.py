@@ -6,6 +6,17 @@ import warnings
 # ==========================================
 # KHỐI LỆNH TẮT TRIỆT ĐỂ LOG RÁC (C++ & TENSORFLOW)
 # ==========================================
+try:
+    # Mở file devnull (hoặc NUL trên Windows)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    # Chuyển hướng File Descriptor 2 (stderr của C/C++) vào devnull
+    os.dup2(devnull_fd, 2)
+    os.close(devnull_fd)
+except Exception:
+    pass
+# Tắt cảnh báo NNPACK của PyTorch
+os.environ["TORCH_SHOW_CPP_WARNINGS"] = "0"
+logging.getLogger("torch.nnpack").setLevel(logging.ERROR)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt toàn bộ log C++ của TensorFlow / TFLite
 os.environ["GLOG_minloglevel"] = "3"             # Tắt toàn bộ log C++ của Google Logging / MediaPipe
 os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log của ONNX Runtime (4 = FATAL)
@@ -820,22 +831,22 @@ st.markdown("<h1 style='text-align: center; color: #4CAF50;'>HỆ THỐNG GIÁM 
 col1, col2 = st.columns([7, 3])
 
 with col1:
-    st.markdown("### 📷 Camera Giám Sát Real-time (Zero Latency)")
+    st.markdown("### 📷 Camera Giám Sát Real-time")
     
-    # Nút bấm đăng ký khuôn mặt
-    if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
-        SHARED_STATE["save_face_flag"] = True
-    st.markdown("#### 📄 Cấu hình Giấy thi & Cheatsheet")
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        if st.button("🔒 Cố định Baseline (A)", use_container_width=True):
-            SHARED_STATE["action_arm_paper"] = True
-    with btn_col2:
-        if st.button("🔄 Reset Setup (D)", use_container_width=True):
-            SHARED_STATE["action_disarm_paper"] = True
+    # # Nút bấm đăng ký khuôn mặt
+    # if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
+    #     SHARED_STATE["save_face_flag"] = True
+    # st.markdown("#### 📄 Cấu hình Giấy thi & Cheatsheet")
+    # btn_col1, btn_col2 = st.columns(2)
+    # with btn_col1:
+    #     if st.button("🔒 Cố định Baseline (A)", use_container_width=True):
+    #         SHARED_STATE["action_arm_paper"] = True
+    # with btn_col2:
+    #     if st.button("🔄 Reset Setup (D)", use_container_width=True):
+    #         SHARED_STATE["action_disarm_paper"] = True
             
-    # Hiển thị trạng thái đếm giấy hiện tại
-    st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
+    # # Hiển thị trạng thái đếm giấy hiện tại
+    # st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
     # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
     webrtc_streamer(
         key="exam-proctor",
@@ -855,6 +866,21 @@ with col1:
     )
 
 with col2:
+    # Nút bấm đăng ký khuôn mặt
+    if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
+        SHARED_STATE["save_face_flag"] = True
+    st.markdown("#### 📄 Cấu hình Giấy thi & Cheatsheet")
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("🔒 Cố định Baseline (A)", use_container_width=True):
+            SHARED_STATE["action_arm_paper"] = True
+    with btn_col2:
+        if st.button("🔄 Reset Setup (D)", use_container_width=True):
+            SHARED_STATE["action_disarm_paper"] = True
+            
+    # Hiển thị trạng thái đếm giấy hiện tại
+    st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
+
     st.markdown("### 📜 Lịch Sử Cảnh Báo")
 
     # ---> LỆNH TỰ ĐỘNG LÀM MỚI GIAO DIỆN MỖI 3 GIÂY (3000 mili-giây) <---
