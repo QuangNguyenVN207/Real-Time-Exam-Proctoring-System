@@ -24,7 +24,7 @@ class ObjectDetector:
     """
 
     BANNED_ITEMS = [
-        "cheat_sheet",
+        # "cheat_sheet",
         "earphone",
         "smartwatch",
         "smartphone",
@@ -159,7 +159,10 @@ class ObjectDetector:
 
             # label = self._canonical_class_name(names.get(class_id, class_id))
             confidence = float(self._first_scalar(box.conf))
-            
+            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL NHẬN DIỆN GIẤY THÀNH SMARTPHONE
+            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper", "book"]:
+                continue
+
             if (
                 label not in self.BANNED_ITEMS
                 or confidence <= self.confidence_threshold
@@ -229,6 +232,10 @@ class ObjectDetector:
             class_id = int(self._first_scalar(box.cls))
             label = self._canonical_class_name(names.get(class_id, class_id))
             confidence = float(self._first_scalar(box.conf))
+            # 🛑 CHẶN TUYỆT ĐỐI KHÔNG CHO PHÉP MODEL CŨ BẮT GIẤY / CHEATSHEET
+            if label in ["cheat_sheet", "paper", "document", "sheet", "test_paper"]:
+                continue
+            
             if (
                 label not in self.BANNED_ITEMS
                 or confidence <= self.confidence_threshold
@@ -583,6 +590,8 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = False,
+        **kwargs: Any,
     ) -> dict[str, Any] | None:
         seen = self._frames_seen.get(session_id, 0) + 1
         self._frames_seen[session_id] = seen
@@ -594,6 +603,7 @@ class ObjectDetectModule:
             skipped_result = dict(cached)
             skipped_result["inference_ran"] = False
             skipped_result["requested_frame_id"] = frame_id
+            skipped_result["pose_gate"] = pose_suspicious_activity
             return skipped_result
 
         result = self._process_sync(
@@ -601,9 +611,12 @@ class ObjectDetectModule:
             session_id,
             frame_id,
             person_rois=person_rois,
+            pose_suspicious_activity=pose_suspicious_activity,
+            **kwargs,
         )
         result["inference_ran"] = True
         result["requested_frame_id"] = frame_id
+        result["pose_gate"] = pose_suspicious_activity
         self._last_result[session_id] = result
         return result
 
@@ -614,6 +627,8 @@ class ObjectDetectModule:
         frame_id: int,
         *,
         person_rois: list[dict[str, Any]] | None = None,
+        pose_suspicious_activity: bool = False,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         predictions = self._model(
             frame,
@@ -685,6 +700,7 @@ class ObjectDetectModule:
                 else "identity_and_count_only"
             ),
         }
+        result["pose_gate"] = pose_suspicious_activity
         return result
 
     def _extract_detections(self, predictions: Any) -> list[dict[str, Any]]:
@@ -760,17 +776,27 @@ class ObjectDetectModule:
         if not roi_specs:
             return []
 
-        predictions = self._model(
-            [
-                frame[y1:y2, x1:x2]
-                for x1, y1, x2, y2 in roi_specs
-            ],
-            imgsz=settings.person_roi_custom_paper_inference_size,
-            # device=self._device,
-            conf=settings.person_roi_custom_paper_confidence_threshold,
-            classes=self._custom_paper_class_ids,
-            verbose=False,
-        )
+        # predictions = self._model(
+        #     [
+        #         frame[y1:y2, x1:x2]
+        #         for x1, y1, x2, y2 in roi_specs
+        #     ],
+        #     imgsz=settings.person_roi_custom_paper_inference_size,
+        #     # device=self._device,
+        #     conf=settings.person_roi_custom_paper_confidence_threshold,
+        #     classes=self._custom_paper_class_ids,
+        #     verbose=False,
+        # )
+        predictions = []
+        for x1, y1, x2, y2 in roi_specs:
+            pred = self._model(
+                frame[y1:y2, x1:x2],
+                imgsz=settings.person_roi_custom_paper_inference_size,
+                conf=settings.person_roi_custom_paper_confidence_threshold,
+                classes=self._custom_paper_class_ids,
+                verbose=False,
+            )
+            predictions.append(pred[0]) # Gộp kết quả lại để tương thích với phần code bên dưới
         detections: list[dict[str, Any]] = []
         for (offset_x, offset_y, _, _), result, owner_hint in zip(
             roi_specs,

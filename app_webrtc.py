@@ -1,6 +1,19 @@
 import os
+import sys
 import logging
 import warnings
+
+# ==========================================
+# KHỐI LỆNH TẮT TRIỆT ĐỂ LOG RÁC (C++ & TENSORFLOW)
+# ==========================================
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt toàn bộ log C++ của TensorFlow / TFLite
+os.environ["GLOG_minloglevel"] = "3"             # Tắt toàn bộ log C++ của Google Logging / MediaPipe
+os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log của ONNX Runtime (4 = FATAL)
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0" 
+# 2. Điều hướng toàn bộ STDERR vào hư vô (Nul) trong lúc khởi tạo MediaPipe
+
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
 
 # ==========================================
 # KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
@@ -23,11 +36,6 @@ os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
-
-# ---> THÊM 3 DÒNG NÀY ĐỂ DIỆT GỌN LOG CỦA MEDIAPIPE, TENSORFLOW VÀ ONNX <---
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
-os.environ["GLOG_minloglevel"] = "3"
-os.environ["ORT_LOGGING_LEVEL"] = "4"
 
 import cv2
 import threading
@@ -55,7 +63,11 @@ def initialize_openvino():
 core, devices = initialize_openvino()
 
 # Import các module AI của bạn
-from backend.ai_services.object_detect.object_detect import ObjectDetector
+from pathlib import Path
+from backend.ai_services.pose_gaze import paper_pipeline
+from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
+from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
+from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
 from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
@@ -83,6 +95,7 @@ DEFAULT_ACTION_ARTIFACTS = {
 def init_system_resources():
     print("[INFO] Khởi tạo trạm trung chuyển dữ liệu...")
     frame_q = queue.Queue(maxsize=2) 
+    paper_q = queue.Queue(maxsize=2)
     gaze_q = queue.Queue(maxsize=2)
     result_q = queue.Queue(maxsize=100)
     
@@ -90,6 +103,7 @@ def init_system_resources():
     overlay_lock = threading.Lock()
     
     vision_ready = threading.Event()
+    paper_ready = threading.Event()
     audio_ready = threading.Event()
     gaze_ready = threading.Event()
     
@@ -100,6 +114,10 @@ def init_system_resources():
         "holistic_model": None,       # <--- THÊM MỚI
         "live_classifier": None,     # <--- THÊM MỚI
         "tracking_manager": None,    # <--- THÊM MỚI
+        # Bổ sung vào dictionary SHARED_STATE / shared_state hiện có
+        "action_arm_paper": False,       # Thay cho phím A
+        "action_disarm_paper": False,    # Thay cho phím D
+        "paper_status_msg": "SETUP - Đang chờ cố định baseline",
         "frame_count": 0,
         "logs": []
     }
@@ -115,7 +133,7 @@ def init_system_resources():
             yolo_model = ObjectDetector(
                 model_path="weights/best_openvino_model", 
                 device="GPU",
-                confidence_threshold=0.5
+                confidence_threshold=0.7
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
         except Exception as e:
@@ -229,18 +247,32 @@ def init_system_resources():
     
             if result_yolo is not None:
                 detections = result_yolo.get("detections", [])
+                # 🛑 LỌC BỎ CÁC NHÃN LIÊN QUAN ĐẾN GIẤY / TÀI LIỆU CỦA MODEL CŨ
+                filtered_detections = []
+                for det in detections:
+                    label = str(det.get("label", "")).lower()
+                    # 1. Chặn các nhãn giấy/tài liệu nếu lọt vào đây
+                    if label in ["paper", "document", "cheatsheet", "sheet", "tai_lieu", "giay", "book"]:
+                        continue
+                  
+                    filtered_detections.append(det)
+                
+                result_yolo["detections"] = filtered_detections
         
                 # [DEBUG 2] Kiểm tra số lượng vật thể bắt được
-                if len(detections) > 0:
+                if len(filtered_detections) > 0:
                     # print(f"[DEBUG YOLO] Đã bắt được {len(detections)} vật thể. Cập nhật status thành 'alert'.")
                     result_yolo["status"] = "alert" # BẮT BUỘC: Đánh dấu là cảnh báo để hàm Main xử lý
-            
+                    result_yolo["module"] = "object_detect"
                     # Đẩy vào queue nếu chưa đầy
                     if not result_q.full():
                         result_q.put(result_yolo)
                         # print("[DEBUG YOLO] Đã đẩy cảnh báo vật thể vào RESULT_QUEUE thành công.")
                     else:
                         print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
+                else:
+                    # Nếu sau khi lọc mà không còn gì, bỏ qua trạng thái alert để không gửi rác lên queue
+                    result_yolo = None
 
             if result_yolo:
                 # Ép key "module" để WebRTC nhận diện luồng
@@ -252,15 +284,110 @@ def init_system_resources():
                 
                 if has_anomaly:
                     result_yolo["status"] = "alert"
-                
-                # if not result_q.full(): 
-                #     result_q.put(result_yolo)
-
+            
             # ---> ĐỒNG BỘ: Luồng Camera giám sát giờ cũng dùng Masking để quét người lạ <---
             result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
             if result_face and not result_q.full(): 
                 result_q.put(result_face)
 
+    # ==========================================
+    # LUỒNG AI ĐẾM GIẤY (ĐẶC TRỊ RIÊNG CHO PAPER PIPELINE)
+    # ==========================================
+    def paper_vision_thread():
+        print("[INFO] Đang khởi động luồng AI Đếm Giấy (Paper Pipeline) độc lập...")
+        try:
+            person_detector = UltralyticsPersonDetector(
+                model_path=Path("weights/yolov8n.pt"),
+                confidence_threshold=0.55, 
+                device="cpu"
+            )
+            paper_object_detector = ObjectDetectModule(device="cpu")
+            
+            session_id = f"paper_session_{int(time.time())}"
+            paper_pipeline = PaperCountPipeline(
+                person_detector=person_detector,
+                object_detector=paper_object_detector,
+                storage_root=Path("test_data_tracking"),
+                max_people=2
+            )
+            
+            # Vô hiệu hóa smartphone fallback bên trong pipeline giấy
+            if hasattr(paper_pipeline, "object_detector") and paper_pipeline.object_detector is not None:
+                if hasattr(paper_pipeline.object_detector, "_smartphone_fallback_enabled"):
+                    paper_pipeline.object_detector._smartphone_fallback_enabled = False
+                if hasattr(paper_pipeline.object_detector, "_auxiliary_class_ids"):
+                    paper_pipeline.object_detector._auxiliary_class_ids = []
+            if hasattr(paper_pipeline, "enable_smartphone_detection"):
+                paper_pipeline.enable_smartphone_detection = False
+
+            paper_pipeline.create_session(session_id, restore_existing=True)
+        except Exception as e:
+            print(f"[LỖI KHỞI TẠO PAPER PIPELINE]: {e}")
+            paper_ready.set()
+            return
+
+        paper_ready.set()
+        print("[INFO] ✅ AI Đếm Giấy đã sẵn sàng trên luồng riêng!")
+
+        while True:
+            data = paper_q.get()
+            if data is None: break
+            frame, timestamp = data
+
+            # 1. Xử lý nút bấm ARM / DISARM
+            try:
+                if shared_state.get("action_arm_paper"):
+                    state_info = paper_pipeline.arm_paper_monitoring(session_id)
+                    baseline_count = state_info.get('baseline_count', 0) if isinstance(state_info, dict) else 0
+                    shared_state["paper_status_msg"] = f"ARMED! Baseline: {baseline_count} giấy."
+                    shared_state["action_arm_paper"] = False
+                    
+                if shared_state.get("action_disarm_paper"):
+                    session_id = f"paper_session_{int(time.time())}"
+                    paper_pipeline.create_session(session_id, restore_existing=False)
+                    shared_state["paper_status_msg"] = "DISARMED! Đã quay lại chế độ SETUP (Baseline = 0)."
+                    shared_state["action_disarm_paper"] = False
+            except Exception as ex:
+                print(f"[LỖI ĐIỀU KHIỂN PIPELINE GIẤY]: {ex}")
+                shared_state["action_arm_paper"] = False
+                shared_state["action_disarm_paper"] = False
+
+            # 2. Xử lý frame đếm giấy
+            try:
+                result_paper = paper_pipeline.process_frame(
+                    frame, 
+                    session_id=session_id, 
+                    frame_id=shared_state["frame_count"], 
+                    timestamp_ms=int(timestamp * 1000)
+                )
+            except Exception as ex:
+                print(f"[LỖI XỬ LÝ FRAME GIẤY]: {ex}")
+                result_paper = None
+
+            # 3. Đẩy kết quả giấy & cảnh báo vào RESULT_QUEUE chung
+            if result_paper and not result_q.full():
+                alerts = result_paper.get("alerts", [])
+                papers = result_paper.get("papers", [])
+                # [DEBUG PAPER] Bắt bệnh lý do cảnh báo lạ
+                if alerts:
+                    print(f"[DEBUG PAPER] 🚨 Kích hoạt báo động! Danh sách lỗi: {alerts} | Số lượng tờ giấy trên bàn: {len(papers)}")
+    
+                    # Sửa lại 'label' thành string key và dùng .get() để an toàn tuyệt đối
+                    first_alert = alerts[0]
+                    if isinstance(first_alert, dict) and first_alert.get('label') == 'smartphone_detected':
+                        alerts = []
+                        print("[DEBUG PAPER] ⚠️ Cảnh báo: Phát hiện smartphone trên bàn (bị nhầm là giấy).")
+        
+                    for p in papers:
+                        print(f"   -> Giấy #{p.get('observation_index')}: Trạng thái = {p.get('status')}")
+                paper_data = {
+                    "module": "paper_count",
+                    "status": "alert" if result_paper.get("alerts") else "info",
+                    "timestamp": timestamp,
+                    "alerts": alerts,
+                    "papers": papers
+                }
+                result_q.put(paper_data)
 
     # LUỒNG 2: Xử lý nhẹ (MediaPipe PoseGaze) - Chạy siêu tốc
     def fast_gaze_thread():
@@ -270,7 +397,7 @@ def init_system_resources():
         gaze_model = PoseGazeDetector()
         shared_state["gaze_model"] = gaze_model
         # 2. Khởi tạo Tracking & Holistic từ test_webcam.py (Dùng session động để tránh trùng lặp)
-        session_id = f"webrtc_session_{int(time.time())}"
+        session_id = f"gaze_session_{int(time.time())}"
         # 2. Khởi tạo Tracking & Holistic từ test_webcam.py
         tracking_module = PersonTrackingModule(
             PersonTrackingConfig(
@@ -280,6 +407,11 @@ def init_system_resources():
                 max_tracks=2,
             )
         )
+        # Thêm dòng này để xử lý an toàn nếu manager giữ lại session cũ
+        try:
+            tracking_module.manager.create_session(session_id, restore_existing=True)
+        except Exception:
+            pass
         shared_state["tracking_manager"] = tracking_module.manager
         
         holistic = HolisticLandmarkExtractor(
@@ -382,40 +514,74 @@ def init_system_resources():
         print("[INFO] Đang khởi động luồng AI Âm thanh thực tế...")
         try:
             audio_worker = RealtimeAudioWorker()
-            
+            print("[DEBUG AUDIO] ✅ Đã khởi tạo RealtimeAudioWorker thành công!")
+
             original_pipeline = audio_worker.pipeline.process_audio
             def hooked_process_audio(*args, **kwargs):
+                # Kiểm tra các tham số đầu vào (thường là mảng numpy hoặc bytes chứa audio chunk)
+                if args:
+                    raw_audio = args[0]
+                    if isinstance(raw_audio, np.ndarray) and raw_audio.size > 0:
+                        # Tính độ lớn sóng âm (RMS Volume)
+                        rms_volume = np.sqrt(np.mean(raw_audio**2))
+                        # print(f"[DEBUG AUDIO] 🔊 Biên độ âm thanh (RMS từ Mic): {rms_volume:.5f}")
+                        if rms_volume < 0.001:
+                            print("[DEBUG AUDIO] ⚠️ CẢNH BÁO: Mic quá nhỏ hoặc đang bị mute/chọn nhầm thiết bị!")
+
+                # print("[DEBUG AUDIO] 🎙️ VAD đã cắt được câu! Đang đẩy vào AudioPipeline...")
+
                 res = original_pipeline(*args, **kwargs)
-                if res and not result_q.full():
-                    res["module"] = "audio_phobert_pipeline"
-                    result_q.put(res)
+                # In toàn bộ kết quả thô trả về từ PhoWhisper & PhoBERT
+                # print(f"[DEBUG AUDIO] 🧠 Kết quả trả về từ Backend: {res}")
+
+                if res:
+                    transcription = res.get("transcription", "").strip()
+                    if transcription:
+                        if not result_q.full():
+                            res["module"] = "audio_phobert_pipeline"
+                            result_q.put(res)
+                            # print(f"[DEBUG AUDIO] 📤 Đã đẩy kết quả transcription ('{transcription}') vào hàng đợi UI thành công.")
+                        else:
+                            print("[DEBUG AUDIO] ⚠️ RESULT_QUEUE đã đầy, rớt gói tin âm thanh!")
+                    else:
+                        # print("[DEBUG AUDIO] ⚠️ VAD cắt nhầm tạp âm (Transcription bị rỗng ''), bỏ qua không đẩy lên UI.")
+                        pass
+                else:
+                    # print("[DEBUG AUDIO] ⚠️ AudioPipeline trả về None.")
+                    pass
+                    
                 return res
                 
             audio_worker.pipeline.process_audio = hooked_process_audio
             audio_ready.set()
-            print("[INFO] ✅ Audio Thread đã nạp xong!")
+            print("[INFO] ✅ Audio Thread đã nạp xong và chuẩn bị lắng nghe micro!")
             audio_worker.start()
         except Exception as e:
-            print(f"[LỖI LUỒNG ÂM THANH] {e}")
+            print(f"[LỖI LUỒNG ÂM THANH] Khởi tạo thất bại: {e}")
+            import traceback
+            traceback.print_exc()
             audio_ready.set()
 
     # Khởi chạy các luồng
     t_vision = threading.Thread(target=heavy_vision_thread, daemon=True)
     t_audio = threading.Thread(target=audio_ai_thread, daemon=True)
     t_gaze = threading.Thread(target=fast_gaze_thread, daemon=True)
-    
+    t_paper = threading.Thread(target=paper_vision_thread, daemon=True)
+
     t_vision.start()
     t_audio.start()
     t_gaze.start()
+    t_paper.start()
     
     vision_ready.wait()
     audio_ready.wait()
     gaze_ready.wait()
+    paper_ready.wait()
 
-    return frame_q, gaze_q, result_q, overlays, overlay_lock, register_face_event, shared_state
+    return frame_q, paper_q, gaze_q, result_q, overlays, overlay_lock, register_face_event, shared_state
 
 # Kích hoạt Cache
-FRAME_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
+FRAME_QUEUE, PAPER_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
 FPS_SKIP = 1
 
@@ -484,6 +650,27 @@ def draw_warning_overlays(frame):
                 cv2.rectangle(frame, (0, frame.shape[0] - 40), (frame.shape[1], frame.shape[0]), (0, 0, 200), -1)
                 cv2.putText(frame, f"[CANH BAO TU THE]: {action}", (20, frame.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
+            # =========================================================
+            # ---> BẮT ĐẦU CHÈN LOGIC 5: VẼ KHUNG GIẤY Ở ĐÂY <---
+            # =========================================================
+            elif module == "paper_count" and alert.get("papers"):
+                for paper in alert["papers"]:
+                    x1, y1, x2, y2 = paper["bbox_xyxy"]
+                    status_paper = paper["status"]
+                    
+                    # Phân biệt Baseline (màu Vàng/Cyan) và Cheatsheet (Màu Đỏ)
+                    is_suspicious = (status_paper == "suspicious_new_paper")
+                    color = (0, 0, 255) if is_suspicious else (0, 255, 255)
+                    
+                    # Nhãn text
+                    label = "CHEAT SHEET (NEW)" if is_suspicious else f"Paper #{paper.get('observation_index', '?')}"
+                    
+                    # Vẽ Box và Text
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                    cv2.putText(frame, label, (x1, max(18, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # =========================================================
+            # ---> KẾT THÚC LOGIC 5 <---
+            # =========================================================
     return frame
 
 # ==========================================
@@ -532,9 +719,43 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
                 log_msg = f"**[{time_str}]** 🕵️‍♂️ PHÁT HIỆN NGƯỜI LẠ!"
                 # print(f"[DEBUG MAIN] 🚨 Kích hoạt log 'PHÁT HIỆN NGƯỜI LẠ' lên giao diện lịch sử!")
             elif module_name == "object_detect" and status == "alert":
-                log_msg = f"**[{time_str}]** 📱 PHÁT HIỆN VẬT CẤM!"
-            # elif module_name == "pose_gaze" and status == "warning":
-            #     log_msg = f"**[{time_str}]** ⚠️ TƯ THẾ: {details.get('action', 'Bất thường')}"
+                # 🔥 TÁCH RIÊNG LOG VẬT CẤM (SMARTPHONE, EARPHONE,...)
+                detected_labels = [det.get("label", "vật thể") for det in alert.get("detections", [])]
+                label_str = ", ".join(detected_labels).upper()
+                log_msg = f"**[{time_str}]** <span style='color:red'>📱 PHÁT HIỆN VẬT CẤM: {label_str}</span>"
+            elif module_name == "paper_count" and status == "alert":
+                alerts = alert.get("alerts", [])
+                papers = alert.get("papers", [])
+                
+                has_true_paper_violation = False
+                detected_device_label = ""
+                
+                # 1. Kiểm tra xem trong danh sách papers có tờ nào là phao mới (suspicious_new_paper) không
+                for p in papers:
+                    if p.get("status") == "suspicious_new_paper":
+                        has_true_paper_violation = True
+                        
+                # 2. Kiểm tra chi tiết từng alert bên trong
+                for a in alerts:
+                    label = str(a.get("label", "")).lower()
+                    source = str(a.get("source", "")).lower()
+                    
+                    if "smartphone" in label or "phone" in label or "device" in label or "object_detect" in source:
+                        detected_device_label = label.upper() if label else "SMARTPHONE"
+                    if "paper" in label or "cheat" in label or "sheet" in label or "monitor" in source:
+                        has_true_paper_violation = True
+
+                # 3. Phân tách rõ ràng log hiển thị dựa trên bản chất sự thật
+                if detected_device_label and not has_true_paper_violation:
+                    # Nếu thực chất là do object detector bắt nhầm điện thoại
+                    pass
+                    # log_msg = f"**[{time_str}]** <span style='color:red'>📱 PHÁT HIỆN VẬT CẤM 2: {detected_device_label}</span>"
+                elif has_true_paper_violation:
+                    # Chỉ khi thực sự có vi phạm liên quan đến giấy/phao thi mới báo cheatsheet
+                    log_msg = f"**[{time_str}]** <span style='color:red'>📄 PHÁT HIỆN TÀI LIỆU LẠ (CHEATSHEET)!</span>"
+                # else:
+                #     # Dự phòng nếu có alert khác chung chung
+                #     log_msg = f"**[{time_str}]** <span style='color:red'>⚠️ CẢNH BÁO BẤT THƯỜNG TRÊN BÀN THI</span>"
             elif module_name == "pose_gaze" and status == "warning":
                 action_text = details.get('action', 'Bất thường')
                 if "EXCHANGE" in action_text or "LOOKING" in action_text or "HOẠT ĐỘNG BẤT THƯỜNG" in action_text:
@@ -567,7 +788,12 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
             try: GAZE_QUEUE.get_nowait()
             except queue.Empty: pass
         GAZE_QUEUE.put((img.copy(), current_time))
-
+    # Bơm ảnh cho luồng AI Đếm Giấy (Chạy ngầm độc lập - Lấy 1 ảnh mỗi 2 frame)
+    if SHARED_STATE["frame_count"] % 5 == 0:
+        if PAPER_QUEUE.full():
+            try: PAPER_QUEUE.get_nowait()
+            except queue.Empty: pass
+        PAPER_QUEUE.put((img.copy(), current_time))
     if SHARED_STATE["frame_count"] % FPS_SKIP == 0:
         if FRAME_QUEUE.full():
             try: FRAME_QUEUE.get_nowait()
@@ -599,7 +825,17 @@ with col1:
     # Nút bấm đăng ký khuôn mặt
     if st.button("📸 Đăng ký khuôn mặt", use_container_width=True):
         SHARED_STATE["save_face_flag"] = True
-
+    st.markdown("#### 📄 Cấu hình Giấy thi & Cheatsheet")
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("🔒 Cố định Baseline (A)", use_container_width=True):
+            SHARED_STATE["action_arm_paper"] = True
+    with btn_col2:
+        if st.button("🔄 Reset Setup (D)", use_container_width=True):
+            SHARED_STATE["action_disarm_paper"] = True
+            
+    # Hiển thị trạng thái đếm giấy hiện tại
+    st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
     # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
     webrtc_streamer(
         key="exam-proctor",

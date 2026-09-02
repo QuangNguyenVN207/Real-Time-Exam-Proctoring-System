@@ -86,7 +86,7 @@ class Settings:
     # misses folded paper at full-frame 640 inference. Run only its paper
     # classes again inside each tracked person's interaction ROI.
     person_roi_custom_paper_enabled: bool = True
-    person_roi_custom_paper_inference_size: int = 768
+    person_roi_custom_paper_inference_size: int = 640
     person_roi_custom_paper_confidence_threshold: float = 0.15
     person_roi_horizontal_expansion: float = 0.15
     person_roi_top_expansion: float = 0.08
