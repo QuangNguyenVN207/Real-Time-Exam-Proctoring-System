@@ -38,7 +38,7 @@ class RealtimeAudioWorker:
     MIN_PROCESS_SECONDS = 2.0   # Tối thiểu 2 giây mới đem đi dịch
     MAX_PROCESS_SECONDS = 6.0   # Tối đa 6 giây (nếu sinh viên nói liên tục không nghỉ)
     SILENCE_TAIL_SECONDS = 0.8  # Nếu phát hiện im lặng 0.8s ở cuối -> Cắt câu mang đi dịch ngay
-    SILENCE_THRESHOLD = 0.01    # Ngưỡng âm lượng để tính là "im lặng"
+    SILENCE_THRESHOLD = 0.02    # Ngưỡng âm lượng để tính là "im lặng"
     
     # Giữ lại thời gian lấy mẫu tiếng ồn cho Ubuntu
     NOISE_PROFILE_SECONDS = 1.0 
@@ -113,13 +113,7 @@ class RealtimeAudioWorker:
 
     def _preprocess_audio(self, audio, sr, noise_profile=None):
         audio = audio.astype(np.float32)
-        audio = audio * 4.0 # Tăng Gain để AI nghe rõ
-        audio = np.clip(audio, -1.0, 1.0)
-        audio = self._noise_reduce(audio, sr, noise_profile=noise_profile)
-        audio = self._bandpass_filter(audio, sr)
-        audio = self._normalize_gain(audio, target_rms=0.08)
-        return audio
-
+        return np.clip(audio, -1.0, 1.0)
     # =========================
     # Worker loop (Tích hợp logic VAD thông minh)
     # =========================
@@ -168,14 +162,14 @@ class RealtimeAudioWorker:
                 if is_silence_tail:
                     self.buffer_raw = np.array([], dtype=np.float32)
                 else:
-                    overlap_samples = int(self.input_sr * 0.5)
+                    overlap_samples = int(self.input_sr * 1.5)
                     self.buffer_raw = self.buffer_raw[-overlap_samples:]
 
                 # --- BẮT ĐẦU DỊCH VÀ XỬ LÝ KẾT QUẢ ---
                 audio_16k = self._resample_to_target(raw_audio_to_process)
-                noise_16k = self._resample_to_target(self.noise_raw[: int(self.input_sr * self.NOISE_PROFILE_SECONDS)])
+                # noise_16k = self._resample_to_target(self.noise_raw[: int(self.input_sr * self.NOISE_PROFILE_SECONDS)])
                 
-                clean_audio = self._preprocess_audio(audio_16k, sr=self.TARGET_SR, noise_profile=noise_16k)
+                clean_audio = self._preprocess_audio(audio_16k, sr=self.TARGET_SR) # , noise_profile=noise_16k)
 
                 try:
                     timestamp = time.time()
