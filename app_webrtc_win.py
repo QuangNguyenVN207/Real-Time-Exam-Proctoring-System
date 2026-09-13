@@ -392,7 +392,7 @@ with col1:
             "video": True,
             "audio": False # Chặn WebRTC thu âm để tránh đụng độ với luồng PyAudio
         },
-        async_processing=False,
+        async_processing=True,
         rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
     )
 

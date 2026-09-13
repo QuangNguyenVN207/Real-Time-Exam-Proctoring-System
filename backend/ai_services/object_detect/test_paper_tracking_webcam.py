@@ -72,7 +72,7 @@ def main() -> None:
     person_detector = UltralyticsPersonDetector(
         model_path=Path(person_model_path),
         confidence_threshold=0.55,
-        device=device,
+        device="cpu" if device == "GPU" else device,
     )
     object_detector = ObjectDetectModule(
         device=device,
@@ -103,7 +103,7 @@ def main() -> None:
         if isinstance(source, int)
         else Path(str(source)).stem
     )
-    session_id = args.session_id or f"paper_tracking_{source_stem}"
+    session_id = args.session_id or f"paper_tracking_{source_stem}_{int(time.time())}"
     pipeline.create_session(session_id)
 
     capture = cv2.VideoCapture(source)
