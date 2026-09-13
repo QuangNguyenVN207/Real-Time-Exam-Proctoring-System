@@ -14,8 +14,8 @@ build/
 
 # Ignore snapshot files
 snapshots/
-# Ignore test data tracking files
-test_data_tracking/
+# Generated tracking sessions and test recordings
+/test_data_tracking/
 
 .ipynb_checkpoints/
 *.ipynb_metadata/
@@ -48,12 +48,6 @@ Thumbs.db
 *.log
 
 data/
-/test_data_tracking/
-!/test_data_tracking/
-/test_data_tracking/*
-!/test_data_tracking/webcam_holistic_1787244223067_2b197509/
-!/test_data_tracking/webcam_holistic_1787244223067_2b197509/**
-!/test_data_tracking/webcam_holistic_1787244223067_2b197509_live_actor_classification.json
 test_image/
 models/
 checkpoints/
