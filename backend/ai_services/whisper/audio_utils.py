@@ -7,8 +7,18 @@ TARGET_SR = 16000
 # Khởi tạo bộ lọc dải tần
 def butter_bandpass(lowcut, highcut, fs, order=4):
     nyq = 0.5 * fs
+    
+    # Kiểm tra và ép giá trị an toàn để tránh lỗi ValueError
+    if lowcut >= highcut:
+        lowcut, highcut = min(lowcut, highcut), max(lowcut, highcut)
+    
     low = lowcut / nyq
     high = highcut / nyq
+    
+    # Đảm bảo giá trị chuẩn hóa nằm trong khoảng (0, 1)
+    low = max(0.001, min(low, 0.999))
+    high = max(low + 0.001, min(high, 0.999))
+    
     b, a = butter(order, [low, high], btype='band')
     return b, a
 
