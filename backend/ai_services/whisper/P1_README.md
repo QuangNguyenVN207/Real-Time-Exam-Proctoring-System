@@ -36,7 +36,23 @@ python -m venv .venv-audio-p1
 
 PyTorch is pinned to a CPU wheel in `requirements-p1.txt` for a portable baseline. A CUDA PyTorch build may be substituted on a compatible NVIDIA machine without changing the model files.
 
-The first end-to-end run downloads and caches pretrained `vinai/PhoWhisper-small` revision `a86b604c346caf7148c37512eafe783a16420adb`. Set `PHOWHISPER_MODEL` to a complete local Hugging Face model directory for offline use.
+The release ZIP contains the complete pretrained `vinai/PhoWhisper-small`
+snapshot at revision `a86b604c346caf7148c37512eafe783a16420adb` under
+`runtime_models/phowhisper-small`. Runtime defaults to that local directory and
+does not download a model. If the directory is missing or incomplete, startup
+fails instead of falling back to a remote or newer model.
+
+Verify all package files, checksums, runtime settings, PhoBERT, and PhoWhisper
+with no network access:
+
+```powershell
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
+.\.venv-audio-p1\Scripts\python.exe -m backend.ai_services.whisper.verify_release
+```
+
+Use `--integrity-only` when only file/config verification is required and a CPU
+forward pass would be too expensive.
 
 ## Reproduce PhoBERT validation and figures
 
@@ -106,10 +122,16 @@ This evaluator reports corpus WER and CER directly. It does not present `1 - WER
 
 ## Build the release archive
 
-After generating both output folders:
+Before packaging, place the pinned PhoWhisper snapshot in
+`backend/ai_services/whisper/runtime_models/phowhisper-small`. It must contain
+the model, processor, tokenizer, and generation configuration files. Then,
+after generating both output folders:
 
 ```powershell
 .venv-audio-p1\Scripts\python.exe -m backend.ai_services.whisper.package_p1
 ```
 
-The packager validates required files, records SHA-256 checksums and creates a ZIP under `backend/ai_services/whisper/releases/`.
+The packager validates required files, canonicalizes text files to LF, records
+SHA-256 checksums, and creates a deterministic ZIP under
+`backend/ai_services/whisper/releases/`. The archive contains both PhoBERT and
+PhoWhisper and can be verified fully offline.

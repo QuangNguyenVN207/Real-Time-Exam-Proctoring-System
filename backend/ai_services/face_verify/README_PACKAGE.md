@@ -26,6 +26,7 @@ Create an environment and install the face-only dependency lock:
 ```powershell
 python -m venv .venv-face
 .\.venv-face\Scripts\python.exe -m pip install -r backend\ai_services\face_verify\requirements-benchmark.txt
+.\.venv-face\Scripts\python.exe -m backend.ai_services.face_verify.verify_release
 .\.venv-face\Scripts\python.exe -m unittest `
   backend.ai_services.face_verify.test_face_verify_logic `
   backend.ai_services.face_verify.test_benchmark_video `

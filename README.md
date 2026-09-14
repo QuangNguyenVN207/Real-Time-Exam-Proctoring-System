@@ -2,7 +2,7 @@
 
 ## Tóm tắt dự án
 
-[cite_start]Đây là một hệ thống giám sát thi trực tuyến toàn diện, hoạt động trong thời gian thực (realtime)[cite: 242]. Hệ thống tích hợp 4 module AI cốt lõi chạy đồng thời nhằm tự động phát hiện các hành vi gian lận trong phòng thi: 
+[cite_start]Đây là một hệ thống giám sát thi trực tuyến toàn diện, hoạt động trong thời gian thực (realtime)[cite: 242]. Hệ thống tích hợp 4 module AI cốt lõi chạy đồng thời nhằm tự động phát hiện các hành vi gian lận trong phòng thi:
 * [cite_start]**Giám sát tư thế và hướng nhìn** (MediaPipe Pose + Face Mesh)[cite: 243].
 * [cite_start]**Phát hiện người lạ thay thi** (FaceNet/face_recognition)[cite: 243].
 * [cite_start]**Nhận diện điện thoại hoặc tài liệu trên bàn** (YOLOv8)[cite: 243].
@@ -15,7 +15,86 @@
 ## Mục lục
 
 * [Tóm tắt dự án](#tóm-tắt-dự-án)
+* [Chạy riêng bốn module AI](#chạy-riêng-bốn-module-ai)
 * [Cấu trúc thư mục & chức năng từng file](#cấu-trúc-thư-mục--chức-năng-từng-file)
+
+---
+
+## Chạy riêng bốn module AI
+
+> Phạm vi hiện tại là kiểm tra độc lập bốn module AI trên nhánh
+> `codex/remove-generated-test-data`. Phần tích hợp và lệnh chạy application
+> chính sẽ được kiểm tra ở giai đoạn sau.
+
+Sử dụng Windows 11 và Python `3.12.x`. Không cài `requirements.txt` ở thư mục
+gốc để kiểm tra riêng các module: Face đang khóa NumPy `1.26.4`, trong khi ba
+module còn lại dùng NumPy `2.5.3`. Mỗi module phải dùng một virtual environment
+riêng.
+
+Clone đúng nhánh release candidate:
+
+```powershell
+git clone --branch codex/remove-generated-test-data --single-branch `
+  https://github.com/QuangNguyenVN207/Real-Time-Exam-Proctoring-System.git
+cd Real-Time-Exam-Proctoring-System
+```
+
+Các ZIP model không nằm trong Git history. Chỉ sử dụng đúng bốn asset có tên và
+SHA-256 dưới đây; dừng setup nếu checksum không khớp:
+
+| Module | Asset | SHA-256 |
+|---|---|---|
+| Pose/Gaze | `pose_gaze_causal_runtime_20260914.zip` | `87e216a852feb107059f267b4f16cdca9dcc0dc12a4b0ed4f6347c9cac3679fc` |
+| Object | `object_detection_runtime_20260914.zip` | `44c6da465043eca28259b475bb86a265f36002f6d62e16633e168391cfc09246` |
+| Face | `face-p1-2026-09-13.zip` | `c80d2e32b141a49f78ddcdfc2f957b676480a2f460270876fb8398d2cbbd2f78` |
+| Whisper | `whisper_p1_20260914.zip` | `33afd86f7434f95a8647a41509bc417bc90652a78a51388c6639c74c206e17d9` |
+
+Pose/Gaze, Object và Whisper được extract tại thư mục gốc repository. Face có
+layout riêng; copy hai thư mục `runtime_data` theo hướng dẫn trong
+`backend/ai_services/face_verify/README_PACKAGE.md`. Không extract một ZIP khác
+phiên bản đè lên artifact đang dùng.
+
+### Pose/Gaze
+
+```powershell
+py -3.12 -m venv .venv-pose-gaze
+.\.venv-pose-gaze\Scripts\python.exe -m pip install -r backend\ai_services\pose_gaze\requirements-runtime.txt
+.\.venv-pose-gaze\Scripts\python.exe -m backend.ai_services.pose_gaze.verify_release
+```
+
+### Object detection
+
+```powershell
+py -3.12 -m venv .venv-object
+.\.venv-object\Scripts\python.exe -m pip install -r backend\ai_services\object_detect\requirements-runtime.txt
+.\.venv-object\Scripts\python.exe -m backend.ai_services.object_detect.verify_release
+```
+
+### Face verification
+
+```powershell
+py -3.12 -m venv .venv-face
+.\.venv-face\Scripts\python.exe -m pip install -r backend\ai_services\face_verify\requirements-benchmark.txt
+.\.venv-face\Scripts\python.exe -m backend.ai_services.face_verify.verify_release
+```
+
+### Whisper/PhoBERT
+
+Whisper ZIP chứa cả PhoBERT đã fine-tune và snapshot PhoWhisper-small tại
+revision `a86b604c346caf7148c37512eafe783a16420adb`; runtime không tải model từ
+mạng.
+
+```powershell
+py -3.12 -m venv .venv-audio-p1
+.\.venv-audio-p1\Scripts\python.exe -m pip install -r backend\ai_services\whisper\requirements-p1.txt
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
+.\.venv-audio-p1\Scripts\python.exe -m backend.ai_services.whisper.verify_release
+```
+
+Mỗi verifier trả exit code khác `0` khi thiếu file, sai checksum, sai threshold,
+sai model revision hoặc CPU smoke test thất bại. Xem hướng dẫn chi tiết trong
+`README_PACKAGE.md`/`P1_README.md` của từng module.
 
 ---
 
@@ -26,28 +105,28 @@
 ```bash
 exam_proctoring_system/
 ├── backend/
-│   ├── main.py                  
-│   ├── api/                     
-│   │   ├── endpoints_webrtc.py  
-│   │   └── endpoints_ws.py      
-│   ├── ai_services/             
-│   │   ├── pose_gaze/    
-│   │   ├── object_detect/    
-│   │   ├── face_verify/      
-│   │   └── audio_whisper/    
-│   └── core/                    
-│       └── config.py            
+│   ├── main.py
+│   ├── api/
+│   │   ├── endpoints_webrtc.py
+│   │   └── endpoints_ws.py
+│   ├── ai_services/
+│   │   ├── pose_gaze/
+│   │   ├── object_detect/
+│   │   ├── face_verify/
+│   │   └── audio_whisper/
+│   └── core/
+│       └── config.py
 ├── frontend/
-│   ├── app.py                   
-│   └── components/              
-│       ├── student_view.py      
-│       └── proctor_dashboard.py 
-├── weights/                     
-│   ├── yolov8_finetuned.pt      
-│   └── whisper_tiny.pt          
+│   ├── app.py
+│   └── components/
+│       ├── student_view.py
+│       └── proctor_dashboard.py
+├── weights/
+│   ├── yolov8_finetuned.pt
+│   └── whisper_tiny.pt
 ├── data/
-│   └── student_faces/           
-├── .env                         
+│   └── student_faces/
+├── .env
 ├── requirements.txt
 └── README.md
 ```
@@ -76,7 +155,7 @@ exam_proctoring_system/
 | `README.md` | [cite_start]Tệp tài liệu hiện tại chứa mô tả và hướng dẫn về dự án[cite: 289]. |
 
 ## Cách chạy Pipeline mẫu
-```bash 
+```bash
 uv run -m backend.main
 ```
 
@@ -92,8 +171,8 @@ uv run -m backend.main
 - **Tinh chỉnh gom cụm (`cluster_papers`)**: Thiết lập `duplicate_center_distance_ratio = 0.70` tránh gộp nhầm 2 tờ giấy ở sát nhau thành 1.
 
 ### 2. Sửa lỗi Logic Đếm Giấy Theo Từng Thí Sinh (Per-Person Paper Monitoring)
-- **Khắc phục lỗi đếm toàn cục (Global Count Bug)**: 
+- **Khắc phục lỗi đếm toàn cục (Global Count Bug)**:
   - *Lỗi cũ*: Khi 1 thí sinh bị che mất giấy (0 tờ) và 1 thí sinh khác rút thêm phao mới (2 tờ), tổng số giấy đếm được vẫn là 2 (bằng baseline tổng) $\rightarrow$ Hệ thống bị đánh lừa và gán cả 2 tờ là giấy hợp lệ (cyan).
   - *Giải pháp*: Chuyển sang đếm và so sánh baseline theo **từng thí sinh (`owner_person_id`)**. Bất kỳ thí sinh nào có số giấy vượt mức baseline riêng của mình sẽ lập tức bị cờ đỏ cảnh báo.
 - **Hiển thị cảnh báo tức thì (`suspicious_new_paper`)**: Đánh dấu đỏ `cheat_sheet NEW` cho tờ phao mới ngay khi xuất hiện mà không bị hoãn giao diện chờ debounce streak.
-- **Bảo vệ Baseline vị trí**: Khắc phục lỗi tự động ghi đè vị trí giấy chuẩn (`baseline_clusters`) khi có sự cố học sinh rút thêm phao.
+- **Bảo vệ Baseline vị trí**: Khắc phục lỗi tự động ghi đè vị trí giấy chuẩn (`baseline_clusters`) khi có sự cố học sinh rút thêm phao.
