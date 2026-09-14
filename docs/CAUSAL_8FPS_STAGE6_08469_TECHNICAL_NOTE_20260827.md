@@ -60,9 +60,9 @@ suspicious lower floor         -0.10919798641680552
 - `tmp/causal_8fps_stage6_mix_actor_c3_axis_20260827.json`: C3-axis search; SHA256 `79F64B4C0A168A0B230E786DB645AC50007D39A909A1C40337938047E41DD97A`.
 - `tmp/causal_8fps_stage6_mix_actor_suspicious_axis_20260827.json`: suspicious-axis search; SHA256 `248F672F41604AC12FB91BA636A5F7C2D6C02EE4EAEF22A29BFBD222C0A40FF6`.
 - `tmp/causal_8fps_stage6_mix_multistart_20260827.json`: ten-seed final search; SHA256 `20348D22CB6A9FC12621687D2C9F268872C61B1405D980F7F65CE24D4E3F6F3F`.
-- `tmp/causal_8fps_stage6_mixed_084699_final_20260827/bundle_manifest.json`: final mixed bundle manifest; SHA256 `4B4A647A70D7DADAFFC2D89464C092F5DC8DEA0E639F8D6316794A7416ED5F17`.
+- `tmp/causal_8fps_stage6_mixed_084699_final_20260827/bundle_manifest.json`: final mixed bundle manifest; SHA256 `CB8B8335D62849DE2541F8001BE104DA8017402B078B529E3A8D0B02AB4100FE`.
 - Final metrics SHA256: `F147D2CEFA16D12DBF47E2686870352810F2949013BF959D1843AFD7B982FDF1`.
-- Final calibration SHA256: `6A5D8380B89457351D34896B92B1104D2D80D67F6C10AF664AEEAB5CE2865FD4`.
+- Final calibration SHA256: `EDFED0AC2429DA137B9C42C55566564E65A038F09AA0DE3E087DE0096791C064`.
 - Final provenance SHA256: `0692A38102D1E345C47260DCC7F9E35EF3B8EBCEA9D80AC315D3DB7210B07C14`.
 - Final bundle: 41 hashed files, 27 fold models, three final models, OOF reproduction `20,511` rows/specialist, schemas `65/90/50`, policy `8/4/8/24/450`.
 - `tmp/causal_8fps_stage6_20260827_run4`: earlier single-profile bundle and loader/reproduction proof; its `0.821701` predates absent-peer causal correction and is not current acceptance evidence.

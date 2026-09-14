@@ -10,6 +10,12 @@ from pathlib import Path
 # The repository root contains the shared weights/ and test_data_tracking/
 # directories; parents[4] points only to <repo>/backend.
 PROJECT_ROOT = Path(__file__).resolve().parents[5]
+DEFAULT_CAUSAL_MODEL_DIR = (
+    PROJECT_ROOT
+    / "tmp"
+    / "causal_8fps_stage6_mixed_084699_final_20260827"
+)
+DEFAULT_CAUSAL_TARGET_FPS = 8
 
 DEFAULT_PERSON_CONFIDENCE = 0.50
 DEFAULT_MIN_IOU = 0.30

@@ -1,0 +1,495 @@
+{
+  "release": "whisper-p1",
+  "develop_source_commit": "9b22e939543193c6d9eef6306cf7a626d063051b",
+  "created_at_utc": "2026-09-14T08:04:35.358491+00:00",
+  "archive_layout": "Files are rooted at backend/ai_services/whisper inside the ZIP.",
+  "fine_tuned_model": "vinai/phobert-base-v2",
+  "pretrained_asr": "vinai/PhoWhisper-small@a86b604c346caf7148c37512eafe783a16420adb",
+  "best_checkpoint": "checkpoint-235 (epoch 5)",
+  "packaged_weight": "model.safetensors recovered from checkpoint-235",
+  "early_stop_checkpoint": "checkpoint-423 (epoch 9)",
+  "optimizer_state": "not required for inference; optimizer.pt is currently absent and optional",
+  "file_count": 95,
+  "files": [
+    {
+      "path": "audio_logger.py",
+      "bytes": 2962,
+      "sha256": "5bc12a526b30d9548f426651d0f124ab42f8938b0a62364166989f8da5f9b402"
+    },
+    {
+      "path": "audio_pipeline.py",
+      "bytes": 6780,
+      "sha256": "821c1d535be2cf4fbcc7e67e0420b5820c170fa5c913991590e23c1e4a3cbd77"
+    },
+    {
+      "path": "audio_utils.py",
+      "bytes": 2752,
+      "sha256": "7a4348997fb6f1d984cdcd31b695034480b099bfffbf572ed50fdf0e83d5907e"
+    },
+    {
+      "path": "config.py",
+      "bytes": 903,
+      "sha256": "56ae2c7bdff49643a38674614e3ad5aa4499ab9d093cbc24dda627b8c75f0f89"
+    },
+    {
+      "path": "context_words.py",
+      "bytes": 1604,
+      "sha256": "57480ddec1488db243a80b2b10d296c91bb05b5ea27d01cab162b51ffe4a6d25"
+    },
+    {
+      "path": "evaluate_vivos.py",
+      "bytes": 4371,
+      "sha256": "89d8c028db63672b45b2e28edda329f24573f130b717286bb7d024e6f59e403b"
+    },
+    {
+      "path": "keyword_detector.py",
+      "bytes": 13497,
+      "sha256": "b413e7056b291d2c5d31fe3bedb9223882e59fb0731c992def27d74485fb7d53"
+    },
+    {
+      "path": "keywords.json",
+      "bytes": 10655,
+      "sha256": "e3fcce65d75cf1a259c7d677a7afb6b3b337a8d43c7dad917f4ae303ccd59b89"
+    },
+    {
+      "path": "negative_rules.py",
+      "bytes": 2574,
+      "sha256": "922913327fce6c446b78fdaac1fc380b8cec8f1d2012f07735db01030525c101"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/component_ablation.csv",
+      "bytes": 285,
+      "sha256": "b0d6173feebd96d47d9aae4ec7cb67ce70d491485ef9de0e243ef9f2699b8481"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/component_ablation.png",
+      "bytes": 43151,
+      "sha256": "cf13bdcced09152181e5c55439eeab7c628a3cd297eb7ce139250c0e1ed36354"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/pipeline_metrics.png",
+      "bytes": 50213,
+      "sha256": "8c3ab3ae94522db8ddb0b62384c1225c7ca88612fd4772f0da7ebe044a6bf1a7"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/pipeline_predictions.csv",
+      "bytes": 16784,
+      "sha256": "b040e3e2f28ca52026e13adb4adb710d7e798a6fed46af071b7ef44d1ce93af6"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/pipeline_results.json",
+      "bytes": 40196,
+      "sha256": "6213e6f391f7c62586cad58424824dedf63efff2a99a52c14979f8185af4ba45"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/pipeline_threshold_sweep.csv",
+      "bytes": 5602,
+      "sha256": "bfd0e732184913b18ca13d92c438facfb5be46ed64bae078071d112c40ef04b3"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/pipeline_threshold_sweep.png",
+      "bytes": 76690,
+      "sha256": "b79d9f512c5335a7697427ef77271a2f3d22cffae61a71490121d49014664ade"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/report_snippet_vi.md",
+      "bytes": 1820,
+      "sha256": "ad17afb5a69042e1198260753bc65c081f914da7c54a5f81e47df423020eaa6e"
+    },
+    {
+      "path": "outputs/p1_audio_pipeline/score_distribution.png",
+      "bytes": 71415,
+      "sha256": "bf87fa965da9f9fbddf3fe0efd0600af1dd7b0e5479cf54ca5bca282dcbbea2e"
+    },
+    {
+      "path": "outputs/p1_phobert/confusion_matrix.png",
+      "bytes": 47965,
+      "sha256": "a9fb22bbec07ac7b0e6d87359cb7446fcd936dc8f4701b3e505a5a972430f4c9"
+    },
+    {
+      "path": "outputs/p1_phobert/epoch_metrics.csv",
+      "bytes": 1410,
+      "sha256": "992fc41aa3c988724054c705f286e0bd58f1706d08b44153958e0addf50abb82"
+    },
+    {
+      "path": "outputs/p1_phobert/report_snippet_vi.md",
+      "bytes": 1628,
+      "sha256": "6f2c17164fabb8d582d3022fee00f479233f4ad0a5aa2ffecbc5edde6d24372b"
+    },
+    {
+      "path": "outputs/p1_phobert/roc_pr_curves.png",
+      "bytes": 105705,
+      "sha256": "e53199698c81f1b21f8cfad00aabd428e30abadb8cb4bb3635a7a36e8240bf14"
+    },
+    {
+      "path": "outputs/p1_phobert/summary.json",
+      "bytes": 3855,
+      "sha256": "027739bf4714eae6d58cfbd61b782a2507838a33012dfdc0db3f8feb68c047f5"
+    },
+    {
+      "path": "outputs/p1_phobert/threshold_sweep.csv",
+      "bytes": 8058,
+      "sha256": "b8123b9f777d7e8d016d12f5abcf6cd5ecb2da682bf41142105236073069604e"
+    },
+    {
+      "path": "outputs/p1_phobert/threshold_sweep.png",
+      "bytes": 89942,
+      "sha256": "776d7017baf8ef80bd4e1c05d1ff308857f9309e9c4c099259a4789706e0ff2e"
+    },
+    {
+      "path": "outputs/p1_phobert/training_curves.png",
+      "bytes": 216699,
+      "sha256": "b5111f42ac81a605434b1f1ea2c815abf785b9976406480e95a73a7fa40642b9"
+    },
+    {
+      "path": "outputs/p1_phobert/validation_predictions.csv",
+      "bytes": 7680,
+      "sha256": "84a346cba52859ef852f434d67f6987921e2033c19fbfbc16f6bc41cec8383b4"
+    },
+    {
+      "path": "P1_README.md",
+      "bytes": 7172,
+      "sha256": "6cbbdd3e7d41023f13f010ca93410c71e1c924c3ab8a859b4e2fcc83c98aab13"
+    },
+    {
+      "path": "phobert/dataset/cheating.csv",
+      "bytes": 17911,
+      "sha256": "02df077da283948aace169058f0b665619d6cce46bc0eb705b83324a9451a8d8"
+    },
+    {
+      "path": "phobert/decision_fusion.py",
+      "bytes": 2420,
+      "sha256": "7ecbe5590487356827affda2b72341386cabc1d5f850305cb732bc114dba0733"
+    },
+    {
+      "path": "phobert/evaluate_p1.py",
+      "bytes": 21533,
+      "sha256": "3320a2bd1b1486a36834f3f5f3e0fe372d8e6f05c37392ad9a77f8f7a652d52a"
+    },
+    {
+      "path": "phobert/phobert_service.py",
+      "bytes": 3711,
+      "sha256": "bf73926bba16a895b3d4a341c1f465943cd1351d6781a0c4651cbb3d9e1a515d"
+    },
+    {
+      "path": "phobert/train_phobert.py",
+      "bytes": 6463,
+      "sha256": "f99444aa048e33ec7b77cb8d1dc11a516b11116f506f3a226126b4c818c88434"
+    },
+    {
+      "path": "phobert/weights/added_tokens.json",
+      "bytes": 25,
+      "sha256": "6887f87ac991379ea91aedb4dd5e1af4f6ee38693ec0ca1c2b6209559ce283d8"
+    },
+    {
+      "path": "phobert/weights/bpe.codes",
+      "bytes": 1199173,
+      "sha256": "952d890231f68a19a40aa0896559a2d449cf8e7a0253aae903549486d6e0eb3c"
+    },
+    {
+      "path": "phobert/weights/checkpoint-235/config.json",
+      "bytes": 802,
+      "sha256": "5c38562f3db47d0da1cc80156deb9f7afa97a0cd366295332f48caf5964a22b8"
+    },
+    {
+      "path": "phobert/weights/checkpoint-235/rng_state.pth",
+      "bytes": 14645,
+      "sha256": "f7b7cb7a650bdffe0b639f7a9d4535b7a4140f0d871acb555de4405551333568"
+    },
+    {
+      "path": "phobert/weights/checkpoint-235/scheduler.pt",
+      "bytes": 1465,
+      "sha256": "4029cdd7e6f7115e39a5a045a1455ac91031b5747dd301a3760784b7a737afd5"
+    },
+    {
+      "path": "phobert/weights/checkpoint-235/trainer_state.json",
+      "bytes": 12051,
+      "sha256": "84428ed9bc04786cf6507310a83a1c31bf305d5a48c65ed1cb14ede0f458acf6"
+    },
+    {
+      "path": "phobert/weights/checkpoint-235/training_args.bin",
+      "bytes": 5265,
+      "sha256": "643481381d14accccb7ee81f8103b2e43ab3a4cbbcd1fceb7e860fbb6ce47e66"
+    },
+    {
+      "path": "phobert/weights/checkpoint-423/config.json",
+      "bytes": 802,
+      "sha256": "5c38562f3db47d0da1cc80156deb9f7afa97a0cd366295332f48caf5964a22b8"
+    },
+    {
+      "path": "phobert/weights/checkpoint-423/trainer_state.json",
+      "bytes": 20772,
+      "sha256": "223b624f0d5144e636234a85994a05ad2de1002f4bc7336ec90fa458c2c6f52e"
+    },
+    {
+      "path": "phobert/weights/config.json",
+      "bytes": 801,
+      "sha256": "e95f5e1f59392822a51f295c9c8bb2ad3cb9a40ea2489ec0e06e55d1e81f3246"
+    },
+    {
+      "path": "phobert/weights/model.safetensors",
+      "bytes": 540023360,
+      "sha256": "9f321d440ae1112a89a1618ab34202e3185583d620c6c1c01b786b45e7d9c2f0"
+    },
+    {
+      "path": "phobert/weights/tokenizer_config.json",
+      "bytes": 1231,
+      "sha256": "1703117e58f098bd96bfdf34d339390d2434b910facf06fb9e0f5c04ac09f62f"
+    },
+    {
+      "path": "phobert/weights/vocab.txt",
+      "bytes": 959317,
+      "sha256": "88f702cb8597e9510c6e414014242762368263be2cf8ea094619d969f64a99b9"
+    },
+    {
+      "path": "phowhisper_service.py",
+      "bytes": 3610,
+      "sha256": "58dc6265cf6ba2d023f63686e0c53602d5262008d9a48a1b1c65abda68c4d192"
+    },
+    {
+      "path": "requirements-p1.txt",
+      "bytes": 348,
+      "sha256": "29761d0ee323881dbe9851bca6766b89237ce16d97fc767bd0f0a4b51ac3ff48"
+    },
+    {
+      "path": "rules.py",
+      "bytes": 6416,
+      "sha256": "2e4c889ac983868a19aaf543f7deaf025819cac54b4edcd4a11a63749b5cde31"
+    },
+    {
+      "path": "samples/cheating/cheat1.wav",
+      "bytes": 456270,
+      "sha256": "c6bd8b25d239f055e98b4e047ba5279ac2580cc5268794089a9688b0d0f06c65"
+    },
+    {
+      "path": "samples/cheating/cheat10.wav",
+      "bytes": 69966,
+      "sha256": "1865d49402c81e4e017f7e6d7fda9baf80385dc8d61ed59629c53de92b416829"
+    },
+    {
+      "path": "samples/cheating/cheat11.wav",
+      "bytes": 49230,
+      "sha256": "baceb777d743f34c0abdd402e3d65c965d9c7ed223e020e132ac15b1ca0f9cc4"
+    },
+    {
+      "path": "samples/cheating/cheat2.wav",
+      "bytes": 87630,
+      "sha256": "b95ffb381de897ad9f0ac96f4c906174ed37f6702834125f15e06a6c672965bb"
+    },
+    {
+      "path": "samples/cheating/cheat3.wav",
+      "bytes": 67662,
+      "sha256": "fe1a4b973704a918a1375f61a8081ecb6424aa292bf32c7b4bc6d9b3cf17472d"
+    },
+    {
+      "path": "samples/cheating/cheat4.wav",
+      "bytes": 66126,
+      "sha256": "1ad432070466d9dbc29a086374f92a08366912f3ac5b4d9d4e2e3e32b16ceeeb"
+    },
+    {
+      "path": "samples/cheating/cheat5.wav",
+      "bytes": 50766,
+      "sha256": "b1f3f2bfb07f96b95e4b6752d8a3a06bf5c717855a509aa0848a4501cc7c77ff"
+    },
+    {
+      "path": "samples/cheating/cheat6.wav",
+      "bytes": 56142,
+      "sha256": "1ea76753f03028d3ed17b1d98c79d6d69df932297eef4614afc926063004e6ec"
+    },
+    {
+      "path": "samples/cheating/cheat7.wav",
+      "bytes": 67662,
+      "sha256": "81c320c72cc731575a4c4e56c621b0b6c8350dedc3a42619fe52b16a5ebe9229"
+    },
+    {
+      "path": "samples/cheating/cheat8.wav",
+      "bytes": 62286,
+      "sha256": "6bf1f9703e30e902052a2b0e35b4f67dc0fd5fd16e4546e14671274b0de6d6d7"
+    },
+    {
+      "path": "samples/cheating/cheat9.wav",
+      "bytes": 76110,
+      "sha256": "1922a8c5e39a2299494a45142b198f009fb87a218835feddbf4beb21863c3924"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 13_1.mp3",
+      "bytes": 110223,
+      "sha256": "bd8e6995aa39fa0a6daae95a15e9e04b46aee2e4474bd16d12b0ee1f96ca7a83"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 14_1.mp3",
+      "bytes": 85618,
+      "sha256": "51fe03f550987d482c67bfcc5f98b5d82934a3a5824a724c6c8b1f5e27b4cbab"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 15_1.mp3",
+      "bytes": 83350,
+      "sha256": "d936565acd13aa5d5e8b5b883f1def37ec0a7cb66bbf9a74e640e0667f267c35"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 16_1.mp3",
+      "bytes": 64080,
+      "sha256": "dbdc9c674937a103f0dd1c4ca7580650350da2beb6ab5fd102e7150b0587e231"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 17_1.mp3",
+      "bytes": 70827,
+      "sha256": "221d1abbfe1b6becb158bcc9e027350ccd188a7d25def3d4a90cb7a215206de5"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 18_1.mp3",
+      "bytes": 85243,
+      "sha256": "c5ca82d773bedcf2ab2798c66e0d46b770a897a482119856bd7fb6f29339654c"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 19_1.mp3",
+      "bytes": 78653,
+      "sha256": "ca0f0eb565b63eb197660f530123916e8ed1e354c0c5be6916b60ff6f56db07a"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 20_1.mp3",
+      "bytes": 95828,
+      "sha256": "63100c4d8fce2564a09211de3af9fce991d8320e6491c2f0b2e3f326ea3fa569"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 21_1.mp3",
+      "bytes": 88480,
+      "sha256": "04ae17874e7460cef6a15834ced89bff13110447d7395cf52e7431679de0133d"
+    },
+    {
+      "path": "samples/cheating/Ghi ti\u00eau chu\u00e2\u0309n 22_1.mp3",
+      "bytes": 62574,
+      "sha256": "2d0842a9535ac769271583a6a32d88cddb12fb28ebd4c6c1773dbb6ef255428a"
+    },
+    {
+      "path": "samples/cheating/input1.wav",
+      "bytes": 456270,
+      "sha256": "c6bd8b25d239f055e98b4e047ba5279ac2580cc5268794089a9688b0d0f06c65"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 10_1.mp3",
+      "bytes": 81388,
+      "sha256": "0bf975bf210660568fbdd01fe5cb544b6d113a053c531430e1e7edbe34c4deb3"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 11_1.mp3",
+      "bytes": 97737,
+      "sha256": "f32beb035015b95c20aab905a43ea0fd32ac0714aa0a7391961e8ccd715e5348"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 12_1.mp3",
+      "bytes": 93162,
+      "sha256": "a7d56e62f23f1b2ac79cf22178ac6fa412b702bd0467fc75c7b92ea55a51eeb2"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 4_1.mp3",
+      "bytes": 71989,
+      "sha256": "29b4d4c8a75a8f048cee0730005f41ed570468c15275342a1aefe43ada1498f1"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 5_1.mp3",
+      "bytes": 90154,
+      "sha256": "9e9c1aafc52c577e7a0f542737cdd48e6cf7aad6501b4d3c22e64348a8e2cdd4"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 6_1.mp3",
+      "bytes": 100623,
+      "sha256": "445d40a6c59440370e06aee58c6af3a8e8b7201f5077c30ccc128bc3153ee6dd"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 7_1.mp3",
+      "bytes": 105446,
+      "sha256": "319fee6c5d4a71714a585728616a7fa5270401126aa684a854bb31863c447738"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 8_1.mp3",
+      "bytes": 102516,
+      "sha256": "7a4b6b0efa4af9bc50346e9b62dd68e35af1f32d6de39d66df06c9f254db5e5f"
+    },
+    {
+      "path": "samples/normal/Ghi ti\u00eau chu\u00e2\u0309n 9_1.mp3",
+      "bytes": 114098,
+      "sha256": "6ee508e0755cd4655d2ac5f52c5cdd566c87c0534caa53ef34088d76a3633bb7"
+    },
+    {
+      "path": "samples/normal/nor1.wav",
+      "bytes": 56910,
+      "sha256": "df9c6848d60144e53b2bfd5787a05017613512dcae87aa930db98e70514bba76"
+    },
+    {
+      "path": "samples/normal/nor10.wav",
+      "bytes": 221262,
+      "sha256": "c80bac73f0605afe4b2d010178eca7a4932121c11de736c6a6e96c503dd32c67"
+    },
+    {
+      "path": "samples/normal/nor2.wav",
+      "bytes": 71502,
+      "sha256": "6584d16e19d051cdeb63e005edae1632dd3bba097b198994ebe7c860a09e1784"
+    },
+    {
+      "path": "samples/normal/nor3.wav",
+      "bytes": 79950,
+      "sha256": "a980881171510b7faec9e0cc8bb8c969c89614cb9f8cf9a35cc6419ad294cb6b"
+    },
+    {
+      "path": "samples/normal/nor4.wav",
+      "bytes": 83790,
+      "sha256": "295845379c5dd6f2817da097553f0bc518be890a5729bd614c5416a1a3d92795"
+    },
+    {
+      "path": "samples/normal/nor5.wav",
+      "bytes": 81486,
+      "sha256": "7c8b2bc935d0a439ddce31eb2c802cfc539096689071906998cdac54a53ab2df"
+    },
+    {
+      "path": "samples/normal/nor6.wav",
+      "bytes": 90702,
+      "sha256": "87f3707313a8dfbeb574e02bc79b2fab86682553649bb43df6866416c207bf2b"
+    },
+    {
+      "path": "samples/normal/nor7.wav",
+      "bytes": 64590,
+      "sha256": "5499335c138aa39d457bfd043f2a0929edbdda01966062ea84b2ccffc6e1ac4a"
+    },
+    {
+      "path": "samples/normal/nor8.wav",
+      "bytes": 77646,
+      "sha256": "e28ed580a5ff80cad3cfd09c8455cf1faab954d767631ee5ed07bbb9e78de9b1"
+    },
+    {
+      "path": "samples/normal/nor9.wav",
+      "bytes": 73806,
+      "sha256": "df43e86f3e44eaf09449ca094d163276aa65fea32f6fd21f439e53893a8993f2"
+    },
+    {
+      "path": "samples/normal/test.wav",
+      "bytes": 221262,
+      "sha256": "c80bac73f0605afe4b2d010178eca7a4932121c11de736c6a6e96c503dd32c67"
+    },
+    {
+      "path": "tests/test_p1_logic.py",
+      "bytes": 2049,
+      "sha256": "4c3a12fe66f817c09ea4653dfefa876427a0f85fe6d85843127022ae98181558"
+    },
+    {
+      "path": "tests/test_pipeline.py",
+      "bytes": 19472,
+      "sha256": "918377751a53e28d27f300ce7c3a67ed3c3da435cebade61e40b5b2fae26c76f"
+    },
+    {
+      "path": "text_utils.py",
+      "bytes": 2051,
+      "sha256": "877be6b8d63e7aff30d14f86ac2068ee839a1bf723236b7beb061422336c5218"
+    },
+    {
+      "path": "vad_service.py",
+      "bytes": 1288,
+      "sha256": "7d0cd62d5191271ea77934ba47fe06bb71c441baa279b0e238dee1812bc9c265"
+    }
+  ],
+  "archive": {
+    "path": "whisper_p1_20260914.zip",
+    "bytes": 507229249,
+    "sha256": "c4d90e641daf8350ba3b59f5a3013121a147adde30aab2d8f34e5d411e2c6236"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "configuration": {
+    "phowhisper_model": "vinai/PhoWhisper-small",
+    "phowhisper_revision": "a86b604c346caf7148c37512eafe783a16420adb",
+    "phobert_model_dir": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\backend\\ai_services\\whisper\\phobert\\weights",
+    "phobert_cheating_threshold": 0.6,
+    "samples_dir": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\backend\\ai_services\\whisper\\samples"
+  },
+  "raw_all_files": {
+    "n": 1,
+    "tp": 1,
+    "tn": 0,
+    "fp": 0,
+    "fn": 0,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "average_time_seconds": 20.943857
+  },
+  "primary_unique_audio_hashes": {
+    "n": 1,
+    "tp": 1,
+    "tn": 0,
+    "fp": 0,
+    "fn": 0,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "average_time_seconds": 20.943857
+  },
+  "threshold_sweep": {
+    "selected_on_unique_audio": 0.6,
+    "selection_warning": "Selected and measured on the same small audio sample set; descriptive only."
+  },
+  "duplicate_files": 0,
+  "failed_files": 0,
+  "files": [
+    {
+      "file": "cheating/cheat1.wav",
+      "sha256": "c6bd8b25d239f055e98b4e047ba5279ac2580cc5268794089a9688b0d0f06c65",
+      "duplicate_result_reused": false,
+      "actual_label": "cheating",
+      "prediction_alert": true,
+      "time_seconds": 20.943857,
+      "transcription": "đáp án là câu bê.",
+      "final_risk": "Cheating",
+      "rule_label": "high",
+      "ai_label": "Cheating",
+      "ai_confidence": 0.997,
+      "ai_cheating_probability": 0.997,
+      "ai_cheating_threshold": 0.6,
+      "fusion_reason": "Rule-based trigger (risk=high).",
+      "matched_keywords": [
+        {
+          "keyword": "đáp án",
+          "candidate": "đap an",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là",
+          "candidate": "đap an la",
+          "score": 100,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "đáp án là gì",
+          "candidate": "đap an la cau",
+          "score": 90.9,
+          "severity": "high",
+          "category": "answer"
+        },
+        {
+          "keyword": "câu mấy",
+          "candidate": "cau b",
+          "score": 88.9,
+          "severity": "medium",
+          "category": "question"
+        },
+        {
+          "keyword": "câu số",
+          "candidate": "cau b",
+          "score": 88.9,
+          "severity": "medium",
+          "category": "question"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

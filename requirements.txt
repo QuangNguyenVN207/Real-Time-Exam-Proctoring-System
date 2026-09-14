@@ -34,10 +34,12 @@ pyvi==0.1.1
 ultralytics>=8.3,<9.0
 config
 
-# face_verify: RetinaFace (detection) + ArcFace (recognition), chạy qua onnxruntime.
+# face_verify: SCRFD-10G (detection) + ArcFace R50 (recognition), chạy qua onnxruntime.
 # Model pack "buffalo_l" (~280MB) sẽ tự động tải về ~/.insightface/models khi
 # FaceVerifier khởi tạo lần đầu (cần internet).
-insightface>=0.7,<1.0
+# Pinned official python-package revision used by the locked Face P1 benchmark.
+# This also avoids the optional legacy face3d C++ build required by 0.7.3 on Windows.
+insightface @ git+https://github.com/deepinsight/insightface.git@1480e705287bc5d59f923b46c260ec6e3e4150f6#subdirectory=python-package
 # faiss-cpu: tùy chọn, tăng tốc tìm kiếm cosine similarity khi DB có nhiều sinh viên.
 # uv pip install faiss-cpu
 

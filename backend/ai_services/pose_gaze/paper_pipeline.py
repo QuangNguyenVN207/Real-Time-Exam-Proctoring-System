@@ -36,9 +36,9 @@ class PoseGazePaperPipeline:
         person_detect_every_n_frames: int = 1,
         face_verifier: Any | None = None,
         identity_guard: IdentityGuard | None = None,
-        identity_scan_every_n_frames: int = 5,
-        identity_assignment_confirmations: int = 3,
-        identity_mismatch_confirmations: int = 3,
+        identity_scan_every_n_frames: int = settings.face_scan_every_n_frames,
+        identity_assignment_confirmations: int = settings.face_assignment_confirmations,
+        identity_mismatch_confirmations: int = settings.face_mismatch_confirmations,
     ) -> None:
         if person_detect_every_n_frames < 1:
             raise ValueError(

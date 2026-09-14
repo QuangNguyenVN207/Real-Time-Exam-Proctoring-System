@@ -6,7 +6,10 @@ __pycache__/
 env/
 venv/
 .venv/
+.venv-face/
+.venv-audio-p1/
 .venv2/
+/.cache/
 *.egg-info/
 dist/
 build/
@@ -60,6 +63,9 @@ mlruns/
 *.bin
 *.h5
 *.task
+backend/ai_services/whisper/releases/*.zip
+backend/ai_services/object_detect/releases/*.zip
+backend/ai_services/pose_gaze/releases/*.zip
 .gstack/
 
 .link-cache.json

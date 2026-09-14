@@ -1,0 +1,109 @@
+{
+  "scope": {
+    "fine_tuned_component": "vinai/phobert-base-v2 binary text classifier",
+    "asr_component": "vinai/PhoWhisper-small pretrained; not evaluated by this script",
+    "validation_protocol": "Exact train_test_split(test_size=0.15, random_state=42, stratify=label) from train_phobert.py",
+    "threshold_selection_warning": "The best threshold is descriptive because it is selected and measured on the same validation split; it is not a locked-test estimate."
+  },
+  "dataset": {
+    "path": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\backend\\ai_services\\whisper\\phobert\\dataset\\cheating.csv",
+    "sha256": "02df077da283948aace169058f0b665619d6cce46bc0eb705b83324a9451a8d8",
+    "rows": 443,
+    "class_counts": {
+      "0": 216,
+      "1": 227
+    },
+    "train_rows": 376,
+    "validation_rows": 67,
+    "exact_duplicate_rows": 3,
+    "validation_rows_seen_exactly_in_train": 2
+  },
+  "training_log": {
+    "requested_max_epochs": 15.0,
+    "stopped_epoch": 9.0,
+    "final_checkpoint_step": 423,
+    "best_checkpoint_step": 235,
+    "best_epoch": 5.0,
+    "best_logged_f1": 0.9577464788732394,
+    "best_model_checkpoint_original_path": "D:\\AI\\Real-Time-Exam-Proctoring-System\\backend\\ai_services\\whisper\\phobert\\weights\\checkpoint-235",
+    "available_weight_interpretation": {
+      "inferred_epoch": 5.0,
+      "inferred_step": 235,
+      "reproduced_weighted_eval_loss": 0.12383605765692722,
+      "evidence": "The loaded model's weighted eval loss plus threshold-0.50 accuracy, precision, recall and F1 are compared with every logged epoch.",
+      "maximum_absolute_metric_delta": 3.628195093946518e-07,
+      "best_checkpoint_weight_available": true
+    }
+  },
+  "model": {
+    "path": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\backend\\ai_services\\whisper\\phobert\\weights",
+    "model_safetensors_sha256": "9f321d440ae1112a89a1618ab34202e3185583d620c6c1c01b786b45e7d9c2f0",
+    "config_sha256": "e95f5e1f59392822a51f295c9c8bb2ad3cb9a40ea2489ec0e06e55d1e81f3246",
+    "device": "cpu"
+  },
+  "validation": {
+    "selected_threshold": 0.71,
+    "metrics": {
+      "argmax_0_50": {
+        "threshold": 0.5,
+        "n": 67,
+        "tp": 34,
+        "tn": 30,
+        "fp": 3,
+        "fn": 0,
+        "accuracy": 0.9552238805970149,
+        "precision": 0.918918918918919,
+        "recall": 1.0,
+        "f1": 0.9577464788732394
+      },
+      "runtime_0_60": {
+        "threshold": 0.6,
+        "n": 67,
+        "tp": 34,
+        "tn": 31,
+        "fp": 2,
+        "fn": 0,
+        "accuracy": 0.9701492537313433,
+        "precision": 0.9444444444444444,
+        "recall": 1.0,
+        "f1": 0.9714285714285714
+      },
+      "best_validation_f1": {
+        "threshold": 0.71,
+        "n": 67,
+        "tp": 34,
+        "tn": 32,
+        "fp": 1,
+        "fn": 0,
+        "accuracy": 0.9850746268656716,
+        "precision": 0.9714285714285714,
+        "recall": 1.0,
+        "f1": 0.9855072463768116
+      }
+    },
+    "roc_auc": 0.9723707664884136,
+    "average_precision": 0.9393103504210727,
+    "approximate_eer": 0.015151515151515152,
+    "approximate_eer_threshold": 0.9869605302810669,
+    "sensitivity_excluding_exact_train_duplicates": {
+      "threshold": 0.71,
+      "n": 65,
+      "tp": 33,
+      "tn": 31,
+      "fp": 1,
+      "fn": 0,
+      "accuracy": 0.9846153846153847,
+      "precision": 0.9705882352941176,
+      "recall": 1.0,
+      "f1": 0.9850746268656716
+    }
+  },
+  "environment": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "torch": "2.14.0+cpu",
+    "transformers": "5.5.4",
+    "pandas": "3.0.5",
+    "scikit_learn": "1.9.1"
+  }
+}

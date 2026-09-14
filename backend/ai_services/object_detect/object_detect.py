@@ -39,28 +39,40 @@ class ObjectDetector:
         device: str | None = None,
         model: Any | None = None,
     ) -> None:
-        """Load the YOLO checkpoint once and allocate it to CUDA or CPU."""
+        """Load the locked PyTorch checkpoint on CUDA, MPS, or CPU."""
 
-        self.model_path = str(model_path)
+        resolved_model_path = Path(model_path).expanduser().resolve()
+        self.model_path = str(resolved_model_path)
         self.confidence_threshold = float(confidence_threshold)
         self.device = device or self._automatic_device()
         self._suppress_ultralytics_logging()
 
         if model is None:
+            if not resolved_model_path.is_file():
+                raise FileNotFoundError(
+                    f"YOLO PyTorch checkpoint was not found: {resolved_model_path}"
+                )
+            if resolved_model_path.suffix.lower() != ".pt":
+                raise ValueError(
+                    "ObjectDetector accepts only the locked .pt checkpoint; "
+                    f"received: {resolved_model_path}"
+                )
             try:
                 from ultralytics import YOLO
             except ImportError as error:  # pragma: no cover - dependency setup
                 raise RuntimeError(
                     "Install ultralytics before creating ObjectDetector"
                 ) from error
-            model = YOLO(self.model_path)
+            model = YOLO(self.model_path, task="detect")
 
         self.model = model
         if hasattr(self.model, "to"):
             try:
                 self.model.to(self.device)
-            except Exception:
-                pass  # Bỏ qua nếu mô hình là OpenVINO/ONNX không hỗ trợ .to()
+            except Exception as error:
+                raise RuntimeError(
+                    f"Could not place best (1).pt on device {self.device!r}"
+                ) from error
 
     def process_frame(
         self,
@@ -85,8 +97,9 @@ class ObjectDetector:
             # print(f"[DEBUG YOLO] Đưa vào model với device={self.device}, conf={self.confidence_threshold}...")
             results = self.model(
                 frame,
+                imgsz=self.INPUT_SIZE,
                 conf=self.confidence_threshold,
-                # device=self.device,
+                device=self.device,
                 verbose=False,
             )
             # print(f"[DEBUG YOLO] Kết quả thô từ model.predict: {results}")
@@ -149,12 +162,6 @@ class ObjectDetector:
             class_id = int(self._first_scalar(box.cls))
             raw_name = names.get(class_id, class_id)
 
-            # PHÒNG HỜI OPENVINO MẤT FILE .NAMES (Trả về số nguyên)
-            if isinstance(raw_name, (int, float)) or str(raw_name).isdigit():
-                # Nếu model của bạn đặt smartphone ở index 0 (hoặc chỉnh lại theo index thực tế của bạn)
-                id_mapping = {0: "smartphone", 1: "cheat_sheet", 2: "earphone", 3: "smartwatch"}
-                raw_name = id_mapping.get(int(class_id), str(class_id))
-
             label = self._canonical_class_name(raw_name)
 
             # label = self._canonical_class_name(names.get(class_id, class_id))
@@ -162,7 +169,7 @@ class ObjectDetector:
             
             if (
                 label not in self.BANNED_ITEMS
-                or confidence <= self.confidence_threshold
+                or confidence <= self._threshold_for_label(label)
             ):
                 continue
 
@@ -231,7 +238,7 @@ class ObjectDetector:
             confidence = float(self._first_scalar(box.conf))
             if (
                 label not in self.BANNED_ITEMS
-                or confidence <= self.confidence_threshold
+                or confidence <= self._threshold_for_label(label)
             ):
                 continue
 
@@ -273,8 +280,23 @@ class ObjectDetector:
         try:
             import torch
         except ImportError:  # pragma: no cover - ultralytics installs torch
-            return "gpu"
-        return "cuda" if torch.cuda.is_available() else "gpu"
+            return "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        if mps is not None and mps.is_available():
+            return "mps"
+        return "cpu"
+
+    def _threshold_for_label(self, label: str) -> float:
+        """Return the locked per-class threshold from the shared runtime config."""
+
+        return float(
+            settings.object_class_confidence_thresholds.get(
+                label,
+                self.confidence_threshold,
+            )
+        )
 
     @staticmethod
     def _suppress_ultralytics_logging() -> None:
@@ -395,31 +417,25 @@ class ObjectDetectModule:
                     "Install torch and ultralytics before creating ObjectDetectModule"
                 ) from error
 
-            # --- BẮT ĐẦU ĐOẠN SỬA ---
             detected_device = "cpu"
             if torch.cuda.is_available():
                 detected_device = "cuda"
             else:
-                try:
-                    import openvino as ov
-                    # Nếu tìm thấy chữ GPU trong danh sách thiết bị OpenVINO, đó là Intel iGPU
-                    if "GPU" in ov.Core().available_devices:
-                        detected_device = "GPU"
-                except ImportError:
-                    pass
+                mps = getattr(getattr(torch, "backends", None), "mps", None)
+                if mps is not None and mps.is_available():
+                    detected_device = "mps"
             
             self._device = device or detected_device
 
-            # Tự động trỏ sang thư mục OpenVINO nếu đang dùng Intel iGPU
-            model_path = str(settings.yolo_model_path)
-            if self._device == "GPU" and model_path.endswith("best (1).pt"):
-                model_path = model_path.replace("best (1).pt", "best_openvino_model")
-            elif self._device == "GPU" and model_path.endswith(".pt"):
-                model_path = model_path.replace(".pt", "_openvino_model")
+            model_path = Path(settings.yolo_model_path).expanduser().resolve()
+            if not model_path.is_file() or model_path.suffix.lower() != ".pt":
+                raise FileNotFoundError(
+                    "The object module requires the locked best (1).pt file: "
+                    f"{model_path}"
+                )
             
             print(f"[object_detect] Loading YOLO model from {model_path}...")
-            self._model = YOLO(model_path, task="detect")
-            # --- KẾT THÚC ĐOẠN SỬA ---
+            self._model = YOLO(str(model_path), task="detect")
 
             # self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
             # print(
@@ -429,15 +445,17 @@ class ObjectDetectModule:
             # self._model = YOLO(settings.yolo_model_path)
             try:
                 self._model.to(self._device)
-            except Exception:
-                pass  # Bỏ qua lỗi .to() đối với OpenVINO
+            except Exception as error:
+                raise RuntimeError(
+                    f"Could not place best (1).pt on device {self._device!r}"
+                ) from error
             if self._device == "cuda":
                 print(
                     f"[object_detect] Inference device: cuda "
                     f"({torch.cuda.get_device_name(0)})"
                 )
-            elif self._device == "GPU":
-                print("[object_detect] Inference device: Intel iGPU (OpenVINO)")
+            elif self._device == "mps":
+                print("[object_detect] Inference device: Apple MPS")
             else:
                 print("[object_detect] Inference device: cpu")
         else:
@@ -451,6 +469,8 @@ class ObjectDetectModule:
             if enable_smartphone_fallback is None
             else bool(enable_smartphone_fallback)
         )
+        if smartphone_model is not None and enable_smartphone_fallback is None:
+            fallback_enabled = True
         self._smartphone_model = smartphone_model
         if (
             self._smartphone_model is None

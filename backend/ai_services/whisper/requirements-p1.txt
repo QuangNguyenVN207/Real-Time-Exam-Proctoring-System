@@ -1,0 +1,18 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.0+cpu
+torchaudio==2.11.0+cpu
+transformers==5.5.4
+safetensors==0.8.0
+sentencepiece==0.2.2
+underthesea==9.5.0
+numpy==2.5.3
+pandas==3.0.5
+scikit-learn==1.9.1
+matplotlib==3.11.2
+librosa==1.0.0
+av==18.1.0
+scipy==1.18.1
+soundfile==0.14.0
+silero-vad==6.2.1
+rapidfuzz==3.14.6
+jiwer==4.0.0

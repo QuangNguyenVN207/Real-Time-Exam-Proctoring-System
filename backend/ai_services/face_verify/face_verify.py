@@ -52,18 +52,29 @@ class FaceVerifier:
     """
 
     def __init__(self, db_path="data/student_faces/", similarity_threshold=None,
-                 det_size=None, model_name=None):
+                 identity_margin_threshold=None, det_size=None, model_name=None,
+                 model_root=None, gallery_path=None, detection_threshold=None):
         self.db_path = db_path
         self.similarity_threshold = (
             similarity_threshold if similarity_threshold is not None else settings.face_similarity_threshold
         )
+        self.identity_margin_threshold = (
+            identity_margin_threshold
+            if identity_margin_threshold is not None
+            else settings.face_identity_margin_threshold
+        )
         det_size = det_size or settings.face_det_size
         model_name = model_name or settings.face_model_name
+        detection_threshold = (
+            detection_threshold
+            if detection_threshold is not None
+            else settings.face_detection_threshold
+        )
 
         _safe_print(f"[face_verify] Inference device: {_DEVICE}"
               + (" (không tìm thấy CUDA, chạy trên CPU)" if _DEVICE == "cpu" else ""))
 
-        # Chỉ nạp đúng 2 model cần dùng (det_10g=RetinaFace, w600k_r50=ArcFace)
+        # Chỉ nạp đúng 2 model cần dùng (det_10g=SCRFD, w600k_r50=ArcFace)
         # thay vì insightface.app.FaceAnalysis (nạp cả 5 model trong bộ
         # buffalo_l rồi mới lọc bớt) — bộ đó có model landmark_3d_68 nặng
         # ~140MB không dùng tới, tốn RAM/thời gian khởi động vô ích.
@@ -72,11 +83,15 @@ class FaceVerifier:
         model_dir = ensure_available(
             "models",
             model_name,
-            root=os.path.expanduser("~/.insightface"),
+            root=os.path.expanduser(model_root or "~/.insightface"),
         )
 
         self._det_model = model_zoo.get_model(osp.join(model_dir, "det_10g.onnx"), providers=_PROVIDERS)
-        self._det_model.prepare(ctx_id, input_size=det_size, det_thresh=0.5)
+        self._det_model.prepare(
+            ctx_id,
+            input_size=det_size,
+            det_thresh=detection_threshold,
+        )
 
         self._rec_model = model_zoo.get_model(osp.join(model_dir, "w600k_r50.onnx"), providers=_PROVIDERS)
         self._rec_model.prepare(ctx_id)
@@ -84,10 +99,20 @@ class FaceVerifier:
         self._known_names: list[str] = []
         self._known_vectors: np.ndarray = np.empty((0, 512), dtype=np.float32)
         self._faiss_index = None
-        self._load_database()
+        default_gallery = osp.join(self.db_path, "gallery_embeddings.npz")
+        selected_gallery = gallery_path or default_gallery
+        if osp.isfile(selected_gallery):
+            self._load_gallery(selected_gallery)
+        else:
+            if gallery_path is not None:
+                _safe_print(
+                    f"[face_verify][WARNING] Không tìm thấy gallery: {selected_gallery}; "
+                    "chuyển sang ảnh trong DB."
+                )
+            self._load_database()
 
     def _detect_faces(self, img: np.ndarray) -> list:
-        """Chạy RetinaFace tìm bbox, rồi ArcFace trích vector cho từng mặt —
+        """Chạy SCRFD tìm bbox, rồi ArcFace trích vector cho từng mặt —
         tương đương FaceAnalysis.get() nhưng chỉ dùng 2 model đã nạp riêng."""
         bboxes, kpss = self._det_model.detect(img, max_num=0, metric="default")
         if bboxes.shape[0] == 0:
@@ -127,8 +152,51 @@ class FaceVerifier:
                 _safe_print(f"[face_verify][ERROR] Lỗi khi xử lý {filepath}: {e}")
                 continue
 
-        self._known_names = names
-        self._known_vectors = np.array(vectors, dtype=np.float32) if vectors else np.empty((0, 512), dtype=np.float32)
+        matrix = (
+            np.array(vectors, dtype=np.float32)
+            if vectors
+            else np.empty((0, 512), dtype=np.float32)
+        )
+        self._set_database(names, matrix)
+
+        _safe_print(f"[face_verify] Đã nạp {len(self._known_names)} khuôn mặt từ {self.db_path}"
+              + (" (dùng FAISS)" if self._faiss_index is not None else ""))
+
+    def _load_gallery(self, gallery_path: str) -> None:
+        """Nạp centroid gallery do benchmark_video.py sinh ra.
+
+        Mỗi centroid tổng hợp nhiều frame enrollment của đúng một actor. Đây là
+        cách triển khai tương ứng với protocol P1; dữ liệu sinh trắc học vẫn ở
+        file cục bộ và không được tự động commit.
+        """
+        try:
+            with np.load(gallery_path, allow_pickle=False) as gallery:
+                names = [str(value) for value in gallery["actor_ids"].tolist()]
+                vectors = np.asarray(gallery["centroids"], dtype=np.float32)
+            if vectors.ndim != 2 or vectors.shape[0] != len(names):
+                raise ValueError("actor_ids và centroids không cùng số hàng")
+            if not names or len(set(names)) != len(names):
+                raise ValueError("actor_ids phải không rỗng và không trùng")
+            if vectors.shape[1] != 512 or not np.isfinite(vectors).all():
+                raise ValueError("centroids phải là ma trận float hữu hạn Nx512")
+            self._set_database(names, vectors)
+            _safe_print(
+                f"[face_verify] Đã nạp gallery centroid cho {len(names)} người từ "
+                f"{gallery_path}" + (" (dùng FAISS)" if self._faiss_index is not None else "")
+            )
+        except Exception as exc:
+            raise ValueError(f"Gallery face không hợp lệ: {gallery_path}: {exc}") from exc
+
+    def _set_database(self, names: list[str], vectors: np.ndarray) -> None:
+        """Chuẩn hoá gallery một lần và dựng chỉ mục tìm kiếm cosine."""
+        matrix = np.asarray(vectors, dtype=np.float32)
+        if matrix.size:
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            if np.any(norms <= 1e-12):
+                raise ValueError("Gallery chứa vector có norm bằng 0")
+            matrix = matrix / norms
+        self._known_names = list(names)
+        self._known_vectors = matrix
 
         # Nếu số lượng sinh viên lớn, dùng FAISS (IndexFlatIP) để tìm kiếm nhanh hơn
         # thay vì nhân ma trận numpy tuần tự. Cosine similarity == inner product vì
@@ -138,9 +206,6 @@ class FaceVerifier:
             self._faiss_index.add(self._known_vectors)
         else:
             self._faiss_index = None
-
-        _safe_print(f"[face_verify] Đã nạp {len(self._known_names)} khuôn mặt từ {self.db_path}"
-              + (" (dùng FAISS)" if self._faiss_index is not None else ""))
 
     def _best_match(self, query_vector: np.ndarray) -> tuple[int | None, float]:
         """(index, score) của vector khớp cao nhất trong DB. index=None nếu DB rỗng."""
@@ -152,6 +217,36 @@ class FaceVerifier:
         sims = self._known_vectors @ query_vector
         idx = int(np.argmax(sims))
         return idx, float(sims[idx])
+
+    def _best_two_matches(
+        self,
+        query_vector: np.ndarray,
+    ) -> tuple[int | None, float, float]:
+        """Trả về (top1 index, top1 score, top2 score).
+
+        Khi DB chỉ có một người, top2=-1 nên margin không vô tình chặn danh
+        tính duy nhất. Query được chuẩn hoá phòng khi caller cung cấp vector thô.
+        """
+        if self._known_vectors.shape[0] == 0:
+            return None, -1.0, -1.0
+        query = np.asarray(query_vector, dtype=np.float32).reshape(-1)
+        norm = float(np.linalg.norm(query))
+        if norm <= 1e-12:
+            return None, -1.0, -1.0
+        query = query / norm
+        count = min(2, self._known_vectors.shape[0])
+        if self._faiss_index is not None:
+            scores, indices = self._faiss_index.search(query.reshape(1, -1), count)
+            top1_index = int(indices[0][0])
+            top1_score = float(scores[0][0])
+            top2_score = float(scores[0][1]) if count == 2 else -1.0
+            return top1_index, top1_score, top2_score
+        scores = self._known_vectors @ query
+        order = np.argsort(scores)[::-1]
+        top1_index = int(order[0])
+        top1_score = float(scores[top1_index])
+        top2_score = float(scores[int(order[1])]) if count == 2 else -1.0
+        return top1_index, top1_score, top2_score
 
     @staticmethod
     def _crop(frame: np.ndarray, bbox) -> np.ndarray:
@@ -214,8 +309,13 @@ class FaceVerifier:
                 return None
 
             face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-            idx, score = self._best_match(face.normed_embedding)
-            if idx is None or score < self.similarity_threshold:
+            idx, score, runner_up_score = self._best_two_matches(face.normed_embedding)
+            margin = score - runner_up_score
+            if (
+                idx is None
+                or score < self.similarity_threshold
+                or margin < self.identity_margin_threshold
+            ):
                 return None
             return self._known_names[idx], round(score, 4)
         except Exception as e:
@@ -250,15 +350,29 @@ class FaceVerifier:
                 return None
 
             face = max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
-            query_vector = face.normed_embedding
+            query_vector = np.asarray(face.normed_embedding, dtype=np.float32)
+            query_norm = float(np.linalg.norm(query_vector))
+            if query_norm <= 1e-12:
+                return None
+            query_vector = query_vector / query_norm
 
             expected_idx = self._known_names.index(expected_student_id)
-            expected_score = float(self._known_vectors[expected_idx] @ query_vector)
-            if expected_score >= self.similarity_threshold:
-                return None  # đúng người được gán cho track này
-
-            best_idx, best_score = self._best_match(query_vector)
+            best_idx, best_score, runner_up_score = self._best_two_matches(query_vector)
             best_name = self._known_names[best_idx] if best_idx is not None else None
+            expected_score = float(self._known_vectors[expected_idx] @ query_vector)
+            margin = best_score - runner_up_score
+            if (
+                best_idx == expected_idx
+                and best_score >= self.similarity_threshold
+                and margin >= self.identity_margin_threshold
+            ):
+                return None  # đúng người, đủ điểm và không mơ hồ với runner-up
+            if best_score < self.similarity_threshold:
+                decision_reason = "low_similarity"
+            elif margin < self.identity_margin_threshold:
+                decision_reason = "ambiguous_identity"
+            else:
+                decision_reason = "wrong_top1_identity"
 
             # Quy đổi bbox khuôn mặt (toạ độ trong vùng crop) về toạ độ frame gốc
             x1, y1 = int(bbox[0]), int(bbox[1])
@@ -275,6 +389,11 @@ class FaceVerifier:
                     "matched_student_id": best_name,
                     "expected_score": round(expected_score, 4),
                     "matched_score": round(best_score, 4) if best_name is not None else None,
+                    "runner_up_score": round(runner_up_score, 4) if best_name is not None else None,
+                    "identity_margin": round(margin, 4) if best_name is not None else None,
+                    "required_similarity": self.similarity_threshold,
+                    "required_margin": self.identity_margin_threshold,
+                    "decision_reason": decision_reason,
                     "bbox": absolute_bbox,
                 },
             }

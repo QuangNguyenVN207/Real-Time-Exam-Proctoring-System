@@ -13,6 +13,7 @@ from backend.ai_services.whisper.audio_logger import AudioLogger
 # Import các Service PhoBERT (giả định bạn đặt trong thư mục phobert)
 from backend.ai_services.whisper.phobert.phobert_service import PhobertService
 from backend.ai_services.whisper.phobert.decision_fusion import DecisionFusionService
+from backend.ai_services.whisper.config import PHOBERT_CHEATING_THRESHOLD
 
 
 class AudioPipeline:
@@ -28,6 +29,9 @@ class AudioPipeline:
         
         # Tích hợp thêm AI mới
         self.phobert = PhobertService()
+        self.fusion = DecisionFusionService(
+            ai_cheating_threshold=PHOBERT_CHEATING_THRESHOLD
+        )
         
         print(f"[Pipeline] Khởi tạo hoàn tất trong {time.time() - start_time:.2f}s")
 
@@ -67,28 +71,24 @@ class AudioPipeline:
         # ==========================================================
         # 1. Lấy kết quả bắt từ khóa (Rule-based)
         keyword_result = self.detector.detect(text, timestamp=ts)
-        rule_label = keyword_result.get("risk", "Normal").capitalize() 
+        rule_label = keyword_result.get("risk", "safe")
         matched_keywords = keyword_result.get("matched", [])
         
         # 2. Lấy kết quả phân tích ngữ cảnh sâu (PhoBERT)
         ai_result = self.phobert.predict(text)
-        phobert_label = ai_result.get("label", "Normal").capitalize()
+        phobert_label = ai_result.get("label", "Normal")
         phobert_conf = ai_result.get("confidence", 0.0)
+        phobert_cheating_probability = ai_result.get("all_probs", {}).get(
+            "Cheating", 0.0
+        )
         
-        # 3. TRỌNG TÀI QUYẾT ĐỊNH (Chỉ cần 1 trong 2 nghi ngờ là bắt)
-        if rule_label in ["Suspicious", "Cheating"] or phobert_label in ["Suspicious", "Cheating"]:
-            status_signal = "alert"
-            final_risk = "Cheating" if "Cheating" in [rule_label, phobert_label] else "Suspicious"
-            
-            # Ưu tiên ghi nhận lý do từ khóa trước (vì nó chính xác với các câu ngắn)
-            if rule_label in ["Suspicious", "Cheating"]:
-                fusion_reason = f"Bắt được từ khóa cấm: {matched_keywords}"
-            else:
-                fusion_reason = f"AI PhoBERT phát hiện ngữ cảnh gian lận (Độ tự tin: {phobert_conf:.2f})"
-        else:
-            status_signal = "success"
-            final_risk = "Normal"
-            fusion_reason = f"Đánh giá an toàn (Độ tự tin: {phobert_conf:.2f})"
+        # 3. Hợp nhất rule-based và xác suất lớp Cheating của PhoBERT.
+        # KeywordDetector trả về safe/low/medium/high; DecisionFusionService
+        # là nơi duy nhất chuyển các nhãn đó thành quyết định cuối.
+        fusion = self.fusion.fuse(text, rule_label, ai_result)
+        final_risk = fusion["final_label"]
+        fusion_reason = fusion["fusion_reason"]
+        status_signal = "alert" if final_risk == "Cheating" else "success"
 
         # ==========================================================
         # 4. Logger (Ghi log thông minh hơn)
@@ -116,6 +116,8 @@ class AudioPipeline:
             
             # Thông số AI chi tiết (Dùng cho Debug/Admin Dashboard)
             "confidence": round(phobert_conf, 4),
+            "ai_cheating_probability": round(phobert_cheating_probability, 4),
+            "ai_cheating_threshold": self.fusion.ai_cheating,
             "rule_label": rule_label,
             "ai_label": phobert_label,
             "fusion_reason": fusion_reason,
@@ -134,6 +136,8 @@ class AudioPipeline:
             "speech_segments": [],
             "risk": "Normal",
             "confidence": 0.0,
+            "ai_cheating_probability": 0.0,
+            "ai_cheating_threshold": self.fusion.ai_cheating,
             "rule_label": "Normal",
             "ai_label": "Normal",
             "fusion_reason": "No speech detected",

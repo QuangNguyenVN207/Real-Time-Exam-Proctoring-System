@@ -1,0 +1,68 @@
+﻿source_row,text,processed_text,label,cheating_probability,prediction_0_50,prediction_0_60,prediction_selected,error_selected,seen_in_train_exact
+5,mày ơi câu ba chọn a hay b đấy,mày ơi câu ba chọn a hay b đấy,1,0.9972318,1,1,1,False,True
+6,cô ơi đề của em bị mờ chữ này,cô ơi_đề của em bị mờ chữ này,0,0.0032617997,0,0,0,False,True
+19,đừng che tao không thấy đường chép,đừng che tao không thấy đường chép,1,0.9971686,1,1,1,False,False
+38,thưa cô em xin phép nộp bài sớm,thưa cô em xin phép nộp bài sớm,0,0.0032483155,0,0,0,False,False
+56,để điện thoại thấp xuống xíu,để điện_thoại thấp xuống xíu,1,0.99673814,1,1,1,False,False
+69,nhìn bài đứa đằng trước kìa,nhìn bài đứa đằng trước kìa,1,0.99718225,1,1,1,False,False
+87,có xài được điện thoại không,có xài được điện_thoại không,1,0.99098223,1,1,1,False,False
+96,cô ơi cho em đi vệ sinh được không ạ,cô ơi cho em đi vệ_sinh được không ạ,0,0.0032408857,0,0,0,False,False
+97,thầy ơi mạng nhà em mới rớt,thầy ơi mạng nhà em mới rớt,0,0.0032367879,0,0,0,False,False
+113,đau đầu quá suy nghĩ không ra,đau_đầu quá suy_nghĩ không ra,0,0.0035924024,0,0,0,False,False
+124,chắc là phương án này rồi,chắc là phương_án này rồi,0,0.0036538595,0,0,0,False,False
+128,em xin phép bật lại cam ạ,em xin phép bật lại cam ạ,0,0.0032992533,0,0,0,False,False
+133,nãy giờ em nháp trên giấy này,nãy giờ em nháp trên giấy này,0,0.54536086,1,0,0,False,False
+134,thưa cô em có được dùng giấy nháp trắng không,thưa cô em có được dùng giấy nháp trắng không,0,0.0033711689,0,0,0,False,False
+149,mày làm xong chưa cho tao chép,mày làm xong chưa cho tao chép,1,0.9971739,1,1,1,False,False
+157,từ từ thôi tao chép không kịp,từ_từ thôi tao chép không kịp,1,0.99722457,1,1,1,False,False
+160,câu này photomath quét không ra,câu này photomath quét không ra,1,0.99710625,1,1,1,False,False
+163,đáp án là một hai ba bốn đúng không,đáp_án là một hai ba bốn đúng không,1,0.9964605,1,1,1,False,False
+164,mày nháy mắt là chọn a đúng không,mày nháy_mắt là chọn a đúng không,1,0.99712354,1,1,1,False,False
+171,đọc lại số liệu câu ba tao nghe,đọc lại số_liệu câu ba tao nghe,1,0.9971501,1,1,1,False,False
+191,câu này thầy giải trên lớp rồi lật tập ra chép,câu này thầy giải trên lớp rồi lật tập ra chép,1,0.99249846,1,1,1,False,False
+195,có ai giải được phần code không gửi file tao với,có ai giải được phần code không gửi file tao với,1,0.9968708,1,1,1,False,False
+196,copy paste đoạn code đó qua đi,copy paste đoạn code đó qua đi,1,0.99716324,1,1,1,False,False
+206,đeo tai nghe tàng hình nè yên tâm,đeo tai nghe_tàng hình_nè yên_tâm,1,0.99673885,1,1,1,False,False
+211,zoom to lên tao không thấy rõ đề của mày,zoom to lên tao không thấy rõ đề của mày,1,0.99690837,1,1,1,False,False
+214,chuyển tab nhanh lên không thầy thấy,chuyển tab nhanh lên không thầy thấy,1,0.9927573,1,1,1,False,False
+215,tao đang xài máy ảo để thi,tao đang xài máy_ảo để thi,1,0.9971107,1,1,1,False,False
+218,chép phạt tao câu này đi tao chép câu kia,chép phạt tao câu này đi tao chép câu kia,1,0.9971603,1,1,1,False,False
+226,mặc áo khoác vào để giấu điện thoại,mặc áo_khoác vào để giấu điện_thoại,1,0.9969528,1,1,1,False,False
+228,để tao tắt wifi rồi vô lại,để tao tắt wifi rồi vô lại,1,0.9968495,1,1,1,False,False
+231,gõ đáp án vô khung chat zoom mà đừng bấm gửi,gõ đáp_án vô khung chat zoom mà đừng bấm gửi,1,0.99711955,1,1,1,False,False
+235,tao đang dùng vmware để tra tài liệu,tao đang dùng vmware để tra tài_liệu,1,0.9971187,1,1,1,False,False
+247,thầy cho em hỏi là thời gian đếm ngược bị lỗi ạ,thầy cho em hỏi là thời_gian đếm ngược bị lỗi ạ,0,0.0032074163,0,0,0,False,False
+250,để em đổi sang mạng 4g ạ,để em đổi sang mạng 4 g ạ,0,0.0033412834,0,0,0,False,False
+263,em được dùng bảng tuần hoàn hóa học không thầy,em được dùng bảng tuần hoàn_hóa học không thầy,0,0.0033278528,0,0,0,False,False
+264,cô ơi em dùng máy tính casio năm tám mươi được không,cô ơi em dùng máy_tính casio năm tám_mươi được không,0,0.0032395811,0,0,0,False,False
+268,thầy ơi em bị văng ra khỏi hệ thống rồi,thầy ơi em bị văng ra khỏi hệ_thống rồi,0,0.0032321082,0,0,0,False,False
+275,mình nhớ công thức này học rồi mà ta,mình nhớ công_thức này học rồi mà ta,0,0.70939696,1,1,0,False,False
+278,chọn đại câu c vậy hên xui,chọn đại_câu c vậy hên xui,0,0.99717736,1,1,1,True,False
+279,may quá câu này trúng tủ,may quá câu này trúng tủ,0,0.0035559847,0,0,0,False,False
+282,thầy ơi mẹ em vừa mở cửa vào phòng em xin lỗi ạ,thầy ơi mẹ em vừa mở_cửa vào phòng em xin_lỗi ạ,0,0.0032207372,0,0,0,False,False
+292,em nộp file zip thay vì rar được không cô,em nộp file zip thay_vì rar được không cô,0,0.0033086748,0,0,0,False,False
+297,hôm nay thi xong bao lâu có điểm ạ,hôm_nay thi xong bao_lâu có điểm ạ,0,0.0032958556,0,0,0,False,False
+305,thưa cô mật khẩu giải nén đề là mật khẩu nào ạ,thưa cô mật_khẩu giải_nén đề là mật_khẩu nào ạ,0,0.003319418,0,0,0,False,False
+306,máy tính của em báo pin yếu em xin cắm sạc ạ,máy_tính của em báo pin_yếu em xin cắm sạc ạ,0,0.0032261745,0,0,0,False,False
+325,thưa cô em viết bút chì được không ạ bút mực của em hỏng rồi,thưa cô em viết bút chì được không ạ bút_mực của em hỏng rồi,0,0.0032096105,0,0,0,False,False
+327,em xài phần mềm scan ảnh trên điện thoại để nộp bài nha cô,em xài phần_mềm scan_ảnh trên điện_thoại để nộp bài nha cô,0,0.0033809813,0,0,0,False,False
+333,em xin nộp bài sớm mười lăm phút ạ,em xin nộp bài sớm mười_lăm phút ạ,0,0.0032311406,0,0,0,False,False
+336,nháp tốn ba tờ giấy luôn kinh thật,nháp tốn ba tờ giấy luôn kinh thật,0,0.015539999,0,0,0,False,False
+355,trời ơi,trời ơi,0,0.0039446275,0,0,0,False,False
+363,ok,ok,0,0.0037134239,0,0,0,False,False
+364,xong rồi,xong rồi,0,0.0036012924,0,0,0,False,False
+378,vội quá,vội quá,0,0.003513077,0,0,0,False,False
+379,từ từ,từ_từ,0,0.003944009,0,0,0,False,False
+384,hết pin,hết pin,0,0.003652577,0,0,0,False,False
+391,không biết,không biết,0,0.0085150385,0,0,0,False,False
+395,a hay b,a hay b,1,0.99674964,1,1,1,False,False
+402,đọc đi,đọc đi,1,0.9969126,1,1,1,False,False
+404,bài hai,bài hai,1,0.99694353,1,1,1,False,False
+412,điện thoại đâu,điện_thoại đâu,1,0.98696053,1,1,1,False,False
+416,c hay d,c hay d,1,0.9967332,1,1,1,False,False
+418,tắt mic lẹ,tắt mic lẹ,1,0.997021,1,1,1,False,False
+425,chép kịp không,chép kịp không,1,0.99537283,1,1,1,False,False
+430,gửi nốt,gửi nốt,1,0.9869674,1,1,1,False,False
+431,đáp án d,đáp_án d,1,0.9968471,1,1,1,False,False
+433,dán vô,dán vô,1,0.9970535,1,1,1,False,False
+438,chatgpt đi,chatgpt đi,1,0.99706274,1,1,1,False,False

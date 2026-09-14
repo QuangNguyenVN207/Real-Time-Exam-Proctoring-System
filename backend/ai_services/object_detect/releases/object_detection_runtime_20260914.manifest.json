@@ -1,0 +1,152 @@
+{
+  "archive": {
+    "path": "object_detection_runtime_20260914.zip",
+    "sha256": "44C6DA465043ECA28259B475BB86A265F36002F6D62E16633E168391CFC09246",
+    "size_bytes": 20806748
+  },
+  "archive_layout": "Extract at the repository root.",
+  "checkpoint_sha256": "F091F67B4A4A1CE298F3B8683E21CC67F520315AD226007B0DAE791D344AA5B8",
+  "files": [
+    {
+      "path": "backend/ai_services/object_detect/OBJECT_RELEASE.json",
+      "sha256": "9BEF8A9AACAC46F455294DF2F150CBDCCA994BFDDEB473502ECBCE44598B5F2F",
+      "size_bytes": 1016
+    },
+    {
+      "path": "backend/ai_services/object_detect/README_PACKAGE.md",
+      "sha256": "3998ED76B8ADBBF1D0B953B2420A6DC35A314F3E775EC514DB58675B6EFC0248",
+      "size_bytes": 1461
+    },
+    {
+      "path": "backend/ai_services/object_detect/object_detect.py",
+      "sha256": "1238C39A8F76E1A6F1097B22A78C8A4B89CF75DB07FDFFA41F5CC6AB9F658561",
+      "size_bytes": 70717
+    },
+    {
+      "path": "backend/ai_services/object_detect/object_detect_test.py",
+      "sha256": "1187D3A3F4627CE8F8F8FC073747E7118B5DFB0EBC6DE888381505B689D77FE7",
+      "size_bytes": 3107
+    },
+    {
+      "path": "backend/ai_services/object_detect/package_release.py",
+      "sha256": "FFCE0BAF605BB64BE26323C9B16F28D125B181BD49794400D895657D67AE67F1",
+      "size_bytes": 3905
+    },
+    {
+      "path": "backend/ai_services/object_detect/paper_count_monitor.py",
+      "sha256": "AAE747E28B36B2D5AC3EBCFA725D569953252BC50E7C0290791AEE10291E830D",
+      "size_bytes": 22410
+    },
+    {
+      "path": "backend/ai_services/object_detect/paper_count_pipeline.py",
+      "sha256": "504BC6E233765EE9CFDBD081535843BDA11A3A6E30FCA9AD7BEC341F0566B66D",
+      "size_bytes": 8496
+    },
+    {
+      "path": "backend/ai_services/object_detect/prepare_paper_segmentation_frames.py",
+      "sha256": "EDCB15E8EAF602C40ECC0A345C1CFCDD42F1FD731C7D15D98CB397581C710B14",
+      "size_bytes": 5822
+    },
+    {
+      "path": "backend/ai_services/object_detect/requirements-runtime.txt",
+      "sha256": "AA0CD5013EA6281744BE4D635B48F023F1EE0C55970AD010CF349B0654DDCA44",
+      "size_bytes": 135
+    },
+    {
+      "path": "backend/ai_services/object_detect/test_paper_tracking_webcam.py",
+      "sha256": "48D8C179F9EAD96B671DD5A024005F12AEA67EC085524B4EDEEDBA650CB7374C",
+      "size_bytes": 18593
+    },
+    {
+      "path": "backend/ai_services/object_detect/test_video_paper_count.py",
+      "sha256": "6BE51B268370AB1887EC0789CB9EF576C914FBD0A9595A2A520668EA063A563D",
+      "size_bytes": 20595
+    },
+    {
+      "path": "backend/ai_services/object_detect/test_video_scenarios.py",
+      "sha256": "A70706D6B263675744D7B4778A4F952C406A0276D3C0227BA6735B409C7202C0",
+      "size_bytes": 29397
+    },
+    {
+      "path": "backend/ai_services/object_detect/test_webcam.py",
+      "sha256": "1A49A44DFB605B2E52A56CF8850CE98251C64BB8E38F35304C1D1FE74AB1A91E",
+      "size_bytes": 4335
+    },
+    {
+      "path": "backend/ai_services/object_detect/tests/__init__.py",
+      "sha256": "9AB7E3F0D82ACA0D93B62124C3ADC42D97630B658051ADF93B168F169D1E0F6C",
+      "size_bytes": 36
+    },
+    {
+      "path": "backend/ai_services/object_detect/tests/test_object_detect.py",
+      "sha256": "2550CA040465BCE2E8C2DFDF0BC77BFD85188BC9DF78A81919FC0C391C909939",
+      "size_bytes": 23732
+    },
+    {
+      "path": "backend/ai_services/object_detect/tests/test_paper_count_monitor.py",
+      "sha256": "3C6944FD809A33BF83BFB80A11D7EB9828FA72C24721F6530EFDB0C71699AE8C",
+      "size_bytes": 5469
+    },
+    {
+      "path": "backend/ai_services/object_detect/verify_release.py",
+      "sha256": "C73566E7EF730BB2273CD4B6D0F680237395DEFEF034D0CB350A707C01625A82",
+      "size_bytes": 5216
+    },
+    {
+      "path": "backend/ai_services/webcam_utils.py",
+      "sha256": "DA0DBE4FC277572F3A37C79783D41C41F617E75738E24D3E3BD99BD848D800FC",
+      "size_bytes": 1454
+    },
+    {
+      "path": "backend/core/config.py",
+      "sha256": "EFEF8A9CE2668FCCF6FCF85C07FA9E874686D9CC64559091CFA7F9B4B1B7966D",
+      "size_bytes": 7608
+    },
+    {
+      "path": "weights/best (1).pt",
+      "sha256": "F091F67B4A4A1CE298F3B8683E21CC67F520315AD226007B0DAE791D344AA5B8",
+      "size_bytes": 22532842
+    }
+  ],
+  "release_id": "object-detection-runtime-20260914",
+  "verification": {
+    "checkpoint": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\weights\\best (1).pt",
+    "checkpoint_sha256": "F091F67B4A4A1CE298F3B8683E21CC67F520315AD226007B0DAE791D344AA5B8",
+    "checkpoint_size_bytes": 22532842,
+    "classes": [
+      "smartwatch",
+      "earphone",
+      "cheat_sheet",
+      "smartphone",
+      "calculator"
+    ],
+    "cpu_forward_pass": true,
+    "model_loaded": true,
+    "runtime": {
+      "class_confidence_thresholds": {
+        "earphone": 0.55,
+        "smartphone": 0.55
+      },
+      "confirm_frames": 3,
+      "confirm_window": 5,
+      "default_confidence_threshold": 0.5,
+      "detect_every_n_frames": 2,
+      "device_policy": [
+        "cuda",
+        "mps",
+        "cpu"
+      ],
+      "input_size": 640,
+      "openvino_enabled": false,
+      "paper_confidence_threshold": 0.2,
+      "python": "3.12",
+      "smartphone_fallback_enabled": false
+    },
+    "verdict": "PASS",
+    "verified_versions": {
+      "numpy": "2.5.3",
+      "torch": "2.14.0+cpu",
+      "ultralytics": "8.4.150"
+    }
+  }
+}

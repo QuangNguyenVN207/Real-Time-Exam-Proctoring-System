@@ -31,10 +31,17 @@ from backend.ai_services.pose_gaze.pose_gaze.holistic.landmark import HolisticLa
 from backend.ai_services.pose_gaze.tracking.manager import TrackingManager
 from backend.ai_services.pose_gaze.tracking.webcam import PersonTrackingConfig, PersonTrackingModule
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
+from backend.ai_services.pose_gaze.pose_gaze.settings import (
+    DEFAULT_CAUSAL_MODEL_DIR,
+    DEFAULT_CAUSAL_TARGET_FPS,
+)
 
 class PoseGazeDetector:
-    def __init__(self, causal_model_dir="stage6_bundle_exact/causal_8fps_stage6_mixed_084699_final_20260827"):
+    def __init__(self, causal_model_dir: str | Path | None = None):
         print("[INFO] Đang khởi tạo PoseGazeDetector (Thực tế)...")
+        causal_model_dir = Path(causal_model_dir or DEFAULT_CAUSAL_MODEL_DIR).resolve()
+        self._causal_interval_ms = 1000.0 / DEFAULT_CAUSAL_TARGET_FPS
+        self._last_causal_timestamp_ms: float | None = None
         self.session_id = TrackingManager.generate_session_id("webcam_holistic")
         
         # 1. Khởi tạo Tracking
@@ -48,7 +55,7 @@ class PoseGazeDetector:
         
         # 2. Khởi tạo Classifier
         class DummyArgs:
-            xgboost_model_dir = Path(causal_model_dir)
+            xgboost_model_dir = causal_model_dir
             student_prefix = "student_"
             live_pair = ["student_01:student_02"]
 
@@ -91,11 +98,22 @@ class PoseGazeDetector:
             self.latest_results = latest_holistic_results
 
             # Chạy phân loại hành vi
-            classifications = self.live_classifier.update(
-                frame_index=latest_packet.frame_id,
-                timestamp_ms=latest_packet.timestamp_ms,
-                results=latest_holistic_results,
-            ) if self.live_classifier else {}
+            should_sample = (
+                self._last_causal_timestamp_ms is None
+                or latest_packet.timestamp_ms - self._last_causal_timestamp_ms
+                >= self._causal_interval_ms
+            )
+            if self.live_classifier and should_sample:
+                classifications = self.live_classifier.update(
+                    frame_index=latest_packet.frame_id,
+                    timestamp_ms=latest_packet.timestamp_ms,
+                    results=latest_holistic_results,
+                )
+                self._last_causal_timestamp_ms = latest_packet.timestamp_ms
+            elif self.live_classifier:
+                classifications = self.live_classifier.final_decisions()
+            else:
+                classifications = {}
 
             # Kiểm tra xem có hành vi gian lận (c1, c2, c3, c4) không
             for result in latest_holistic_results:

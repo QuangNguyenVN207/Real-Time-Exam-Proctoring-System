@@ -21,7 +21,7 @@ class Settings:
     yolo_model_path: str = str(BASE_DIR / "weights" / "best (1).pt")
     yolo_confidence_threshold: float = 0.5
     object_class_confidence_thresholds: dict[str, float] = {
-        "earphone": 0.75,
+        "earphone": 0.55,
         "smartphone": 0.55,
     }
     paper_detection_confidence_threshold: float = 0.20
@@ -140,9 +140,17 @@ class Settings:
 
     # --- Face Verify ---
     face_db_path: str = str(BASE_DIR / "data" / "student_faces")
-    face_similarity_threshold: float = 0.4  # Cosine similarity (ArcFace); < ngưỡng này -> người lạ
-    face_model_name: str = "buffalo_l"       # Model pack của insightface (RetinaFace + ArcFace)
+    # P1 video calibration (2026-09-13): actor-level optimum plateau 0.20-0.44;
+    # midpoint 0.32 avoids choosing a fragile boundary.  A separate runner-up
+    # margin rejects ambiguous matches between two enrolled identities.
+    face_similarity_threshold: float = 0.32
+    face_identity_margin_threshold: float = 0.08
+    face_detection_threshold: float = 0.50
+    face_model_name: str = "buffalo_l"       # InsightFace: SCRFD-10G + ArcFace R50
     face_det_size: tuple[int, int] = (640, 640)
+    face_scan_every_n_frames: int = 5
+    face_assignment_confirmations: int = 3
+    face_mismatch_confirmations: int = 3
 
     # --- Storage ---
     session_log_dir: Path = BASE_DIR / "data" / "sessions"

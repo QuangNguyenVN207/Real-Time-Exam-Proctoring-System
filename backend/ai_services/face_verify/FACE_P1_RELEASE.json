@@ -1,0 +1,43 @@
+{
+  "release_id": "face-p1-2026-09-13",
+  "status": "locked",
+  "runtime": {
+    "model_pack": "buffalo_l",
+    "detector": "SCRFD-10G",
+    "detector_file": "det_10g.onnx",
+    "detector_input_size": [640, 640],
+    "detector_confidence_threshold": 0.5,
+    "recognizer": "ArcFace-R50-WebFace600K",
+    "recognizer_file": "w600k_r50.onnx",
+    "embedding_dimensions": 512,
+    "similarity": "cosine_on_L2_normalized_vectors",
+    "similarity_threshold": 0.32,
+    "runner_up_margin_threshold": 0.08,
+    "gallery_strategy": "L2-normalized centroid of up to 12 quality-ranked templates per actor",
+    "identity_scan_every_n_frames": 5,
+    "identity_assignment_confirmations": 3,
+    "identity_mismatch_confirmations": 3
+  },
+  "benchmark": {
+    "script": "backend/ai_services/face_verify/benchmark_video.py",
+    "sample_fps": 2.0,
+    "max_templates_per_actor": 12,
+    "min_template_gap_seconds": 0.75,
+    "calibration_fraction_per_actor_video": 0.4,
+    "threshold_grid": {"start": 0.2, "stop": 0.75, "step": 0.01},
+    "margin_grid": {"start": 0.0, "stop": 0.15, "step": 0.01},
+    "primary_unit": "(source_id, actor_id)",
+    "known_actor_video_groups": 13,
+    "unknown_actor_video_groups": 4
+  },
+  "sha256": {
+    "det_10g.onnx": "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
+    "w600k_r50.onnx": "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43",
+    "gallery_embeddings.npz": "696927d0d7925c99a7c29f4c381258d6ed50e9c01ceb42e42020e92b7a485c61"
+  },
+  "limitations": [
+    "Only 17 actor-video evaluation groups are available.",
+    "Calibration and evaluation segments come from the same recordings.",
+    "External InsightFace benchmarks support the pretrained backbone but are not directly comparable with the local protocol."
+  ]
+}

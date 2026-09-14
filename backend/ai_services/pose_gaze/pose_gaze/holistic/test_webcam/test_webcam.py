@@ -16,6 +16,7 @@ from ...tracking.interactive import (
 )
 from ...tracking.manager import TrackingManager
 from ...settings import (
+    DEFAULT_CAUSAL_MODEL_DIR,
     DEFAULT_HOLISTIC_CONFIDENCE,
     DEFAULT_HOLISTIC_SOFT_CONFIDENCE,
     DEFAULT_MAX_MISSED_FRAMES,
@@ -31,7 +32,7 @@ from ...tracking.webcam import (
 
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "extended": PROJECT_ROOT / "stage6_bundle_exact" / "causal_8fps_stage6_mixed_084699_final_20260827",
+    "extended": DEFAULT_CAUSAL_MODEL_DIR,
 }
 SUPPORTED_ACTIONS = ("c2", "c3", "c5", "suspicious_activity")
 

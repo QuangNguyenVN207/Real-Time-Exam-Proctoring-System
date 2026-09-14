@@ -23,7 +23,7 @@
   "position_embedding_type": "absolute",
   "tie_word_embeddings": true,
   "tokenizer_class": "PhobertTokenizer",
-  "transformers_version": "5.14.1",
+  "transformers_version": "5.5.4",
   "type_vocab_size": 1,
   "use_cache": false,
   "vocab_size": 64001

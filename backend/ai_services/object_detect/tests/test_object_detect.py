@@ -118,7 +118,7 @@ class _FakeServerModel:
 
 
 class ObjectDetectorContractTests(unittest.TestCase):
-    def test_contract_resize_filter_scale_and_suppress_logging(self) -> None:
+    def test_contract_preserves_frame_and_sets_locked_inference_size(self) -> None:
         model = _FakeServerModel()
         detector = ObjectDetector(
             "unused.pt",
@@ -141,7 +141,7 @@ class ObjectDetectorContractTests(unittest.TestCase):
         self.assertIsInstance(result["timestamp"], float)
         self.assertIsInstance(result["details"], dict)
         self.assertEqual(model.device, "cpu")
-        self.assertEqual(model.received_frame.shape[:2], (640, 640))
+        self.assertEqual(model.received_frame.shape[:2], (720, 1280))
         self.assertEqual(model.received_kwargs["imgsz"], 640)
         self.assertEqual(model.received_kwargs["device"], "cpu")
         self.assertFalse(model.received_kwargs["verbose"])
@@ -153,11 +153,11 @@ class ObjectDetectorContractTests(unittest.TestCase):
         )
         self.assertEqual(
             detections[0]["bbox"],
-            [128, 144, 640, 576],
+            [64, 128, 320, 512],
         )
         self.assertEqual(
             detections[1]["bbox"],
-            [640, 72, 1200, 360],
+            [320, 64, 600, 320],
         )
         self.assertIs(result["detections"], detections)
 

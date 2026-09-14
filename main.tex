@@ -148,7 +148,7 @@
         \end{itemize}
         \vspace{0.5em}
         \textbf{\textcolor{MLIOTcoral}{Research Gap:}}
-        \textit{Lack of a real-time system integrating Objects (YOLOv8), Pose/Gaze (MediaPipe), Faces (RetinaFace + ArcFace), and Audio (VAD + Whisper) on local edge devices.}
+        \textit{Lack of a real-time system integrating Objects (YOLOv8), Pose/Gaze (MediaPipe), Faces (SCRFD + ArcFace), and Audio (VAD + Whisper) on local edge devices.}
       \end{block}
     \end{column}
   \end{columns}
@@ -183,7 +183,7 @@
     \begin{itemize}
         \item \textbf{YOLOv8:} Detect prohibited items on desks (smartphones, cheat sheets, earphones).
         \item \textbf{MediaPipe Pose + Face Mesh:} Extract 3D landmarks and estimate Pitch/Yaw/Roll head orientation via PnP.
-        \item \textbf{RetinaFace + ArcFace:} Detect faces and compare 512-d embeddings (cosine similarity) against enrolled ID photos to catch both unauthorized outsiders and two enrolled students swapping seats.
+        \item \textbf{SCRFD-10G + ArcFace R50:} Detect faces and compare 512-d embeddings (cosine similarity) against multi-frame enrollment centroids to catch both unauthorized outsiders and enrolled students swapping seats.
         \item \textbf{VAD + Whisper AI + PhoBERT:} Filter ambient noise and analyze audio keywords for illicit verbal communication.
     \end{itemize}
     \item \textbf{Optimize System Architecture:} Implement Multithreading, Thread-Safe Queues, and Frame Skipping (5 FPS) for smooth local execution.
@@ -205,7 +205,7 @@
     \methodcol{\ding{203}~Core Algorithms}{%
       \begin{itemize}
         \item \textbf{PnP / Gaze:} Euler angles (Pitch, Yaw, Roll) via 3D-2D facial landmark mapping.
-        \item \textbf{ArcFace:} Cosine similarity $\ge 0.40$, with $\ge 0.08$ margin over the runner-up match, before assigning an identity; multi-frame confirmation before raising an alert.
+        \item \textbf{ArcFace:} Cosine similarity $\ge 0.32$, with $\ge 0.08$ margin over the runner-up match, before assigning an identity; multi-frame confirmation before raising an alert.
         \item \textbf{Whisper + VAD:} Speech-to-text keyword analysis.
       \end{itemize}%
     }
@@ -221,7 +221,7 @@
   \begin{center}
     \begin{beamercolorbox}[wd=0.75\textwidth, rounded=true, sep=5pt,
           center]{block body}
-      \textit{\small Pipeline: Webcam/Mic $\rightarrow$ Preprocessing (5 FPS & VAD) $\rightarrow$ Multithreaded AI Inference $\rightarrow$ Thread-Safe Queue $\rightarrow$ GUI & JSON Logging}
+      \textit{\small Pipeline: Webcam/Mic $\rightarrow$ Preprocessing (5 FPS \& VAD) $\rightarrow$ Multithreaded AI Inference $\rightarrow$ Thread-Safe Queue $\rightarrow$ GUI \& JSON Logging}
     \end{beamercolorbox}
   \end{center}
 \end{frame}
@@ -235,7 +235,7 @@
       \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=5pt,
             center]{block body}
         \vspace{1.8cm}
-        \textit{\small [YOLOv8 Bounding Box & MediaPipe Face Mesh Visualization]}
+        \textit{\small [YOLOv8 Bounding Box \& MediaPipe Face Mesh Visualization]}
         \vspace{1.8cm}
       \end{beamercolorbox}
       \vspace{0.3em}
@@ -259,8 +259,7 @@
 \begin{frame}{Results and Discussion}
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
-      % Face-verify pipeline: real architecture, no fabricated numbers
-      % (thresholds/accuracy have not been calibrated on real exam footage yet).
+      % Face-verify pipeline: P1 configuration calibrated on the supplied videos.
       % TODO(whisper owner): add a VAD/Whisper waveform figure of your own,
       % e.g. as a second small panel below this one or its own frame.
       \begin{beamercolorbox}[wd=\textwidth, rounded=true, sep=6pt,
@@ -272,9 +271,9 @@
             finalbox/.style={box, draw=MLIOTcoral, fill=MLIOTcoral!15},
             arr/.style={-{Latex[length=2mm]}, thick, MLIOTnavy}
           ]
-          \node[box] (det) {Detect face\\\textbf{RetinaFace}};
+          \node[box] (det) {Detect face\\\textbf{SCRFD-10G}};
           \node[box, below=0.28cm of det] (emb) {Embed 512-d\\\textbf{ArcFace}};
-          \node[box, below=0.28cm of emb] (match) {Cosine match vs DB\\$\ge 0.40$, margin $\ge 0.08$};
+          \node[box, below=0.28cm of emb] (match) {Cosine match vs DB\\$\ge 0.32$, margin $\ge 0.08$};
           \node[box, below=0.28cm of match] (confirm) {Confirm 3--5\\consecutive frames};
           \node[finalbox, below=0.28cm of confirm] (alert) {Alert + evidence\\(JPG + SQLite)};
           \draw[arr] (det) -- (emb);
@@ -289,8 +288,8 @@
     \begin{column}{0.48\textwidth}
       \begin{block}{\textcolor{MLIOTwhite}{Key Observations (Face \& Audio)}}
         \begin{itemize}
-          \item \textbf{Identity-Swap Detection (ArcFace):} Validated on the realistic seat-swap case (2 enrolled students exchanging desks); requires 3 consecutive confirming frames before raising \texttt{identity\_mismatch}, so a single blurry frame cannot misaccuse a student.
-          \item \textbf{Evidence Logging:} An unrecognized face is confirmed only after 5 consecutive frames, then auto-cropped and logged (JPG + SQLite) exactly once per appearance for the invigilator to review.
+          \item \textbf{Threshold selection:} A scripted sweep of 896 cosine/margin combinations identified an actor-optimal plateau; $0.32/0.08$ was selected as a stable operating point inside that region.
+          \item \textbf{Local face result:} SCRFD detected 704/707 sampled actor-frames (99.58\%); ArcFace correctly classified all 17/17 evaluation actor-video groups, including 4/4 unknown actors. The set is small and split within recordings, so this is an exploratory local result.
           \item \textbf{VAD Noise Filtering:} Voice Activity Detection filtered >85\% of ambient background noise successfully.
           \item \textbf{Whisper AI Performance:} Audio pipeline achieved Word Error Rate (WER) < 11.5\% for targeted cheating keywords.
         \end{itemize}

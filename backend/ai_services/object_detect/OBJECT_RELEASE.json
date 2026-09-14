@@ -1,0 +1,43 @@
+{
+  "release_id": "object-detection-runtime-20260914",
+  "checkpoint": {
+    "path": "weights/best (1).pt",
+    "format": "ultralytics-pytorch-detect",
+    "size_bytes": 22532842,
+    "sha256": "F091F67B4A4A1CE298F3B8683E21CC67F520315AD226007B0DAE791D344AA5B8",
+    "classes": [
+      "smartwatch",
+      "earphone",
+      "cheat_sheet",
+      "smartphone",
+      "calculator"
+    ]
+  },
+  "runtime": {
+    "python": "3.12",
+    "device_policy": [
+      "cuda",
+      "mps",
+      "cpu"
+    ],
+    "openvino_enabled": false,
+    "input_size": 640,
+    "default_confidence_threshold": 0.5,
+    "class_confidence_thresholds": {
+      "earphone": 0.55,
+      "smartphone": 0.55
+    },
+    "paper_confidence_threshold": 0.2,
+    "confirm_frames": 3,
+    "confirm_window": 5,
+    "detect_every_n_frames": 2,
+    "smartphone_fallback_enabled": false
+  },
+  "verified_versions": {
+    "ultralytics": "8.4.150",
+    "torch": "2.14.0",
+    "torchvision": "0.29.0",
+    "numpy": "2.5.3",
+    "opencv-python": "5.0.0.93"
+  }
+}

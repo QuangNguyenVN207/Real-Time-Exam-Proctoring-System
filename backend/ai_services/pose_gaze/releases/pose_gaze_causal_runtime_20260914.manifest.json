@@ -1,0 +1,991 @@
+{
+  "archive": {
+    "path": "pose_gaze_causal_runtime_20260914.zip",
+    "sha256": "87E216A852FEB107059F267B4F16CDCA9DCC0DC12A4B0ED4F6347C9CAC3679FC",
+    "size_bytes": 25224035
+  },
+  "archive_layout": "Extract at the repository root.",
+  "bundle_manifest_sha256": "CB8B8335D62849DE2541F8001BE104DA8017402B078B529E3A8D0B02AB4100FE",
+  "files": [
+    {
+      "path": "backend/ai_services/face_verify/identity_guard.py",
+      "sha256": "E57C722CE3E34EC25724D35CC595F48F584EFC8C20635C5E74F614932D9222E9",
+      "size_bytes": 6086
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/PAPER_TRACKING.md",
+      "sha256": "716B4240DFF8A6C9072CE2E1D03AC71B2F8194AFC57BC96F8C043336963686B0",
+      "size_bytes": 11707
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/POSE_GAZE_RELEASE.json",
+      "sha256": "1D82DFDFCFE2F04938F85D5544ADE693A7EDCFC618A3E3825328977FD4C45BA4",
+      "size_bytes": 2223
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/README.md",
+      "sha256": "A807B2331AF8B9A4B28BB9E1EA742F10E2C6E31DAFAF64952CFC1F19BB9FB6E4",
+      "size_bytes": 2969
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/README_PACKAGE.md",
+      "sha256": "D6395CDF908BBC5AB1DC78EF95947E0C340E3F42E8D81ADD158C9FA48F02E8B1",
+      "size_bytes": 2335
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/__init__.py",
+      "sha256": "CE5D3B8226CE1AAB37BCDA2304F56AE0D1E47405EF15F63043FCB518510BA0F7",
+      "size_bytes": 860
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/ACTOR_AWARE_REBUILD.md",
+      "sha256": "5883BCF18480BA0369AB06B06C8D192FC2E6CC995902D49823A4956112413C0D",
+      "size_bytes": 2468
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/BEHAVIOR_STAGE1_STAGE2_CONTEXT.md",
+      "sha256": "9916697F6D07A9D8DFD842592C9123C9335039E1AEF24680C9C18AC8F7178442",
+      "size_bytes": 68413
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/C1_POSE_ONLY_CAUSAL_BENCHMARK_2026-08-13.md",
+      "sha256": "2E11BA1B55323D28CC833F18495A354DC71A5DE18480D7365D3CEECF3BEB10EA",
+      "size_bytes": 2305
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/C3_F1_ROOT_CAUSE_RESEARCH_2026-08-12.md",
+      "sha256": "4A11EE68FFAFF4B50D7B2D95E0526057B4CB476145A30B50173D3D7C4F72FF62",
+      "size_bytes": 17227
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/C7_Q7_EXPERIMENT_REVIEW_2026-08-12.md",
+      "sha256": "98D406844F1909CF365054192BF4EE48DF718DE71BFE74EF4B990867ABC6A3B4",
+      "size_bytes": 4975
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/EXTENDED_SUSPICIOUS_ACTIVITY_BENCHMARK.md",
+      "sha256": "B5D9591D6A740EE74851BA829B748466F85DC71F0F8DC44A180B461AD23402E5",
+      "size_bytes": 1272
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/OFFICIAL_CAUSAL_BENCHMARK.md",
+      "sha256": "01A91895160F0AFAE335048B956E1E9D99A845263BD91B8651397204483677C7",
+      "size_bytes": 1942
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/SUSPICIOUS_ACTIVITY_CAUSAL_HANDOFF_2026-08-13.md",
+      "sha256": "243E1ADDD5B6059E28EBE0A19918578AB5BF4C0890E904FE7C61154B2A0D97EE",
+      "size_bytes": 5874
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/research/c1_c4_pose_only_research_2026-08-13.md",
+      "sha256": "D8CF65C813B97D3E5C6EEC4AE9FF8B6812CD8F8F3C7E2C0089FA2D4F21FFFA4E",
+      "size_bytes": 9647
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/research/c3_c7_methodology_source_audit_2026-08-12.md",
+      "sha256": "1AF0AC9DDC73043BE602C69B86392F61F48347BDD6F6798011AC627CB3315281",
+      "size_bytes": 9425
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/docs/research/paper_methods_to_improve_recognition.md",
+      "sha256": "5E9D28F611DFCFE0232EB0221EFAEFF17967413E9A23C48E9D3994842BB4BE66",
+      "size_bytes": 5301
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/holistic_landmarks.py",
+      "sha256": "57B5ACAA17D28E28AE4DA0A646A6F8AF1BE37B4850EF2DB67BB50BDEEB231B54",
+      "size_bytes": 29059
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/note.text",
+      "sha256": "FF943BC266F1A787F253E7DA11BB04B836E224109C51BA46E2F8BB68CFD292AA",
+      "size_bytes": 6055
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/package_release.py",
+      "sha256": "01241C8A492D1F43333E965574A104C954B75B5FF9F7457E8517271254CA2266",
+      "size_bytes": 4535
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/paper_pipeline.py",
+      "sha256": "2E8B1310FD4F908BCA533EE9F59098DF88B8674B8BC3186641F9656319168BD9",
+      "size_bytes": 13390
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/CONTEXT.md",
+      "sha256": "4C9438B5F48EF9C14F3BF8C6B229F5C80D32C514D398D89F294D29F4563A8A81",
+      "size_bytes": 2924
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/__init__.py",
+      "sha256": "47EAFC55282BE70260266C8B2D643106F1ACFE219846998B72C2D5020CD1EDFE",
+      "size_bytes": 26
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/__main__.py",
+      "sha256": "F93C2312DE189BA5F9EEE2127320B3CAF2448B1113BDCEC7BBDC485ED53147F1",
+      "size_bytes": 139
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/__init__.py",
+      "sha256": "24E2666F71841DD6E1D013A94E4CAA4432DA917FA54F014BBC1EB5DC5341A24A",
+      "size_bytes": 54
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/annotation_schema.py",
+      "sha256": "D6B288F3E4134E65CE81C599224D09C254ABF7DB47B7BCF05FE4D2EA4478F7C6",
+      "size_bytes": 5959
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/batch_dataset/__init__.py",
+      "sha256": "E31DD6992DF6B34FF371EDDEE8BEBBB5504A6ADD0B752491585B9FC92E1F42BD",
+      "size_bytes": 409
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/batch_dataset/__main__.py",
+      "sha256": "118B63E35F830BC62B6E9DB8DFAA9A373E734048D412C3DD37F3C00D691607A0",
+      "size_bytes": 137
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/batch_dataset/batch_dataset.py",
+      "sha256": "B1CEAEB1CDF720CABF04B10BB01EF4DE12807CC0451D1B5E47F22B7E1CA656AC",
+      "size_bytes": 33328
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/batch_dataset/video_manifest.py",
+      "sha256": "3B3FE1550A4A77D541B9D0E5F87C4A7B42819E3C2F1A531E324DA48A0F3C6D07",
+      "size_bytes": 7113
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/build_annotation_template.py",
+      "sha256": "DE00EA9FDF5E4EB7FE3042343E8FB960C27B5BE0C1A33DDB1AA16FF17DF9A1A9",
+      "size_bytes": 3049
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/debug/__init__.py",
+      "sha256": "72641C3FD94EDD7D31C9DD04DA186FEEE72E80152A17534BE35FE7735F21D46D",
+      "size_bytes": 64
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/debug/events.py",
+      "sha256": "CAD43BBF7C84128E71EAEF3DC4FF5A70DB1C2452F63CAF3ED5F664D918F6593B",
+      "size_bytes": 8881
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/debug/frame_trace.py",
+      "sha256": "53C73350BD936890D1D194F5AE017C2A77B625823CB402047D71D1CF1291E801",
+      "size_bytes": 8449
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/debug/replay_c3_camera.py",
+      "sha256": "5B57D7706DE6E6DB2AF184DC6DE22CF06C70EB28F00EA62756B89E3D0988E848",
+      "size_bytes": 17524
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/debug/session_manifest.py",
+      "sha256": "DD8F7712C3811F32208B8CFD92BAEC3A85FF4F1BFBFA8B0619F251C3EF02DF7F",
+      "size_bytes": 14916
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/__init__.py",
+      "sha256": "AD9439DB238F255D7C64B09455F1F9D34568B54FA6D4592B313F1852F3476A2A",
+      "size_bytes": 542
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/behavior_features.py",
+      "sha256": "C7380F9B9731C5C5E21BB055CDD3F5DCAF1205A157BEDA2CCE3DC63D7FBDCA2B",
+      "size_bytes": 33127
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/behavior_subset_stage2.py",
+      "sha256": "2019BE53684171D9F7F07C55637DDCC63B3B46C8DA20918287C36BAD81F9943D",
+      "size_bytes": 152231
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/benchmark_c1_causal.py",
+      "sha256": "09E3030434C10086D6DE9357E82FE2B4F134641321BC8D5BAEC495068F5712DF",
+      "size_bytes": 15717
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/benchmark_c7_causal.py",
+      "sha256": "DE6D294E8AF0F35A01084E08716FD14A84D054D322B175C9A4A003B5920C461E",
+      "size_bytes": 19886
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/canonical_behavior_features.py",
+      "sha256": "FAA0820BB18AA838510CA90A3DDAF640A2714CE730326E1D594A7372332CC51C",
+      "size_bytes": 11336
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/causal_stream.py",
+      "sha256": "5B783050DE684B09AA388FB54772B05DF2D274696B4328C16129D70FD2BF0233",
+      "size_bytes": 15587
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/feature_csv.py",
+      "sha256": "505502961A5CF6E36C1A57C4CC2012F9B1C5596B3D7C3EC270ABB4D5A0C3695E",
+      "size_bytes": 7091
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/feature_variants.py",
+      "sha256": "1014C86E344914EFBE40183DE9FC45687DBA793D8FE088F137DCEF07C4D89B03",
+      "size_bytes": 8054
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/stage6_bundle.py",
+      "sha256": "B4BACEE8787565A8F4A37A433F4EE60FCA6643A1D514677798CC823EADC6E3C6",
+      "size_bytes": 6427
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/stage6_profile_mix_search.py",
+      "sha256": "146A0AD3B78487AC5C649A50C0C18B8273A0153AC1084160F1EEE09C1DC4750C",
+      "size_bytes": 5254
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/stage6_retrain.py",
+      "sha256": "5C27412D20074538B9CC771D0C925193097DB61219A425CAEC65A5E7F7C2DAA3",
+      "size_bytes": 48277
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/feature_csv/temporal_geometry.py",
+      "sha256": "7D952A2C630085B728115D77F3089D7FB0EA013593BF64463F40D7C31F0A31FF",
+      "size_bytes": 16985
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/landmark/__init__.py",
+      "sha256": "3863545594D063097BF1716041BF6C3DFD25770AA4DEA4DF43BE83CAAEEBD0F5",
+      "size_bytes": 929
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/landmark/face_mapping.py",
+      "sha256": "D179726B1407843084C1773D22E5A8567435A872F76404D9E470A31CE1875667",
+      "size_bytes": 7769
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/landmark/landmarks.py",
+      "sha256": "46FA3815ED416CBC548D72BD3F75AE34B5206D61D5F154E9DAEEC1E0755211BA",
+      "size_bytes": 64162
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/temporal_windows.py",
+      "sha256": "158975A8561F577CC24843E90E2B5F72AACA3B6475D19936154A5631A1FB953A",
+      "size_bytes": 6688
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/__init__.py",
+      "sha256": "78CDD6A01C03BA1688EC658FF6633031F7736C34F027F2FB6F3B0450B3647A25",
+      "size_bytes": 163
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/__main__.py",
+      "sha256": "97CD58AC8C1CF4207426BDC81EF4B4AD3CC75497F9F4F90E825655D168EDC1A6",
+      "size_bytes": 144
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/actor_xgboost.py",
+      "sha256": "475B95F84862333E37F73B0AAD97171A44DEC72367A3A3518250986E14733CD3",
+      "size_bytes": 7241
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/live_actor.py",
+      "sha256": "7C92DE7F7883B15D79F3AD935C1897D8C435BAA26AD34F2BFEE267058B48D376",
+      "size_bytes": 47339
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/test_media.py",
+      "sha256": "86B36E7FAE2B0F015F62862DAE3728C8031599A0DE0D021419107DC379982378",
+      "size_bytes": 38906
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_media/validate_landmarks.py",
+      "sha256": "438E272970F60CD4FF2E86F5E1F1CC1219D293D895F81772A399CF34CF71B796",
+      "size_bytes": 5590
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_webcam/__init__.py",
+      "sha256": "9BD1E7628F81B60D855EC8A9398AA6C98735D1F88FEC408A96644915E532E095",
+      "size_bytes": 131
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_webcam/__main__.py",
+      "sha256": "1BBCBE3848BDDE8990689A280A915174EA4D19AC2F11CBC8FD5EE8B40A5D472D",
+      "size_bytes": 156
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_webcam/test_webcam.py",
+      "sha256": "3E88BFA6764EED0EF9E50F85A53DBB90DA5D3DB257A84B2D5E9C8A23CCF34828",
+      "size_bytes": 48244
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/test_webcam/test_webcam_one_person.py",
+      "sha256": "44BEE8A13055B43FA8953886AE84C1367F93466291F0514E6BD7D7FA124BFF7D",
+      "size_bytes": 9097
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/__init__.py",
+      "sha256": "8CC5AAE76D3AC538C6F69259BB3F1DC356C53E407DD161A541AF694B20BD40A5",
+      "size_bytes": 57
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_batch_dataset/__init__.py",
+      "sha256": "4B278F96EF5A384E2F5F51C4E60BF9B82443C6422E0CB193F3D3A30CEFC9823A",
+      "size_bytes": 35
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_batch_dataset/test_batch_dataset.py",
+      "sha256": "6D16D58ED8390317513557E89A988A1D8A20650C0EB4ADA9D03B0D41D21C0098",
+      "size_bytes": 6100
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_calibrated_gate_causal.py",
+      "sha256": "8294EA7B06D62E76A8B05F7BD9E722A1CE377350A805859523093614555C3056",
+      "size_bytes": 3060
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_causal_c1_c4_state.py",
+      "sha256": "F2B4B96EDCAE972FD5D4BED7FB209A3CF5EBF527C671C2444971BF442F8574E6",
+      "size_bytes": 9194
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_causal_c7_stream.py",
+      "sha256": "07465FB24DEA72E5BC0B78E762D7290234D5A71FC5EC37A13AF320B5ABFAFA06",
+      "size_bytes": 4883
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_causal_stream.py",
+      "sha256": "B02E394E61B6543DD3A78B690700BE107ECC01024635AB51978EF4B3A1158623",
+      "size_bytes": 10715
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_end_to_end_profile.py",
+      "sha256": "015AD08A52EEEED7942FEB506AF5DA2CF9C8BEAB36CDB13F453096B13CAD9078",
+      "size_bytes": 1053
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_events.py",
+      "sha256": "3A31B0B3981F89EC42593847BB5B491DF8CDE055A2E22574BCAE53A89F2F07F2",
+      "size_bytes": 5161
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_export_json_features.py",
+      "sha256": "2FE8F8491C0A08716935CD5BC3CD7DF809704E27D9479F5EAEB4C4AFB2C94254",
+      "size_bytes": 7719
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/__init__.py",
+      "sha256": "F398D28C9CAD78DD0119A51D27A4944B5CEB440927E57FF3984698008F5C2D10",
+      "size_bytes": 33
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/test_annotation_schema.py",
+      "sha256": "68E56CBA5B7AE0B3048889860F4C92F386C50B451E17F4340FC72F89153A42C2",
+      "size_bytes": 3344
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/test_behavior_features.py",
+      "sha256": "FD1771FD2268396AC1E916871F752C1ACC2DD7D78ABC84A33C10EB61E416105F",
+      "size_bytes": 13773
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/test_feature_csv.py",
+      "sha256": "AEE221A107F3C298333E70E9E8808566A67F1DCD954FA18BE363409B521CBE5B",
+      "size_bytes": 8249
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/test_feature_variants.py",
+      "sha256": "3563A15269E480F4BD4D4038AD34EAEC5F714C39A9F8FBB391FD6A09481A57BE",
+      "size_bytes": 1891
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_feature_csv/test_front_v3_manifest.py",
+      "sha256": "932FA99F73162AF752312D0AB02382834FC3F2A658AC50183A51B7E8E93D3FDF",
+      "size_bytes": 2434
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_frame_trace.py",
+      "sha256": "D41D48913749778457437BD519721770E6A5851837143BABC65460729AA57609",
+      "size_bytes": 6545
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_landmarks/__init__.py",
+      "sha256": "1EA1A735C38CA8D1AD471E88462A16EA414F74FD005C6D23E2E2B9760A541342",
+      "size_bytes": 57
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_landmarks/test_face_mapping.py",
+      "sha256": "A9CF0DF6C7A39BD7AF6646F6483D659345FA7BE7859AC58F61965862B6627B28",
+      "size_bytes": 3635
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_landmarks/test_landmarks.py",
+      "sha256": "8763B4DACF45B9FAF197B30F8E2410172241DEC6445946D51A96C9FB8F2DA07D",
+      "size_bytes": 10839
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_object_cues.py",
+      "sha256": "EB99E6DAF6182DBC8CA5CDA8AFB0463FEB83D225636471E0D0AE7812E8B98AEA",
+      "size_bytes": 2743
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_object_owner.py",
+      "sha256": "52EB6AC4644B0EEE95CA939B6E1F4B6E89F01309CD19F1E208B20B7A31408907",
+      "size_bytes": 799
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_session_manifest.py",
+      "sha256": "DA2E1D3BFD9C12C91907A6CB48E95F4C4424A588C1B9B23A50CFC5EC61C1E1D7",
+      "size_bytes": 8059
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_stage6_runtime_wp6.py",
+      "sha256": "64C0D4CDD0A3E2B3F77701FBDABFA199BA2CE008DE0F6ABA138A97DD202BB9DF",
+      "size_bytes": 45737
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_stage_a_replay.py",
+      "sha256": "56080E279A0019CAE86DECA73AE01C2223EF60FB62D5317AA9728E25DCA6E85C",
+      "size_bytes": 12310
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_temporal_windows.py",
+      "sha256": "F87C63FED7A980740D015CBD512D5398356AC5DE44D0A038EF357A0F53CEADA4",
+      "size_bytes": 3824
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/tests/test_train_baseline.py",
+      "sha256": "DD734A2EEC2AE489BA0897A39D692E376A04F1ED2CDC567F06CE1CCAE409CD78",
+      "size_bytes": 890
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/holistic/validate_annotations.py",
+      "sha256": "1FE1A132D847E37A17E4C0665423ECDC831C21B5617587357C5CC3F0B0E3D757",
+      "size_bytes": 848
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/landmark_phase_report.md",
+      "sha256": "44C7AFB4D06BC8CA03559739131AF1BE9A983E23C6DEBFB52727CCAE2CC7F316",
+      "size_bytes": 6935
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/__init__.py",
+      "sha256": "8EE7CA066D96C1250E201CC394E78D7BBD2F2FE3131ED0C5F8D868D05A2CD975",
+      "size_bytes": 287
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/__main__.py",
+      "sha256": "A588BD650D8A8583CBE04507D961675AE4808AB241410E86A2F4393D04CFD47F",
+      "size_bytes": 129
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/main.py",
+      "sha256": "05D41F9612F9976712CA71C87CE77C1C6E456326859F9AE219FD6965C79D629E",
+      "size_bytes": 15930
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/tests/__init__.py",
+      "sha256": "2CD0E2563A6A796DBADCC8BC859191E2DCB59C13414E932806F889CDD3A94436",
+      "size_bytes": 35
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/tests/test_main/__init__.py",
+      "sha256": "7C5E5B69A7882AE8FAE59228EBC62710A990D242C64134DB623B7EE1F9CCF0BB",
+      "size_bytes": 33
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/main/tests/test_main/test_main.py",
+      "sha256": "68DEA4411C18EDDBFDE0F696B1F4C9204B8742AF46197A816B15555A1F173179",
+      "size_bytes": 1166
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/object_cues.py",
+      "sha256": "CD709AB4BC8050D461894A27AE3E054BB28E1844D1CABAACCDB1C177CE3F95EB",
+      "size_bytes": 10034
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/settings/__init__.py",
+      "sha256": "E1C7456BB2B0A9EC04A42AFF8BA20173B18C05530A25B57D6F231451B67EF5CD",
+      "size_bytes": 689
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/settings/settings.py",
+      "sha256": "CD8E4C4A41392DD1EC1531FC9124D06147D8E1A9F0848C6A8C38076E1CCB7E11",
+      "size_bytes": 1136
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/__init__.py",
+      "sha256": "4C063C369A5B44E9A5701128117772EF366853E2C297FD500C47DC7249E86A7E",
+      "size_bytes": 76
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/detectors/__init__.py",
+      "sha256": "7F2BF043D7D4680ED98AA49B1ABAEEC46772CA99F2849CC977800652E058E2CC",
+      "size_bytes": 347
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/detectors/detectors.py",
+      "sha256": "B45F263C8E067FABAF0D5DA29C01A9B939C83B73B4FB65C77806469BBA7A3400",
+      "size_bytes": 5920
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/interactive/__init__.py",
+      "sha256": "CFA65E1188A20D37E1A8107FBDB9FAF02C046BEA7FDB83D864B92976C29A9772",
+      "size_bytes": 264
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/interactive/interactive.py",
+      "sha256": "62B904303CFF5E6E3E00AB28AE04443439B065CDCC9180637B030C4D8E89E66B",
+      "size_bytes": 13061
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/manager/__init__.py",
+      "sha256": "94697773BEFC27AAFEDA8B0CC140EFBD4C723538A2D1710B98770FEE9FA4B6A5",
+      "size_bytes": 316
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/manager/manager.py",
+      "sha256": "138DFC2B240BE8EF12C3D93B39C9834474BB1E904740A2C2FB5AD59CC89F0A12",
+      "size_bytes": 14962
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/schemas/__init__.py",
+      "sha256": "06114000668ACAFE5A7D5F6075111B65F53558A403183CCBF457CAB4A56B5A02",
+      "size_bytes": 316
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/schemas/schemas.py",
+      "sha256": "893D36C9228E71D71B1A813360E43D18625811D237AD972C67CCB25B788577C1",
+      "size_bytes": 3635
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/test_webcam/__init__.py",
+      "sha256": "2ECBD54B8538D0AA4B655B5BE36946E54B8B069407341E8113447DDD9C0856F3",
+      "size_bytes": 122
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/test_webcam/__main__.py",
+      "sha256": "7B811FD824C01D9614B50A0EDF46589C538F76C9257B19DBDB5395C324BADD3A",
+      "size_bytes": 156
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/test_webcam/test_webcam.py",
+      "sha256": "8B4C1E76B0CB97929A626D57695E001DA66B2B3BAF3CF3A532A19D7F89905E8C",
+      "size_bytes": 2598
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/tests/__init__.py",
+      "sha256": "6D0CF3A63ACD65E21ECAACE5F524CCED97BC8B3A4E42CC96CB41A3611C969774",
+      "size_bytes": 42
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/tests/test_tracking/__init__.py",
+      "sha256": "FE7935432B9CD7417957551D28434D2E0D3459547FDFBE6896B5A8725C949463",
+      "size_bytes": 48
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/tests/test_tracking/test_tracking.py",
+      "sha256": "767C283AE2F0DD9ECE7072DBFC05149A6A56ED065900E22D6D9653ACC5ADCC8E",
+      "size_bytes": 11459
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/tracker/__init__.py",
+      "sha256": "EF50AA1722A5B3B896C1F6272952D7F8AA1323527AA0D5B570A86661A4B71E4A",
+      "size_bytes": 122
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/tracker/tracker.py",
+      "sha256": "D35B4688C909E69D9C0D0FE537BB7738327064FBD25302D414984E20805ABA79",
+      "size_bytes": 11194
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/webcam/__init__.py",
+      "sha256": "59635B4BF761AABA7AFE94DDCFA3358D4C58640E8362C8A57C073E0ABBDF2601",
+      "size_bytes": 285
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze/tracking/webcam/webcam.py",
+      "sha256": "90898FE4823F6EC4E927897236160CE2184038AC84D0E40A6ED59C5C5705921B",
+      "size_bytes": 11567
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze_service.py",
+      "sha256": "C0B280B5D72ABC2FF4D52BDE1588B8B95E465BFF4A1EA27F948EF0FA932056B2",
+      "size_bytes": 7706
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/pose_gaze_test.py",
+      "sha256": "58B9E0F17049B1702F05A6FF087D5E9650685A52114FCEB5F3078E8898F7D579",
+      "size_bytes": 806
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/requirements-runtime.txt",
+      "sha256": "F8E6EE587001BF4CEBA155AA7400CD40CDF3F5FA1E0ECB1F6C72E63A832F10D9",
+      "size_bytes": 235
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/detectors.py",
+      "sha256": "40B9A838205E5B156F5142DD5144B4009AD681EF60A188E06B64239EC5C3F4C1",
+      "size_bytes": 2894
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/interactive.py",
+      "sha256": "99FEBA9924EE736395259A40320EE0B46495B92EE94DF9D1BFD6DE2E20AED09F",
+      "size_bytes": 12492
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/manager.py",
+      "sha256": "7DEBBF55E5D2F19CF9008415B96B672C60EE9A9FF836F7011A2DD5C07337EB68",
+      "size_bytes": 29791
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/paper_tracking.py",
+      "sha256": "311BD4EECA4EC63C74A0904D00D722C8811739CE008CB22251DEB1C3DCF30813",
+      "size_bytes": 42080
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/schemas.py",
+      "sha256": "1BC678684567906C2C1F2C078EA1B977233D619FED54405BB08C8B2D4C53895A",
+      "size_bytes": 5587
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/test_data_tracking/exam_room_test/pose_gaze_input.json",
+      "sha256": "6E0D8ADEB54F1E2BB37B41D9937AAE12059DD0DDE27D51D41D8C46EF89D2D42C",
+      "size_bytes": 329
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/test_data_tracking/exam_room_test/tracking_state.json",
+      "sha256": "C84AFD10D297283E190E1FC3FC7172B7B63FD2F44275C7AE57EF50D9677A1462",
+      "size_bytes": 162
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/test_image.py",
+      "sha256": "6833EA7F7CA09B372C19AD76B0C27B1C1E0C2E9D309B595FD6776FA44427FC6F",
+      "size_bytes": 2796
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/test_webcam.py",
+      "sha256": "3BB024D2E0703E025099CC3FAA6645D1E03C0D3C91E1F0393764DCDDC9A3499C",
+      "size_bytes": 5064
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tests/__init__.py",
+      "sha256": "6D0CF3A63ACD65E21ECAACE5F524CCED97BC8B3A4E42CC96CB41A3611C969774",
+      "size_bytes": 42
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tests/test_paper_pipeline.py",
+      "sha256": "3867202CDF5F214629586F5B5396E97A82A88E7675BE690EC3EF9200F68310EF",
+      "size_bytes": 7579
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tests/test_paper_tracking.py",
+      "sha256": "F084923FB251B0792D914BD93462564D0BAEFCC56A2925B8EEC952064AA77B1D",
+      "size_bytes": 23001
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tests/test_persistence.py",
+      "sha256": "59BA10810CFB1FAFE86CAC41B146300B8F8BA1905D0288573D386CF7091D3372",
+      "size_bytes": 3728
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tests/test_tracking.py",
+      "sha256": "EC3B50C0F461EB17F6D326E231C75CA53EF85929620BE6DEF7F3647E121DBBC1",
+      "size_bytes": 15035
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/tracker.py",
+      "sha256": "635B07B644728FA0B1C5725D515BB9A2E2EFC8AD9F86D55958F6B13AC7FEEC39",
+      "size_bytes": 27320
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/tracking/webcam.py",
+      "sha256": "9968A933C023200E243C99A4C7C47B10ECC6345B4B33C572A796F9D9FBAF5148",
+      "size_bytes": 11318
+    },
+    {
+      "path": "backend/ai_services/pose_gaze/verify_release.py",
+      "sha256": "FAFC61C721B7EFB8FF9699A4DC0EDC2EF8D57B748D251815DC91177F5482FB56",
+      "size_bytes": 6841
+    },
+    {
+      "path": "backend/ai_services/webcam_utils.py",
+      "sha256": "DA0DBE4FC277572F3A37C79783D41C41F617E75738E24D3E3BD99BD848D800FC",
+      "size_bytes": 1454
+    },
+    {
+      "path": "backend/core/config.py",
+      "sha256": "EFEF8A9CE2668FCCF6FCF85C07FA9E874686D9CC64559091CFA7F9B4B1B7966D",
+      "size_bytes": 7608
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/bundle_manifest.json",
+      "sha256": "CB8B8335D62849DE2541F8001BE104DA8017402B078B529E3A8D0B02AB4100FE",
+      "size_bytes": 4938
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/calibration.json",
+      "sha256": "EDFED0AC2429DA137B9C42C55566564E65A038F09AA0DE3E087DE0096791C064",
+      "size_bytes": 928
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/environment.json",
+      "sha256": "62EF3250DCFBC1DB3D4DB4B175AE09BA49B3E1E4327182FBAD14D58A16B8A683",
+      "size_bytes": 3514
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/feature_schemas.json",
+      "sha256": "165ACD72C4AF48C53E418A9B192A1D2EC22A575CF12676D3E55490C49FA00CC9",
+      "size_bytes": 6866
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_manifest.json",
+      "sha256": "59FB43C5C137387402B9DA30F707F9D87077C43E059D98A8BB519F4933F61769",
+      "size_bytes": 9403
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_01/c2.ubj",
+      "sha256": "E423DB1FD4953DA831EC50FD454E6C293006E0F7BFEAF21B4896C77456046354",
+      "size_bytes": 333784
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_01/c3.ubj",
+      "sha256": "CB56F277A53398669CE230F4CD65C37F2A4FD87580CFDF2EAEB988719C0397EC",
+      "size_bytes": 332154
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_01/suspicious_activity.ubj",
+      "sha256": "6D88183FD51D2535E92CBB8575DC69C1586BAC990FCCF277B3B1B78DBCEF0ABA",
+      "size_bytes": 452136
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_02/c2.ubj",
+      "sha256": "0219D39ADDB95E1C4B9B5A0E8E37D8ED71E346D21161A0AD79FB1BDB3C871529",
+      "size_bytes": 336660
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_02/c3.ubj",
+      "sha256": "8A84AA22B34DA609CB897414EDA2B04320E8569F33E1761EF88EE456F4FAA6A6",
+      "size_bytes": 339436
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_02/suspicious_activity.ubj",
+      "sha256": "50105F9E6C2F347C08D915E4F6AAFC12386BCC3FC04C0791565B8FCB2E1C59FB",
+      "size_bytes": 463084
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_03/c2.ubj",
+      "sha256": "FE82ED3E0D02CF4B2AB7C94D77FC7BCB8F205C7CA771E60BBBE44807EFBAFF1E",
+      "size_bytes": 338153
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_03/c3.ubj",
+      "sha256": "6BB36FB985353476E2494FDF667AEBB2D4D8DEFE9F9378C780D07106B7FC3263",
+      "size_bytes": 335827
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_03/suspicious_activity.ubj",
+      "sha256": "C2ED37DA9316986D8FD0400E31C421F5D7E226EC615A3FB0AB449486D1229983",
+      "size_bytes": 464987
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_04/c2.ubj",
+      "sha256": "1C7B4ED5D5E18F21CFF35E3DD521938B7F223F36983047323E6EBA79130F422C",
+      "size_bytes": 340261
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_04/c3.ubj",
+      "sha256": "92BFAC8DEEB0CCCC1C8FFE5AF40B38059C17305DDA45F406A9C56C3670360209",
+      "size_bytes": 336782
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_04/suspicious_activity.ubj",
+      "sha256": "ED0BA8DE5CADAEB257A5BA04570D5FCB7091F5314B12B6A305A6CCA5E1E0BF11",
+      "size_bytes": 457032
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_05/c2.ubj",
+      "sha256": "40C625C03FCA38B2854A0A59B2D6C34BF9D8B700149F4EE543E48D3449312DD3",
+      "size_bytes": 339038
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_05/c3.ubj",
+      "sha256": "37E879B4A6BE6633A813802DD8F38ED3ED13FEB0F115542C545B92644B87B821",
+      "size_bytes": 337739
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_05/suspicious_activity.ubj",
+      "sha256": "4ED3ED7D529DDB2D874DAFBA6729E9C26FB7B51131E807C8C37E01CC0F2EB5DB",
+      "size_bytes": 466552
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_07/c2.ubj",
+      "sha256": "FDA42699E3E1766AABF1569CAD53EBA32441B5CACBE03C2713CAAE59CA382510",
+      "size_bytes": 336373
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_07/c3.ubj",
+      "sha256": "123F9FCD1276D3AAC8B44711030A00D136655DFB24E158608F3745E2A179A99B",
+      "size_bytes": 339438
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_07/suspicious_activity.ubj",
+      "sha256": "DEDA1634B47B46240F4F80512111569E63CBA5C53213ECB00D2DD2F225E8D638",
+      "size_bytes": 469612
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_10/c2.ubj",
+      "sha256": "9FCE1481C6A6C04F7821B4351C89351A5765AEC9FA47C5F44BFDF966F0899123",
+      "size_bytes": 338085
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_10/c3.ubj",
+      "sha256": "7EA4F7CB1A0E26264EAC351BC0E40BE8982C24D33D5EA7CE741508CDA9A3BE8E",
+      "size_bytes": 343059
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_10/suspicious_activity.ubj",
+      "sha256": "99C7CD78B83253F4B62FF88D55C0AF5FD3C1FCA83A51649E2C6A377FBE10F6EC",
+      "size_bytes": 466960
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_11/c2.ubj",
+      "sha256": "5436638E2DE96E8DF6ADC69600BF6875492C97F4AE4B257A028E528798B4633A",
+      "size_bytes": 332751
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_11/c3.ubj",
+      "sha256": "4F17B67194C614747F6B88940D672271323E745D37858D8C0255ACAC74D1602A",
+      "size_bytes": 335684
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_11/suspicious_activity.ubj",
+      "sha256": "ABEC27E1C2F1F1DA0DB485283EBB20A24F488E2883F5639D75D66395560EF2CF",
+      "size_bytes": 464852
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_12/c2.ubj",
+      "sha256": "0C68E6642430FE49485DE95DA0892086FA3E565C48451CC588C3A9D97E2C7654",
+      "size_bytes": 334994
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_12/c3.ubj",
+      "sha256": "985C2C256416CE7B450EB8BEB92C2E96BF1ADAC97C0B6A435C156E64AAA30F75",
+      "size_bytes": 339434
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/fold_models/group_12/suspicious_activity.ubj",
+      "sha256": "96A70B80A0B44A96431AD8E393D66F79EE38D70D470245C3DA77EA4D1ED9D6EE",
+      "size_bytes": 468456
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/grouped_oof_actor_predictions.csv",
+      "sha256": "A63B03496600C515DA9F19D68AF0AA1DC96FC17D9C4F1E80C8F811E4FCB7AA36",
+      "size_bytes": 797141
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/grouped_oof_input.npz",
+      "sha256": "50A3DBA4FB99C92C7AB658B5719F39F2734E19141BB37E3EE7E31FC0E566A3BD",
+      "size_bytes": 5916546
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/grouped_oof_pair_predictions.csv",
+      "sha256": "693B4A84904B00D5878A113FE13C8E58B612B041279C8F6D16B75507C83D630B",
+      "size_bytes": 4294
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/metrics.json",
+      "sha256": "F147D2CEFA16D12DBF47E2686870352810F2949013BF959D1843AFD7B982FDF1",
+      "size_bytes": 1676
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/model_selection.json",
+      "sha256": "20348D22CB6A9FC12621687D2C9F268872C61B1405D980F7F65CE24D4E3F6F3F",
+      "size_bytes": 8801
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/models/c2.ubj",
+      "sha256": "E908CC62D083F2518543DF2D2A63D44746B788B9AD72522F6B3752247320DE0B",
+      "size_bytes": 338893
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/models/c3.ubj",
+      "sha256": "E2BD274BF7217318A281AEBD6B1A49ACA8B38F846B19314121315C7634B07180",
+      "size_bytes": 340528
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/models/suspicious_activity.ubj",
+      "sha256": "8F44DB9951A56CE14FA5BEBEF8F22E7A577BAA9E9665BD78415EC2F8A0657BA5",
+      "size_bytes": 470700
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/provenance.json",
+      "sha256": "0692A38102D1E345C47260DCC7F9E35EF3B8EBCEA9D80AC315D3DB7210B07C14",
+      "size_bytes": 1753
+    },
+    {
+      "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827/temporal_policy.json",
+      "sha256": "6E3FA21807B9F45E88A0B2869D60C33D7F64058514E0DBFB89D87F7BDAA15633",
+      "size_bytes": 154
+    },
+    {
+      "path": "weights/mediapipe/holistic_landmarker.task",
+      "sha256": "E2DAB61191E2DCD0A15F943D8E3ED1DCE13C82DFA597B9DD39F562975A50C3F8",
+      "size_bytes": 13683609
+    },
+    {
+      "path": "weights/yolov8n.pt",
+      "sha256": "F59B3D833E2FF32E194B5BB8E08D211DC7C5BDF144B90D2C8412C47CCFC83B36",
+      "size_bytes": 6549796
+    }
+  ],
+  "release_id": "pose-gaze-causal-runtime-20260914",
+  "verification": {
+    "bundle_dir": "D:\\minhphu\\ML lab\\final_project\\Real-Time-Exam-Proctoring-System\\tmp\\causal_8fps_stage6_mixed_084699_final_20260827",
+    "bundle_manifest_sha256": "CB8B8335D62849DE2541F8001BE104DA8017402B078B529E3A8D0B02AB4100FE",
+    "cpu_forward_pass": true,
+    "feature_counts": {
+      "c2": 65,
+      "c3": 90,
+      "suspicious_activity": 50
+    },
+    "gate_thresholds": {
+      "c3_down_ceiling": 0.04676047707994139,
+      "c3_motion_ceiling": 2.127486297745217,
+      "c3_side_floor": 0.23424867951982659,
+      "suspicious_down_floor": 0.02284153357560299,
+      "suspicious_lower_floor": -0.10919798641680552,
+      "suspicious_motion_floor": 0.27528379193801616
+    },
+    "mediapipe_task_loaded": true,
+    "model_sha256": {
+      "c2": "E908CC62D083F2518543DF2D2A63D44746B788B9AD72522F6B3752247320DE0B",
+      "c3": "E2BD274BF7217318A281AEBD6B1A49ACA8B38F846B19314121315C7634B07180",
+      "suspicious_activity": "8F44DB9951A56CE14FA5BEBEF8F22E7A577BAA9E9665BD78415EC2F8A0657BA5"
+    },
+    "models_loaded": true,
+    "specialist_thresholds": {
+      "c2": 0.31567803025245667,
+      "c3": 0.22652508318424225,
+      "suspicious_activity": 0.6603246927261353
+    },
+    "temporal_policy": {
+      "baseline_valid_frames": 4,
+      "head_turn_baseline_valid_frames": 8,
+      "max_derivative_gap_ms": 450,
+      "target_fps": 8,
+      "window_frames": 24
+    },
+    "verdict": "PASS",
+    "verified_versions": {
+      "mediapipe": "0.10.35",
+      "numpy": "2.5.3",
+      "ultralytics": "8.4.150",
+      "xgboost": "3.4.0"
+    },
+    "zero_feature_scores": {
+      "c2": 0.4553079307079315,
+      "c3": 0.00974612683057785,
+      "suspicious_activity": 0.017378807067871094
+    }
+  }
+}

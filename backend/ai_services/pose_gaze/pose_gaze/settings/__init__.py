@@ -1,6 +1,8 @@
 """Public configuration defaults shared by tracking and holistic packages."""
 
 from .settings import (
+    DEFAULT_CAUSAL_MODEL_DIR,
+    DEFAULT_CAUSAL_TARGET_FPS,
     DEFAULT_HOLISTIC_CONFIDENCE,
     DEFAULT_HOLISTIC_SOFT_CONFIDENCE,
     DEFAULT_MAX_MISSED_FRAMES,
@@ -11,6 +13,8 @@ from .settings import (
 )
 
 __all__ = [
+    "DEFAULT_CAUSAL_MODEL_DIR",
+    "DEFAULT_CAUSAL_TARGET_FPS",
     "DEFAULT_HOLISTIC_CONFIDENCE",
     "DEFAULT_HOLISTIC_SOFT_CONFIDENCE",
     "DEFAULT_MAX_MISSED_FRAMES",

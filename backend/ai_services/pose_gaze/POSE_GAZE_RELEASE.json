@@ -1,0 +1,64 @@
+{
+  "release_id": "pose-gaze-causal-runtime-20260914",
+  "bundle": {
+    "path": "tmp/causal_8fps_stage6_mixed_084699_final_20260827",
+    "format_version": "causal_8fps_stage6_v1",
+    "bundle_manifest_sha256": "CB8B8335D62849DE2541F8001BE104DA8017402B078B529E3A8D0B02AB4100FE",
+    "models": {
+      "c2": "E908CC62D083F2518543DF2D2A63D44746B788B9AD72522F6B3752247320DE0B",
+      "c3": "E2BD274BF7217318A281AEBD6B1A49ACA8B38F846B19314121315C7634B07180",
+      "suspicious_activity": "8F44DB9951A56CE14FA5BEBEF8F22E7A577BAA9E9665BD78415EC2F8A0657BA5"
+    },
+    "feature_counts": {
+      "c2": 65,
+      "c3": 90,
+      "suspicious_activity": 50
+    }
+  },
+  "supporting_models": {
+    "person_detector": {
+      "path": "weights/yolov8n.pt",
+      "sha256": "F59B3D833E2FF32E194B5BB8E08D211DC7C5BDF144B90D2C8412C47CCFC83B36"
+    },
+    "holistic_landmarker": {
+      "path": "weights/mediapipe/holistic_landmarker.task",
+      "sha256": "E2DAB61191E2DCD0A15F943D8E3ED1DCE13C82DFA597B9DD39F562975A50C3F8",
+      "source": "https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task"
+    }
+  },
+  "runtime": {
+    "python": "3.12",
+    "xgboost_device": "cpu",
+    "target_fps": 8,
+    "baseline_valid_frames": 4,
+    "head_turn_baseline_valid_frames": 8,
+    "window_frames": 24,
+    "max_derivative_gap_ms": 450,
+    "specialist_thresholds": {
+      "c2": 0.31567803025245667,
+      "c3": 0.22652508318424225,
+      "suspicious_activity": 0.6603246927261353
+    },
+    "gate_thresholds": {
+      "c3_motion_ceiling": 2.127486297745217,
+      "c3_side_floor": 0.23424867951982659,
+      "c3_down_ceiling": 0.04676047707994139,
+      "suspicious_down_floor": 0.02284153357560299,
+      "suspicious_motion_floor": 0.27528379193801616,
+      "suspicious_lower_floor": -0.10919798641680552
+    },
+    "explicit_pair_format": "actor_id:peer_actor_id"
+  },
+  "verified_versions": {
+    "mediapipe": "0.10.35",
+    "numpy": "2.5.3",
+    "opencv-contrib-python": "5.0.0.93",
+    "pandas": "3.0.5",
+    "scikit-learn": "1.9.0",
+    "scipy": "1.18.1",
+    "torch": "2.14.0",
+    "torchvision": "0.29.0",
+    "ultralytics": "8.4.150",
+    "xgboost": "3.4.0"
+  }
+}

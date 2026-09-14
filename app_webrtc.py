@@ -64,6 +64,8 @@ from backend.ai_services.pose_gaze.pose_gaze.tracking.manager import TrackingMan
 from backend.ai_services.pose_gaze.pose_gaze.tracking.webcam import PersonTrackingModule, PersonTrackingConfig
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
 from backend.ai_services.pose_gaze.pose_gaze.settings import (
+    DEFAULT_CAUSAL_MODEL_DIR,
+    DEFAULT_CAUSAL_TARGET_FPS,
     DEFAULT_HOLISTIC_CONFIDENCE,
     DEFAULT_HOLISTIC_SOFT_CONFIDENCE,
     DEFAULT_MAX_MISSED_FRAMES,
@@ -73,7 +75,7 @@ from backend.ai_services.pose_gaze.pose_gaze.settings import (
 )
 
 DEFAULT_ACTION_ARTIFACTS = {
-    "extended": PROJECT_ROOT / "stage6_bundle_exact" / "causal_8fps_stage6_mixed_084699_final_20260827",
+    "extended": DEFAULT_CAUSAL_MODEL_DIR,
 }
 
 # ==========================================
@@ -101,20 +103,17 @@ def init_system_resources():
         "live_classifier": None,     # <--- THÊM MỚI
         "tracking_manager": None,    # <--- THÊM MỚI
         "frame_count": 0,
+        "last_gaze_enqueue_time": None,
         "logs": []
     }
 
     # --- LUỒNG AI THỊ GIÁC ---
     # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
     def heavy_vision_thread():
-        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng OpenVINO...")
-        # Trỏ tới thư mục chứa file .xml và .bin của OpenVINO
+        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng best (1).pt...")
         try:
-            # Xóa tham số enable_smartphone_fallback
-            # Thêm confidence_threshold để dễ dàng test (giảm xuống 0.3 để OpenVINO nhạy hơn)
             yolo_model = ObjectDetector(
-                model_path="weights/best_openvino_model", 
-                device="GPU",
+                model_path=PROJECT_ROOT / "weights" / "best (1).pt",
                 confidence_threshold=0.5
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
@@ -561,12 +560,18 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 
     # 3. Đẩy ảnh mới vào Queue cho AI xử lý (Frame Skipping)
 
-    # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 2 frame ~ 10 FPS)
-    if SHARED_STATE["frame_count"] % 1 == 0:
+    # Bundle causal được huấn luyện và khóa ở 8 FPS. Lấy mẫu theo
+    # timestamp thay vì giả định camera luôn chạy đúng 30 FPS.
+    last_gaze_time = SHARED_STATE.get("last_gaze_enqueue_time")
+    if (
+        last_gaze_time is None
+        or current_time - last_gaze_time >= 1.0 / DEFAULT_CAUSAL_TARGET_FPS
+    ):
         if GAZE_QUEUE.full():
             try: GAZE_QUEUE.get_nowait()
             except queue.Empty: pass
         GAZE_QUEUE.put((img.copy(), current_time))
+        SHARED_STATE["last_gaze_enqueue_time"] = current_time
 
     if SHARED_STATE["frame_count"] % FPS_SKIP == 0:
         if FRAME_QUEUE.full():

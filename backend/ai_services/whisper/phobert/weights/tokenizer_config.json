@@ -46,7 +46,6 @@
   "cls_token": "<s>",
   "eos_token": "</s>",
   "is_local": false,
-  "local_files_only": false,
   "mask_token": "<mask>",
   "model_max_length": 1000000000000000019884624838656,
   "pad_token": "<pad>",
