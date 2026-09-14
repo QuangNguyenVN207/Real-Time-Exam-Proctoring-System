@@ -8,6 +8,8 @@ venv/
 .venv/
 .venv-face/
 .venv-audio-p1/
+.venv-pose-gaze/
+.venv-object/
 .venv2/
 /.cache/
 *.egg-info/
@@ -64,6 +66,7 @@ mlruns/
 *.h5
 *.task
 backend/ai_services/whisper/releases/*.zip
+backend/ai_services/whisper/runtime_models/
 backend/ai_services/object_detect/releases/*.zip
 backend/ai_services/pose_gaze/releases/*.zip
 .gstack/

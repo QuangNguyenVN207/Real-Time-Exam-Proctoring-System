@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import librosa
 import numpy as np
 import torch
@@ -22,32 +24,47 @@ class PhoWhisperService:
         model_name: str = PHOWHISPER_MODEL,
         revision: str = PHOWHISPER_REVISION,
         device: str = PHOWHISPER_DEVICE,
-        local_files_only: bool = False,
+        local_files_only: bool = True,
     ):
+        model_name = str(model_name)
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested but is not available")
 
-        self.model_name = model_name
+        model_path = Path(model_name).expanduser()
+        is_local_model = model_path.is_dir()
+        looks_like_local_path = model_path.is_absolute() or any(
+            separator in model_name for separator in ("/", "\\")
+        ) and not model_name.startswith("vinai/")
+        if looks_like_local_path and not is_local_model:
+            raise FileNotFoundError(
+                "Packaged PhoWhisper model is missing: "
+                f"{model_path.resolve()}. Extract the locked Whisper release ZIP "
+                "before starting the audio module."
+            )
+
+        model_source = str(model_path.resolve()) if is_local_model else model_name
+        self.model_name = model_source
         self.revision = revision
         self.device = torch.device(device)
         self.dtype = torch.float16 if self.device.type == "cuda" else torch.float32
 
         print(
-            f"[PhoWhisper] Loading pretrained {model_name}@{revision} "
+            f"[PhoWhisper] Loading pretrained {model_source}@{revision} "
             f"on {self.device}"
         )
+        load_kwargs = {"local_files_only": local_files_only or is_local_model}
+        if not is_local_model:
+            load_kwargs["revision"] = revision
         self.processor = AutoProcessor.from_pretrained(
-            model_name,
-            revision=revision,
-            local_files_only=local_files_only,
+            model_source,
+            **load_kwargs,
         )
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            model_name,
-            revision=revision,
-            local_files_only=local_files_only,
+            model_source,
             dtype=self.dtype,
+            **load_kwargs,
         ).to(self.device)
         self.model.eval()
 

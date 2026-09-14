@@ -3,17 +3,41 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
+
+from backend.ai_services.whisper.config import (
+    PACKAGED_PHOWHISPER_DIR,
+    PHOWHISPER_REPO_ID,
+    PHOWHISPER_REVISION,
+)
 
 
 MODULE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = MODULE_DIR.parents[2]
 DEFAULT_OUTPUT = MODULE_DIR / "releases" / "whisper_p1_20260914.zip"
+ZIP_TIMESTAMP = (2026, 9, 14, 0, 0, 0)
+RELEASE_CREATED_AT_UTC = "2026-09-14T08:04:35.358491+00:00"
+TEXT_SUFFIXES = {".codes", ".csv", ".json", ".md", ".py", ".txt"}
+
+REQUIRED_PHOWHISPER_FILES = [
+    "added_tokens.json",
+    "config.json",
+    "generation_config.json",
+    "merges.txt",
+    "normalizer.json",
+    "preprocessor_config.json",
+    "pytorch_model.bin",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json",
+]
 
 REQUIRED_FILES = [
     "P1_README.md",
+    "verify_release.py",
     "requirements-p1.txt",
     "config.py",
     "audio_pipeline.py",
@@ -60,12 +84,14 @@ OUTPUT_DIRS = [
     "samples",
 ]
 
+# Text entries use LF-canonical hashes so Windows core.autocrlf cannot change
+# release identity. Binary entries always use their exact raw SHA-256.
 EXPECTED_SHA256 = {
     "phobert/weights/model.safetensors": "9f321d440ae1112a89a1618ab34202e3185583d620c6c1c01b786b45e7d9c2f0",
-    "phobert/weights/config.json": "e95f5e1f59392822a51f295c9c8bb2ad3cb9a40ea2489ec0e06e55d1e81f3246",
-    "phobert/weights/checkpoint-235/trainer_state.json": "84428ed9bc04786cf6507310a83a1c31bf305d5a48c65ed1cb14ede0f458acf6",
-    "phobert/weights/checkpoint-423/trainer_state.json": "223b624f0d5144e636234a85994a05ad2de1002f4bc7336ec90fa458c2c6f52e",
-    "phobert/dataset/cheating.csv": "02df077da283948aace169058f0b665619d6cce46bc0eb705b83324a9451a8d8",
+    "phobert/weights/config.json": "d5784bc547fa8d157f9391a1253a925b989029415d95e564fa1a498b2105e17c",
+    "phobert/weights/checkpoint-235/trainer_state.json": "022cf64c8725b2acbd977e022466bb0aef684e075c2c6b0d3457fe76e1af240d",
+    "phobert/weights/checkpoint-423/trainer_state.json": "a5d5afa619c94b7e63a5570c504bba6ee9ff72b8001cd4d3749d56f1b628eff2",
+    "phobert/dataset/cheating.csv": "9d08b18316c4d5cc84b65e509e24e869732025a37f68d3331cd70c072dfe1868",
 }
 
 
@@ -77,8 +103,38 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def release_payload(path: Path) -> bytes:
+    payload = path.read_bytes()
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        payload = payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return payload
+
+
+def sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def write_member(archive: zipfile.ZipFile, name: str, payload: bytes) -> None:
+    info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, payload, compresslevel=6)
+
+
+def write_path(archive: zipfile.ZipFile, name: str, path: Path) -> None:
+    if path.suffix.lower() in TEXT_SUFFIXES:
+        write_member(archive, name, release_payload(path))
+        return
+    info = zipfile.ZipInfo(name, ZIP_TIMESTAMP)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    with path.open("rb") as source, archive.open(info, "w", force_zip64=True) as target:
+        shutil.copyfileobj(source, target, length=1024 * 1024)
+
+
 def collect_files() -> list[Path]:
     files = [MODULE_DIR / relative for relative in REQUIRED_FILES]
+    files.extend(PACKAGED_PHOWHISPER_DIR / name for name in REQUIRED_PHOWHISPER_FILES)
     files.extend(
         MODULE_DIR / relative
         for relative in OPTIONAL_FILES
@@ -102,7 +158,9 @@ def collect_files() -> list[Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create the self-contained Whisper P1 release archive.")
+    parser = argparse.ArgumentParser(
+        description="Create the self-contained Whisper P1 release archive."
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -110,7 +168,12 @@ def main() -> None:
 
     files = collect_files()
     for relative, expected_hash in EXPECTED_SHA256.items():
-        actual_hash = sha256_file(MODULE_DIR / relative)
+        locked_path = MODULE_DIR / relative
+        actual_hash = (
+            sha256_bytes(release_payload(locked_path))
+            if locked_path.suffix.lower() in TEXT_SUFFIXES
+            else sha256_file(locked_path)
+        )
         if actual_hash != expected_hash:
             raise RuntimeError(
                 f"Integrity check failed for {relative}: "
@@ -119,11 +182,18 @@ def main() -> None:
     manifest_files = []
     for path in files:
         relative = path.relative_to(MODULE_DIR).as_posix()
+        if path.suffix.lower() in TEXT_SUFFIXES:
+            payload = release_payload(path)
+            byte_count = len(payload)
+            file_hash = sha256_bytes(payload)
+        else:
+            byte_count = path.stat().st_size
+            file_hash = sha256_file(path)
         manifest_files.append(
             {
                 "path": relative,
-                "bytes": path.stat().st_size,
-                "sha256": sha256_file(path),
+                "bytes": byte_count,
+                "sha256": file_hash,
             }
         )
     optimizer_included = any(
@@ -134,10 +204,14 @@ def main() -> None:
     manifest = {
         "release": "whisper-p1",
         "develop_source_commit": "9b22e939543193c6d9eef6306cf7a626d063051b",
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc": RELEASE_CREATED_AT_UTC,
         "archive_layout": "Files are rooted at backend/ai_services/whisper inside the ZIP.",
         "fine_tuned_model": "vinai/phobert-base-v2",
-        "pretrained_asr": "vinai/PhoWhisper-small@a86b604c346caf7148c37512eafe783a16420adb",
+        "pretrained_asr": f"{PHOWHISPER_REPO_ID}@{PHOWHISPER_REVISION}",
+        "pretrained_asr_packaged_path": PACKAGED_PHOWHISPER_DIR.relative_to(
+            MODULE_DIR
+        ).as_posix(),
+        "self_contained_asr": True,
         "best_checkpoint": "checkpoint-235 (epoch 5)",
         "packaged_weight": "model.safetensors recovered from checkpoint-235",
         "early_stop_checkpoint": "checkpoint-423 (epoch 9)",
@@ -152,12 +226,17 @@ def main() -> None:
     manifest_path = output.with_suffix(".manifest.json")
 
     zip_root = Path("backend/ai_services/whisper")
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with zipfile.ZipFile(output, "w") as archive:
         for path in files:
-            archive.write(path, (zip_root / path.relative_to(MODULE_DIR)).as_posix())
-        archive.writestr(
+            write_path(
+                archive,
+                (zip_root / path.relative_to(MODULE_DIR)).as_posix(),
+                path,
+            )
+        write_member(
+            archive,
             (zip_root / "WHISPER_P1_RELEASE.json").as_posix(),
-            json.dumps(manifest, indent=2),
+            json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n",
         )
 
     archive_hash = sha256_file(output)
@@ -170,7 +249,8 @@ def main() -> None:
         },
     }
     manifest_path.write_text(
-        json.dumps(external_manifest, indent=2), encoding="utf-8"
+        json.dumps(external_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
     print(json.dumps({
