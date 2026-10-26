@@ -55,14 +55,26 @@ class RealtimeAudioWorker:
 
     def select_input_device(self):
         devices = sd.query_devices()
-        keywords = ["lenovo", "realtek", "microphone", "array", "stereo mix"]
-        candidates = []
-        for idx, dev in enumerate(devices):
-            if dev["max_input_channels"] <= 0:
-                continue
-            candidates.append(idx)
-            name = dev["name"].lower()
-            if any(k in name for k in keywords):
+        # Stereo Mix / loopback thu tiếng loa của máy, không phải mic thí sinh -> loại bỏ
+        blocked = ["stereo mix", "loopback", "what u hear", "wave out"]
+        keywords = ["microphone", "array", "lenovo", "realtek"]
+
+        def usable(idx):
+            dev = devices[idx]
+            return dev["max_input_channels"] > 0 and not any(b in dev["name"].lower() for b in blocked)
+
+        # 1) Mic mặc định mà người dùng đã chọn trong Windows Sound settings
+        try:
+            default_in = sd.default.device[0]
+            if default_in is not None and default_in >= 0 and usable(default_in):
+                return int(default_in)
+        except Exception:
+            pass
+
+        # 2) Tìm theo từ khoá
+        candidates = [i for i in range(len(devices)) if usable(i)]
+        for idx in candidates:
+            if any(k in devices[idx]["name"].lower() for k in keywords):
                 return idx
         return candidates[0] if candidates else None
 
@@ -95,7 +107,10 @@ class RealtimeAudioWorker:
         if self.audio_queue.full():
             try: _ = self.audio_queue.get_nowait()
             except queue.Empty: pass
-        self.audio_queue.put_nowait(chunk)
+        try:
+            self.audio_queue.put_nowait(chunk)
+        except queue.Full:
+            pass
 
     def _resample_to_target(self, audio):
         """Giữ nguyên hàm này vì nó cực kỳ quan trọng cho các mic giá rẻ chỉ hỗ trợ 44.1kHz hoặc 48kHz"""
@@ -114,6 +129,9 @@ class RealtimeAudioWorker:
                 chunk = self.audio_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
+
+            if chunk is None:  # sentinel từ stop()
+                break
 
             # 1. Liên tục gom âm thanh vào hộp chứa
             self.buffer_raw = np.concatenate((self.buffer_raw, chunk))
@@ -202,6 +220,16 @@ class RealtimeAudioWorker:
         print("[Worker] Stopped.")
 
     # =========================
+    # Stop (gọi được từ luồng khác)
+    # =========================
+    def stop(self):
+        self.stop_event.set()
+        try:
+            self.audio_queue.put_nowait(None)
+        except queue.Full:
+            pass
+
+    # =========================
     # Start 
     # =========================
     def start(self):
@@ -228,7 +256,7 @@ class RealtimeAudioWorker:
                 blocksize=blocksize,
                 callback=self._audio_callback,
             ):
-                while True:
+                while not self.stop_event.is_set():
                     time.sleep(0.5)
         except KeyboardInterrupt:
             print("\n[Main] Đang tắt hệ thống...")
