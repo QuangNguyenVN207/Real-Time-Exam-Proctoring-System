@@ -3,7 +3,6 @@ import torch
 import librosa
 
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
-from optimum.intel import OVModelForSpeechSeq2Seq
 
 from backend.ai_services.whisper.config import PHOWHISPER_MODEL
 
@@ -13,10 +12,7 @@ class PhoWhisperService:
 
     def __init__(self):
         print("[PhoWhisper] Loading model...")
-        # self.device = "cuda" if torch.cuda.is_available() else "cpu"
-                # self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         
-                # print(f"[PhoWhisper] Device: {self.device}")
         if torch.cuda.is_available():
             self.run_mode = "cuda"
             self.device = "cuda"
@@ -31,6 +27,8 @@ class PhoWhisperService:
         else:
             self.run_mode = "openvino"
             import openvino as ov
+            from optimum.intel import OVModelForSpeechSeq2Seq
+            
             try:
                 core = ov.Core()
                 self.device = "GPU" if "GPU" in core.available_devices else "CPU"
