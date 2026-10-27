@@ -43,7 +43,6 @@ insightface>=0.7,<1.0
 
 
 ctranslate2
-av
 
 rapidfuzz
 scipy
@@ -66,11 +65,10 @@ datasets==5.0.0
 # sudo apt-get install portaudio19-dev python3-pyaudio
 pyaudio
 
-streamlit
+streamlit==1.61.1
 
-streamlit-webrtc
-av
-streamlit-autorefresh
+streamlit-webrtc==0.77.0
+streamlit-autorefresh==1.0.1
 
 sahi>=0.12.5
 wandb>=0.28
