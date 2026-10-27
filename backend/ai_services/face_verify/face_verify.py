@@ -36,6 +36,11 @@ def _safe_print(message: str) -> None:
 # Chọn provider theo backend.core.device: NVIDIA (CUDA) -> Intel iGPU (OpenVINO, device_type=GPU) -> CPU.
 # Ép thủ công bằng biến môi trường PROCTOR_DEVICE=cuda|intel|cpu.
 _PROVIDERS = list(select_device().ort_providers)
+if any((x[0] if isinstance(x, tuple) else x) == "CUDAExecutionProvider" for x in _PROVIDERS):
+    try:  # nạp sẵn thư viện CUDA/cuDNN (dùng chung bản đi kèm PyTorch nếu có)
+        ort.preload_dlls()
+    except Exception:
+        pass
 
 
 def _provider_name(provider) -> str:

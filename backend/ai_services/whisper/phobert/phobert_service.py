@@ -46,6 +46,16 @@ class PhobertService:
             print("[PhoBERT] Đang tải model gốc 'vinai/phobert-base-v2'...")
             model_path = "vinai/phobert-base-v2"
             
+        if not is_pretrained:
+            weight_files = ("model.safetensors", "pytorch_model.bin",
+                            "model.safetensors.index.json", "pytorch_model.bin.index.json")
+            if not any(os.path.exists(os.path.join(model_path, f)) for f in weight_files):
+                raise FileNotFoundError(
+                    f"[PhoBERT] Thư mục {model_path} có config.json nhưng THIẾU file trọng số "
+                    "(model.safetensors / pytorch_model.bin). Hãy copy file này từ máy đã train/chạy ổn, "
+                    "hoặc `git lfs pull` nếu repo dùng Git LFS (file chỉ vài trăm byte là con trỏ LFS). "
+                    "Không tự rơi về model gốc vì classifier chưa train sẽ cho kết quả sai."
+                )
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
         # CHỈ truyền num_labels khi tải model gốc. Model đã train có sẵn num_labels trong config.json;
