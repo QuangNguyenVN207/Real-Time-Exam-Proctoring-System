@@ -1,36 +1,50 @@
 import os
+import sys
 import logging
 import warnings
 
 # ==========================================
-# CẤU HÌNH MÔI TRƯỜNG WINDOWS + NVIDIA (CUDA)
+# KHỐI LỆNH TẮT TRIỆT ĐỂ LOG RÁC (C++ & TENSORFLOW)
 # ==========================================
-# Lưu ý: KHÔNG redirect stderr vào NUL như bản Ubuntu, để còn thấy traceback khi lỗi.
+try:
+    # Mở file devnull (hoặc NUL trên Windows)
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    # Chuyển hướng File Descriptor 2 (stderr của C/C++) vào devnull
+    os.dup2(devnull_fd, 2)
+    os.close(devnull_fd)
+except Exception:
+    pass
+# Tắt cảnh báo NNPACK của PyTorch
 os.environ["TORCH_SHOW_CPP_WARNINGS"] = "0"
 logging.getLogger("torch.nnpack").setLevel(logging.ERROR)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt log C++ của TensorFlow / TFLite
-os.environ["GLOG_minloglevel"] = "3"             # Tắt log C++ của MediaPipe
-os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log ONNX Runtime (4 = FATAL)
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt toàn bộ log C++ của TensorFlow / TFLite
+os.environ["GLOG_minloglevel"] = "3"             # Tắt toàn bộ log C++ của Google Logging / MediaPipe
+os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log của ONNX Runtime (4 = FATAL)
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0" 
+# 2. Điều hướng toàn bộ STDERR vào hư vô (Nul) trong lúc khởi tạo MediaPipe
+
+stderr = sys.stderr
+sys.stderr = open(os.devnull, 'w')
+
+# ==========================================
+# KHỐI LỆNH "BỊT MIỆNG" SPAM LOG TỪ THƯ VIỆN
+# ==========================================
+# Tối ưu hóa driver SYCL cho Intel Arc (Giảm độ trễ giao tiếp)
+os.environ["SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS"] = "1"
+# Ép FaceNet/ONNXRuntime sử dụng OpenVINO để tăng tốc bằng Intel GPU
+os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "OpenVINOExecutionProvider,CPUExecutionProvider"
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-logging.getLogger().setLevel(logging.ERROR)
-
-# Model HuggingFace đã có trong cache -> chạy offline: tắt luồng nền "auto_conversion" (lỗi 403 vô hại)
-# và cảnh báo HF_TOKEN, đồng thời không phụ thuộc mạng khi thi. Đặt PROCTOR_ONLINE=1 để cho phép tải model mới.
-if not os.environ.get("PROCTOR_ONLINE"):
-    _hub = os.environ.get("HF_HUB_CACHE") or os.path.join(
-        os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "hub"
-    )
-    if os.path.isdir(os.path.join(_hub, "models--vinai--PhoWhisper-small")):
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+logging.getLogger().setLevel(logging.ERROR) # Thêm dòng này để tắt log W000
 
 import transformers
 transformers.logging.set_verbosity_error()
 
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+os.environ["XDG_SESSION_TYPE"] = "x11"
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
 os.environ["OPENCV_LOG_LEVEL"] = "FATAL"
 
@@ -45,13 +59,9 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit_autorefresh import st_autorefresh
 
 # ---> CHỌN THIẾT BỊ: NVIDIA (CUDA) -> Intel iGPU (OpenVINO/ONNX) -> CPU <---
-from backend.core.device import select_device, resolve_model_path
-
+from backend.core.device import select_device
 DEVICE = select_device()
-# print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) | ONNX providers: {DEVICE.ort_providers}")
-# "auto" = để từng module tự chọn theo DEVICE ở trên. Ép bằng biến môi trường PROCTOR_DEVICE=cuda|intel|cpu
-GPU_DEVICE = "auto"   # YOLO vật thể cấm
-AUX_DEVICE = "auto"   # Person Detector / Paper Pipeline / Tracking
+print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name})")
 
 # Import các module AI của bạn
 from pathlib import Path
@@ -116,15 +126,14 @@ def init_system_resources():
     # --- LUỒNG AI THỊ GIÁC ---
     # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
     def heavy_vision_thread():
-        print(f"[INFO] Đang khởi động luồng AI Thị giác (Nặng) trên {DEVICE.kind} ({DEVICE.name})...")
+        print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng OpenVINO...")
+        # Trỏ tới thư mục chứa file .xml và .bin của OpenVINO
         try:
-            # Đường dẫn .pt gốc; ObjectDetector tự đổi sang *_openvino_model / .onnx nếu máy chỉ có Intel iGPU
-            yolo_weights = "weights/best (1).pt"
-            if not os.path.exists(resolve_model_path(yolo_weights, DEVICE)):
-                print(f"[CẢNH BÁO] Không thấy model YOLO ({yolo_weights} hoặc bản export), kiểm tra thư mục weights/")
+            # Xóa tham số enable_smartphone_fallback
+            # Thêm confidence_threshold để dễ dàng test (giảm xuống 0.3 để OpenVINO nhạy hơn)
             yolo_model = ObjectDetector(
-                model_path=yolo_weights,
-                device=GPU_DEVICE,
+                model_path="weights/best (1).pt",
+                device=None,
                 confidence_threshold=0.7
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
@@ -177,7 +186,7 @@ def init_system_resources():
         # -------------------------------------------------------------------------
         
         vision_ready.set()
-        print(f"[INFO] ✅ AI Thị giác (Nặng) đã nạp xong ({DEVICE.kind})!")
+        print("[INFO] ✅ AI Thị giác (Nặng) đã nạp xong!")
 
         while True:
             # 1. Xử lý chụp ảnh đăng ký (Đồng bộ Masking)
@@ -291,9 +300,9 @@ def init_system_resources():
             person_detector = UltralyticsPersonDetector(
                 model_path=Path("weights/yolov8n.pt"),
                 confidence_threshold=0.55, 
-                device=AUX_DEVICE
+                device="auto"
             )
-            paper_object_detector = ObjectDetectModule(device=AUX_DEVICE)
+            paper_object_detector = ObjectDetectModule(device="auto")
             
             session_id = f"paper_session_{int(time.time())}"
             paper_pipeline = PaperCountPipeline(
@@ -395,7 +404,7 @@ def init_system_resources():
             PersonTrackingConfig(
                 session_id=session_id,
                 confidence_threshold=0.5,
-                device=AUX_DEVICE,
+                device="auto",
                 max_tracks=2,
             )
         )
