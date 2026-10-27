@@ -3,26 +3,32 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from optimum.intel import OVModelForSequenceClassification
+# optimum.intel chỉ import khi cần (máy NVIDIA không bắt buộc cài optimum[openvino])
+from backend.core.device import resolve_device
 from underthesea import word_tokenize
 
 class PhobertService:
     def __init__(self, model_path=None):
         print("[PhoBERT] Loading model...")
-        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # print(f"[PhoBERT] Device: {self.device}")
-        if torch.cuda.is_available():
+        # NVIDIA -> PyTorch CUDA | Intel iGPU -> OpenVINO GPU | còn lại -> OpenVINO CPU (hoặc PyTorch CPU nếu thiếu optimum)
+        # Ép thủ công: PROCTOR_DEVICE=cuda|intel|cpu
+        info = resolve_device(None)
+        self.device_info = info
+        self._OVModel = None
+        if info.kind == "cuda":
             self.run_mode = "cuda"
             self.device = torch.device("cuda")
         else:
-            self.run_mode = "openvino"
             try:
-                import openvino as ov
-                core = ov.Core()
-                self.device = "GPU" if "GPU" in core.available_devices else "CPU"
-            except Exception:
-                self.device = "CPU"
-                
+                from optimum.intel import OVModelForSequenceClassification
+                self._OVModel = OVModelForSequenceClassification
+                self.run_mode = "openvino"
+                self.device = "GPU" if info.kind == "intel" else "CPU"
+            except Exception as e:
+                print(f"[PhoBERT] Không dùng được optimum.intel ({e}) -> PyTorch CPU")
+                self.run_mode = "torch_cpu"
+                self.device = torch.device("cpu")
+
         print(f"[PhoBERT] Thiết bị được chọn: {self.device} (Mode: {self.run_mode})")
         
         # 1. Xử lý đường dẫn tuyệt đối để không bao giờ bị lỗi do khác thư mục đứng
@@ -42,17 +48,16 @@ class PhobertService:
             
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-        if self.run_mode == "cuda":
-            self.model = AutoModelForSequenceClassification.from_pretrained(
-                model_path, num_labels=2 if is_pretrained else None
-            ).to(self.device)
+        # CHỈ truyền num_labels khi tải model gốc. Model đã train có sẵn num_labels trong config.json;
+        # truyền num_labels=None làm transformers 5.x lỗi "'NoneType' object cannot be interpreted as an integer".
+        load_kwargs = {"num_labels": 2} if is_pretrained else {}
+
+        if self.run_mode == "openvino":
+            self.model = self._load_openvino(model_path, is_pretrained, load_kwargs)
         else:
-            self.model = OVModelForSequenceClassification.from_pretrained(
-                model_path, 
-                num_labels=2 if is_pretrained else None, 
-                device=self.device, 
-                export=True
-            )
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_path, **load_kwargs
+            ).to(self.device)
 
         self.model.eval()
         
@@ -60,6 +65,34 @@ class PhobertService:
         self.id2label = {0: "Normal", 1: "Cheating"}
         self.MAX_LEN = 64
         print("[PhoBERT] Model loaded successfully!")
+
+    def _load_openvino(self, model_path, is_pretrained, load_kwargs):
+        """Nạp bản OpenVINO. Export 1 lần rồi cache cạnh thư mục model (<model>_openvino) để khởi động nhanh."""
+        ov_dir = None if is_pretrained else model_path.rstrip("/\\") + "_openvino"
+        if ov_dir is not None:
+            xml = os.path.join(ov_dir, "openvino_model.xml")
+            if os.path.exists(xml):
+                newest_src = max(
+                    (os.path.getmtime(os.path.join(model_path, f))
+                     for f in os.listdir(model_path)
+                     if f.endswith((".safetensors", ".bin", ".json"))),
+                    default=0,
+                )
+                if os.path.getmtime(xml) >= newest_src:  # model chưa bị train lại sau lần export
+                    try:
+                        return self._OVModel.from_pretrained(ov_dir, device=self.device, export=False)
+                    except Exception as e:
+                        print(f"[PhoBERT] Cache OpenVINO lỗi ({e}) -> export lại")
+        model = self._OVModel.from_pretrained(
+            model_path, device=self.device, export=True, **load_kwargs
+        )
+        if ov_dir is not None:
+            try:
+                model.save_pretrained(ov_dir)
+                print(f"[PhoBERT] Đã cache bản OpenVINO tại {ov_dir}")
+            except Exception as e:
+                print(f"[PhoBERT] Không lưu được cache OpenVINO: {e}")
+        return model
 
     def _preprocess(self, text):
         # CHÚ Ý: Phải tách từ giống hệt lúc train

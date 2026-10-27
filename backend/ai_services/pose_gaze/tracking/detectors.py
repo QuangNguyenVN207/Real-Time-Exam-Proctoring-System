@@ -44,9 +44,16 @@ class UltralyticsPersonDetector:
             from ultralytics import YOLO
         except ImportError as error:  # pragma: no cover - environment dependent
             raise RuntimeError("Install ultralytics to use UltralyticsPersonDetector") from error
-        self._model = YOLO(str(model_path))
+        # device=None/"auto"/"0"/"cpu"/"intel": NVIDIA -> .pt, Intel iGPU -> OpenVINO/ONNX, còn lại CPU
+        from backend.core.device import resolve_device, resolve_model_path
+
+        info = resolve_device(device)
+        resolved_path = resolve_model_path(model_path, info)
+        self._model = YOLO(resolved_path, task="detect")
         self._confidence_threshold = confidence_threshold
-        self._device = device
+        # Model OpenVINO/ONNX tự chọn thiết bị; chỉ ép device khi chạy PyTorch (.pt)
+        self._device = info.torch_device if str(resolved_path).endswith(".pt") else None
+        print(f"[PersonDetector] device={info.kind} ({info.name}) model={resolved_path}")
 
     def detect(self, frame) -> list[PersonDetection]:
         result = self._model(frame, conf=self._confidence_threshold, device=self._device, verbose=False)[0]

@@ -107,7 +107,13 @@ class PersonTrackingModule:
                 if self.config.model_path is not None
                 else PROJECT_ROOT / "weights" / "yolov8n.pt"
             )
-            if not model_path.exists():
+            # Máy chỉ có Intel iGPU có thể chỉ có yolov8n_openvino_model / .onnx mà không có .pt
+            from backend.core.device import resolve_device, resolve_model_path
+
+            resolved_path = Path(
+                resolve_model_path(model_path, resolve_device(self.config.device))
+            )
+            if not resolved_path.exists():
                 raise FileNotFoundError(
                     f"Person detector weights were not found: {model_path}"
                 )

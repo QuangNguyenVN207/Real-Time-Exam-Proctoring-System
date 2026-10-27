@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from backend.core.config import settings
+from backend.core.device import resolve_device, resolve_model_path
 
 
 class ObjectDetector:
@@ -41,9 +42,12 @@ class ObjectDetector:
     ) -> None:
         """Load the YOLO checkpoint once and allocate it to CUDA or CPU."""
 
-        self.model_path = str(model_path)
+        # device=None/"auto": NVIDIA (.pt) -> Intel iGPU (OpenVINO/ONNX) -> CPU
+        self.device_info = resolve_device(device)
+        self.device = self.device_info.torch_to
+        self.model_path = resolve_model_path(model_path, self.device_info)
         self.confidence_threshold = float(confidence_threshold)
-        self.device = device or self._automatic_device()
+        print(f"[ObjectDetector] device={self.device_info.kind} ({self.device_info.name}) model={self.model_path}")
         self._suppress_ultralytics_logging()
 
         if model is None:
@@ -53,7 +57,7 @@ class ObjectDetector:
                 raise RuntimeError(
                     "Install ultralytics before creating ObjectDetector"
                 ) from error
-            model = YOLO(self.model_path)
+            model = YOLO(self.model_path, task="detect")
 
         self.model = model
         if hasattr(self.model, "to"):
@@ -403,26 +407,12 @@ class ObjectDetectModule:
                 ) from error
 
             # --- BẮT ĐẦU ĐOẠN SỬA ---
-            detected_device = "cpu"
-            if torch.cuda.is_available():
-                detected_device = "cuda"
-            else:
-                try:
-                    import openvino as ov
-                    # Nếu tìm thấy chữ GPU trong danh sách thiết bị OpenVINO, đó là Intel iGPU
-                    if "GPU" in ov.Core().available_devices:
-                        detected_device = "GPU"
-                except ImportError:
-                    pass
-            
-            self._device = device or detected_device
+            self._device_info = resolve_device(device)
+            # Giữ nhãn cũ cho phần log bên dưới: cuda / GPU (Intel) / cpu
+            self._device = {"cuda": "cuda", "intel": "GPU", "cpu": "cpu"}[self._device_info.kind]
 
-            # Tự động trỏ sang thư mục OpenVINO nếu đang dùng Intel iGPU
-            model_path = str(settings.yolo_model_path)
-            if self._device == "GPU" and model_path.endswith("best (1).pt"):
-                model_path = model_path.replace("best (1).pt", "best_openvino_model")
-            elif self._device == "GPU" and model_path.endswith(".pt"):
-                model_path = model_path.replace(".pt", "_openvino_model")
+            # NVIDIA -> .pt | Intel iGPU -> *_openvino_model hoặc .onnx | CPU -> .pt
+            model_path = resolve_model_path(settings.yolo_model_path, self._device_info)
             
             print(f"[object_detect] Loading YOLO model from {model_path}...")
             self._model = YOLO(model_path, task="detect")
@@ -435,9 +425,9 @@ class ObjectDetectModule:
             # )
             # self._model = YOLO(settings.yolo_model_path)
             try:
-                self._model.to(self._device)
+                self._model.to(self._device_info.torch_to)
             except Exception:
-                pass  # Bỏ qua lỗi .to() đối với OpenVINO
+                pass  # Bỏ qua lỗi .to() đối với OpenVINO/ONNX
             if self._device == "cuda":
                 print(
                     f"[object_detect] Inference device: cuda "
@@ -465,9 +455,9 @@ class ObjectDetectModule:
             and load_default_models
         ):  
             # --- BẮT ĐẦU ĐOẠN SỬA ---
-            fallback_path = str(settings.smartphone_fallback_model_path)
-            if self._device == "GPU" and fallback_path.endswith(".pt"):
-                fallback_path = fallback_path.replace(".pt", "_openvino_model")
+            fallback_path = resolve_model_path(
+                settings.smartphone_fallback_model_path, self._device_info
+            )
 
             print(
                 "[object_detect] Loading small-object smartphone fallback "
@@ -476,7 +466,7 @@ class ObjectDetectModule:
             self._smartphone_model = YOLO(fallback_path, task="detect")
             # --- KẾT THÚC ĐOẠN SỬA ---
             try:
-                self._smartphone_model.to(self._device)
+                self._smartphone_model.to(self._device_info.torch_to)
             except Exception:
                 pass
 

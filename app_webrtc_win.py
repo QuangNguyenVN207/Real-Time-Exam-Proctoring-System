@@ -12,8 +12,6 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"         # Tắt log C++ của TensorFlo
 os.environ["GLOG_minloglevel"] = "3"             # Tắt log C++ của MediaPipe
 os.environ["ORT_LOGGING_LEVEL"] = "4"            # Tắt log ONNX Runtime (4 = FATAL)
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-# Ép FaceNet/ONNXRuntime dùng CUDA (tự rơi về CPU nếu không có)
-os.environ["ONNXRUNTIME_EXECUTION_PROVIDERS"] = "CUDAExecutionProvider,CPUExecutionProvider"
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -37,25 +35,14 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit_autorefresh import st_autorefresh
 
-# ---> KIỂM TRA GPU NVIDIA (CUDA) <---
-@st.cache_resource
-def initialize_cuda():
-    try:
-        import torch
-        if torch.cuda.is_available():
-            name = torch.cuda.get_device_name(0)
-            print(f"[INFO] CUDA sẵn sàng: {name}")
-            return "0", name
-        print("[WARNING] torch.cuda.is_available() = False -> dùng CPU")
-    except Exception as e:
-        print(f"[WARNING] Không kiểm tra được CUDA: {e}")
-    return "cpu", None
+# ---> CHỌN THIẾT BỊ: NVIDIA (CUDA) -> Intel iGPU (OpenVINO/ONNX) -> CPU <---
+from backend.core.device import select_device, resolve_model_path
 
-# Device cho YOLO vật thể cấm (nặng nhất, ưu tiên GPU)
-GPU_DEVICE, GPU_NAME = initialize_cuda()
-# Device cho Person Detector / Paper Pipeline / Tracking.
-# Mặc định "cpu" giống bản Ubuntu đã chạy ổn; đổi thành GPU_DEVICE nếu muốn thử tăng tốc.
-AUX_DEVICE = "cpu"
+DEVICE = select_device()
+print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) | ONNX providers: {DEVICE.ort_providers}")
+# "auto" = để từng module tự chọn theo DEVICE ở trên. Ép bằng biến môi trường PROCTOR_DEVICE=cuda|intel|cpu
+GPU_DEVICE = "auto"   # YOLO vật thể cấm
+AUX_DEVICE = "auto"   # Person Detector / Paper Pipeline / Tracking
 
 # Import các module AI của bạn
 from pathlib import Path
@@ -120,12 +107,12 @@ def init_system_resources():
     # --- LUỒNG AI THỊ GIÁC ---
     # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
     def heavy_vision_thread():
-        print(f"[INFO] Đang khởi động luồng AI Thị giác (Nặng) trên device={GPU_DEVICE} ({GPU_NAME})...")
+        print(f"[INFO] Đang khởi động luồng AI Thị giác (Nặng) trên {DEVICE.kind} ({DEVICE.name})...")
         try:
-            # Bản Windows dùng file YOLO .pt gốc (không dùng thư mục OpenVINO)
+            # Đường dẫn .pt gốc; ObjectDetector tự đổi sang *_openvino_model / .onnx nếu máy chỉ có Intel iGPU
             yolo_weights = "weights/best (1).pt"
-            if not os.path.exists(yolo_weights):
-                print(f"[CẢNH BÁO] Không thấy {yolo_weights}, kiểm tra lại tên file trong thư mục weights/")
+            if not os.path.exists(resolve_model_path(yolo_weights, DEVICE)):
+                print(f"[CẢNH BÁO] Không thấy model YOLO ({yolo_weights} hoặc bản export), kiểm tra thư mục weights/")
             yolo_model = ObjectDetector(
                 model_path=yolo_weights,
                 device=GPU_DEVICE,
@@ -181,7 +168,7 @@ def init_system_resources():
         # -------------------------------------------------------------------------
         
         vision_ready.set()
-        print("[INFO] ✅ AI Thị giác (Nặng) đã nạp xong trên NVIDIA GPU!")
+        print(f"[INFO] ✅ AI Thị giác (Nặng) đã nạp xong ({DEVICE.kind})!")
 
         while True:
             # 1. Xử lý chụp ảnh đăng ký (Đồng bộ Masking)

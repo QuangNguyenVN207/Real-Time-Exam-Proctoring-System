@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 from time import monotonic
 
+import dataclasses
 import os
 import sys
 import mediapipe as mp
@@ -31,6 +32,7 @@ from backend.ai_services.pose_gaze.pose_gaze.holistic.landmark import HolisticLa
 from backend.ai_services.pose_gaze.tracking.manager import TrackingManager
 from backend.ai_services.pose_gaze.tracking.webcam import PersonTrackingConfig, PersonTrackingModule
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
+from backend.core.device import select_device
 
 class PoseGazeDetector:
     def __init__(self, causal_model_dir="stage6_bundle_exact/causal_8fps_stage6_mixed_084699_final_20260827"):
@@ -38,13 +40,17 @@ class PoseGazeDetector:
         self.session_id = TrackingManager.generate_session_id("webcam_holistic")
         
         # 1. Khởi tạo Tracking
-        self.tracking = PersonTrackingModule(
-            PersonTrackingConfig(
-                session_id=self.session_id,
-                restore_session=False,
-                max_tracks=2,
-            )
-        )
+        # Tracking (YOLO person): NVIDIA -> .pt trên CUDA | Intel iGPU -> OpenVINO/ONNX | CPU.
+        # MediaPipe Holistic bên dưới luôn chạy CPU (bản pip không có GPU backend).
+        device_info = select_device()
+        print(f"[INFO] PoseGaze device: {device_info.kind} ({device_info.name})")
+        cfg_kwargs = dict(session_id=self.session_id, restore_session=False, max_tracks=2)
+        try:
+            if "device" in {f.name for f in dataclasses.fields(PersonTrackingConfig)}:
+                cfg_kwargs["device"] = "auto"
+        except TypeError:  # config không phải dataclass -> giữ mặc định của nó
+            pass
+        self.tracking = PersonTrackingModule(PersonTrackingConfig(**cfg_kwargs))
         
         # 2. Khởi tạo Classifier
         class DummyArgs:

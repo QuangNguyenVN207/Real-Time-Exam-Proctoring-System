@@ -11,6 +11,7 @@ from insightface.model_zoo import model_zoo
 from insightface.utils import ensure_available
 
 from backend.core.config import settings
+from backend.core.device import select_device
 
 ort.set_default_logger_severity(3)
 logging.getLogger("insightface").setLevel(logging.ERROR)
@@ -32,15 +33,21 @@ def _safe_print(message: str) -> None:
         print(message.encode(encoding, errors="replace").decode(encoding))
 
 
-_AVAILABLE_PROVIDERS = ort.get_available_providers()
-if "CUDAExecutionProvider" in _AVAILABLE_PROVIDERS:
-    _PROVIDERS = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+# Chọn provider theo backend.core.device: NVIDIA (CUDA) -> Intel iGPU (OpenVINO, device_type=GPU) -> CPU.
+# Ép thủ công bằng biến môi trường PROCTOR_DEVICE=cuda|intel|cpu.
+_PROVIDERS = list(select_device().ort_providers)
+
+
+def _provider_name(provider) -> str:
+    return provider[0] if isinstance(provider, tuple) else provider
+
+
+_FIRST = _provider_name(_PROVIDERS[0])
+if _FIRST == "CUDAExecutionProvider":
     _DEVICE = "cuda"
-elif "OpenVINOExecutionProvider" in _AVAILABLE_PROVIDERS:
-    _PROVIDERS = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
-    _DEVICE = "gpu"  # Hoặc "intel_gpu"
+elif _FIRST == "OpenVINOExecutionProvider":
+    _DEVICE = "gpu"  # Intel iGPU
 else:
-    _PROVIDERS = ["CPUExecutionProvider"]
     _DEVICE = "cpu"
 
 
@@ -75,16 +82,27 @@ class FaceVerifier:
             root=os.path.expanduser("~/.insightface"),
         )
 
-        self._det_model = model_zoo.get_model(osp.join(model_dir, "det_10g.onnx"), providers=_PROVIDERS)
-        self._det_model.prepare(ctx_id, input_size=det_size, det_thresh=0.5)
-
-        self._rec_model = model_zoo.get_model(osp.join(model_dir, "w600k_r50.onnx"), providers=_PROVIDERS)
-        self._rec_model.prepare(ctx_id)
+        try:
+            self._load_models(model_dir, det_size, _PROVIDERS, ctx_id)
+            # Chạy thử 1 frame đen: OpenVINO/CUDA lỗi (thiếu driver, shape không hỗ trợ...) sẽ lộ ra ngay đây
+            self._detect_faces(np.zeros((int(det_size[1]), int(det_size[0]), 3), dtype=np.uint8))
+        except Exception as e:
+            if _provider_name(_PROVIDERS[0]) == "CPUExecutionProvider":
+                raise
+            _safe_print(f"[face_verify][WARNING] Provider {_provider_name(_PROVIDERS[0])} lỗi ({e}) -> chuyển sang CPU")
+            self._load_models(model_dir, det_size, ["CPUExecutionProvider"], -1)
 
         self._known_names: list[str] = []
         self._known_vectors: np.ndarray = np.empty((0, 512), dtype=np.float32)
         self._faiss_index = None
         self._load_database()
+
+    def _load_models(self, model_dir, det_size, providers, ctx_id):
+        self._det_model = model_zoo.get_model(osp.join(model_dir, "det_10g.onnx"), providers=providers)
+        self._det_model.prepare(ctx_id, input_size=det_size, det_thresh=0.5)
+
+        self._rec_model = model_zoo.get_model(osp.join(model_dir, "w600k_r50.onnx"), providers=providers)
+        self._rec_model.prepare(ctx_id)
 
     def _detect_faces(self, img: np.ndarray) -> list:
         """Chạy RetinaFace tìm bbox, rồi ArcFace trích vector cho từng mặt —
