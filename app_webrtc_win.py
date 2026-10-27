@@ -19,6 +19,15 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 logging.getLogger().setLevel(logging.ERROR)
 
+# Model HuggingFace đã có trong cache -> chạy offline: tắt luồng nền "auto_conversion" (lỗi 403 vô hại)
+# và cảnh báo HF_TOKEN, đồng thời không phụ thuộc mạng khi thi. Đặt PROCTOR_ONLINE=1 để cho phép tải model mới.
+if not os.environ.get("PROCTOR_ONLINE"):
+    _hub = os.environ.get("HF_HUB_CACHE") or os.path.join(
+        os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface")), "hub"
+    )
+    if os.path.isdir(os.path.join(_hub, "models--vinai--PhoWhisper-small")):
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 import transformers
 transformers.logging.set_verbosity_error()
 
@@ -39,7 +48,7 @@ from streamlit_autorefresh import st_autorefresh
 from backend.core.device import select_device, resolve_model_path
 
 DEVICE = select_device()
-print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) | ONNX providers: {DEVICE.ort_providers}")
+# print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) | ONNX providers: {DEVICE.ort_providers}")
 # "auto" = để từng module tự chọn theo DEVICE ở trên. Ép bằng biến môi trường PROCTOR_DEVICE=cuda|intel|cpu
 GPU_DEVICE = "auto"   # YOLO vật thể cấm
 AUX_DEVICE = "auto"   # Person Detector / Paper Pipeline / Tracking
