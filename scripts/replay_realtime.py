@@ -1,14 +1,19 @@
 """Đo hiệu năng luồng realtime bằng 1 file video — không cần camera, không cần Streamlit.
 
 Dựng lại đúng cấu trúc của `app_webrtc.py`: 1 luồng phát frame (đóng vai callback WebRTC) đẩy ảnh vào
-3 queue `maxsize=2` (rớt frame cũ nhất) và 4 luồng AI tiêu thụ, rồi in số đo của `pipeline.metrics`:
+3 queue `maxsize=2` (rớt frame cũ nhất) và các luồng AI tiêu thụ, rồi in số đo của `pipeline.metrics`:
 
     .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV
-    .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --seconds 30 --resize 1280x720
+    .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --seconds 30 --resize 960x540
     .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --fast --modules object,face,action
 
+Mặc định đẩy frame giống app hiện tại: **cổng thời gian** 8 fps cho hành vi, 10 fps cho YOLO+FaceNet,
+mỗi 5 frame cho giấy, và MediaPipe Holistic chạy ở **tiến trình riêng** (như `app_webrtc.py`).
+
 `--fast` đọc video nhanh nhất có thể (đo trần năng lực từng module), mặc định phát đúng fps của video
-để thấy fps thật và số frame bị rớt như khi camera chạy.
+để thấy fps thật và số frame bị rớt như khi camera chạy. `--encode` thêm stage encode VP8 y như aiortc
+(đo độ mượt hình mà người dùng thật sự cảm nhận), `--no-isolate` để Holistic chạy tại chỗ (cột "trước"
+khi A/B tối ưu 2026-10-28).
 
 Số đo ở đây dùng để A/B: chạy trước và sau một thay đổi, so cột p50/p95 và cột rớt. Không dùng để
 kết luận độ chính xác — muốn kiểm cảnh báo thì chạy `run_offline.py` và so `events.jsonl`.
@@ -37,6 +42,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 import cv2
 import numpy as np
+import av
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -52,19 +58,34 @@ from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDe
 from backend.core.device import resolve_model_path, select_device
 
 ALL_MODULES = ("object", "face", "paper", "action")
-GAZE_EVERY = 1        # app: mỗi frame
+GAZE_TARGET_FPS = 8.0  # app: cổng thời gian GAZE_MIN_INTERVAL, khớp temporal_policy target_fps=8
+VISION_TARGET_FPS = 10.0  # app: cổng thời gian VISION_MIN_INTERVAL (YOLO + FaceNet)
 PAPER_EVERY = 5       # app: frame_count % 5
-VISION_EVERY = 1      # app: FPS_SKIP = 1
 QUEUE_SIZE = 2
 OVERLAY_TTL = 1.5
 LABELS = {
     "callback": "callback (bơm frame + vẽ)",
+    "encode": "VP8 encode (aiortc)",
     "object": "YOLO vật cấm",
     "face": "FaceNet người lạ",
     "paper": "Đếm giấy",
     "action": "Tracking + action",
     "draw": "Vẽ overlay",
 }
+
+
+def _make_encoder(width: int, height: int, fps: float, time_base=None):
+    """Bộ encode y như aiortc dùng cho WebRTC (VP8, deadline=realtime)."""
+    from fractions import Fraction
+
+    ctx = av.CodecContext.create("libvpx", "w")
+    ctx.width, ctx.height = int(width), int(height)
+    ctx.pix_fmt = "yuv420p"
+    ctx.time_base = time_base or Fraction(1, max(1, int(round(fps)) or 30))
+    ctx.framerate = max(1, int(round(fps)) or 30)
+    ctx.options = {"deadline": "realtime", "cpu-used": "8"}
+    ctx.open()
+    return ctx
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -75,6 +96,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--modules", default=",".join(ALL_MODULES),
                    help=f"module bật, mặc định tất cả: {','.join(ALL_MODULES)}")
     p.add_argument("--resize", default="", help="thu frame về WxH trước khi đẩy vào queue (vd 1280x720)")
+    p.add_argument("--no-isolate", action="store_true",
+                   help="chạy MediaPipe Holistic trong tiến trình chính (mặc định: tách tiến trình như app)")
+    p.add_argument("--encode", action="store_true",
+                   help="encode VP8 mỗi frame như aiortc (đo độ mượt hình thật, không chỉ độ trễ module)")
     p.add_argument("--json", type=Path, default=None, help="ghi snapshot số đo ra file JSON để so sánh")
     return p.parse_args(argv)
 
@@ -106,7 +131,11 @@ class Modules:
             self.paper_pipeline = self._build_paper(person_device)
         self.gaze_model = None
         if "action" in enabled:
-            self.stack = gaze_scan.build_stack(device=person_device, live_pair=["student_01:student_02"])
+            self.stack = gaze_scan.build_stack(
+                device=person_device,
+                live_pair=["student_01:student_02"],
+                isolate_holistic=not args.no_isolate,
+            )
             self.gaze_model = self.stack   # khung xương vẽ lại từ latest_packet/latest_results
 
     def _build_paper(self, person_device: str) -> PaperCountPipeline:
@@ -186,11 +215,14 @@ def build_consumers(mods: Modules, sink: Sink, queues: dict[str, queue.Queue]) -
         for alert in alerts:
             sink.add(alert)
 
-    return {
-        "vision": (queues["vision"], heavy),
-        "paper": (queues["paper"], paper),
-        "gaze": (queues["gaze"], gaze),
-    }
+    consumers: dict[str, Any] = {}
+    if "object" in mods.enabled or "face" in mods.enabled:
+        consumers["vision"] = (queues["vision"], heavy)
+    if "paper" in mods.enabled:
+        consumers["paper"] = (queues["paper"], paper)
+    if "action" in mods.enabled:
+        consumers["gaze"] = (queues["gaze"], gaze)
+    return consumers
 
 
 def open_video(path: Path, seconds: float, resize: str) -> tuple[cv2.VideoCapture, float, int, tuple[int, int]]:
@@ -243,6 +275,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     print(f"[RUN] bắt đầu: {'nhịp thật' if not args.fast else 'nhanh nhất'} — Ctrl+C để dừng và in số đo")
     period = 0.0 if args.fast else 1.0 / fps
+    gaze_period = 1.0 / GAZE_TARGET_FPS
+    vision_period = 1.0 / VISION_TARGET_FPS
+    encoder = _make_encoder(size[0], size[1], fps) if args.encode else None
+    last_gaze = 0.0
+    last_vision = 0.0
     next_at = time.perf_counter()
     started = time.perf_counter()
     frame_id = 0
@@ -258,16 +295,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
             now = time.time()
             with METRICS.time("callback"):
-                push(queues["gaze"], "gaze", (frame.copy(), now))
+                # cổng thời gian cho hành vi: 8 fps, không phải mỗi frame (giống app)
+                mono = time.perf_counter()
+                if mono - last_gaze >= gaze_period:
+                    last_gaze = mono
+                    push(queues["gaze"], "gaze", (frame.copy(), now))
                 if frame_id % PAPER_EVERY == 0:
                     push(queues["paper"], "paper", (frame.copy(), now))
-                if frame_id % VISION_EVERY == 0:
+                if mono - last_vision >= vision_period:
+                    last_vision = mono
                     push(queues["vision"], "vision", (frame.copy(), now))
                 with sink.lock:
                     events.expire_overlays(sink.overlays, now, OVERLAY_TTL)
                     snapshot = list(sink.overlays)
                 with METRICS.time("draw"):
                     overlay_draw.draw(frame, snapshot, gaze_model=mods.gaze_model)
+                if encoder is not None:
+                    with METRICS.time("encode"):
+                        encoder.encode(av.VideoFrame.from_ndarray(frame, format="bgr24"))
 
             if period:
                 next_at += period
@@ -289,6 +334,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 pass
         for t in workers:
             t.join(timeout=5)
+        stack = getattr(mods, "stack", None)
+        if stack is not None:
+            worker = stack.holistic
+            print(f"[GAZE-WORKER] mode={getattr(worker, 'mode', 'in-process')} "
+                  f"stats={getattr(worker, 'stats', {})}")
+            try:
+                stack.close()
+            except Exception:
+                pass
 
     snap = METRICS.snapshot()
     print(f"\n[KẾT QUẢ] {frame_id} frame trong {wall:.1f}s "

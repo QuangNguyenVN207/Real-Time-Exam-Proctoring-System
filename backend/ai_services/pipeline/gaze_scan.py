@@ -4,6 +4,10 @@ Dùng chung cho realtime (`fast_gaze_thread` trong app_webrtc.py) và offline (`
 `scan_frame()` trả về *danh sách* alert (mỗi actor một alert) thay vì đẩy thẳng vào queue.
 Đây là stack hành vi DUY NHẤT trong hệ thống: khung xương hiển thị được vẽ lại từ
 `latest_packet`/`latest_results` bằng `GazeStack.draw_skeleton()`, không chạy model lần hai.
+
+Realtime truyền `isolate_holistic=True`: MediaPipe giữ GIL khi suy luận nên nó được đẩy sang
+tiến trình riêng (`holistic_worker.RemoteHolistic`), nhờ vậy luồng video không bị chặn.
+Offline (chạy theo lô, không ai xem trực tiếp) giữ nguyên chạy tại chỗ.
 """
 from __future__ import annotations
 
@@ -14,6 +18,7 @@ from typing import Any, Optional
 
 from backend.core.device import resolve_device
 from backend.ai_services.pose_gaze.pose_gaze.holistic.landmark import HolisticLandmarkExtractor
+from backend.ai_services.pipeline.holistic_worker import RemoteHolistic
 from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import (
     create_live_classifier,
 )
@@ -60,7 +65,8 @@ class _ClassifierArgs:
 class GazeStack:
     session_id: str
     tracking_module: PersonTrackingModule
-    holistic: HolisticLandmarkExtractor
+    # HolisticLandmarkExtractor, hoặc RemoteHolistic khi chạy MediaPipe ở tiến trình riêng.
+    holistic: Any
     live_classifier: Optional[Any] = None
     classifier_error: Optional[str] = None
     # Phân loại mới nhất của *mọi* actor (kể cả c5) — offline dùng để báo cáo theo từng người.
@@ -90,6 +96,20 @@ class GazeStack:
             pass
 
 
+def _holistic_kwargs() -> dict[str, Any]:
+    """Tham số MediaPipe Holistic dùng chung cho cả realtime (tiến trình riêng) và offline."""
+    return dict(
+        static_image_mode=False,
+        model_complexity=2,
+        smooth_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+        soft_landmark_confidence=0.2,
+        crop_padding=0.15,
+        face_hold_frames=3,
+    )
+
+
 def build_stack(
     *,
     session_id: Optional[str] = None,
@@ -99,6 +119,7 @@ def build_stack(
     model_dir: Path = DEFAULT_ACTION_ARTIFACT_DIR,
     live_pair: Optional[list[str]] = None,
     init_holistic: bool = True,
+    isolate_holistic: bool = False,
 ) -> GazeStack:
     # `tracking.webcam` đưa thẳng device cho ultralytics, nên "auto"/"intel" phải đổi về
     # giá trị torch hợp lệ ("0" trên CUDA, "cpu" trên iGPU/CPU) — bản Ubuntu vẫn hay truyền "cpu".
@@ -118,18 +139,17 @@ def build_stack(
     except Exception:
         pass
 
-    holistic = HolisticLandmarkExtractor(
-        static_image_mode=False,
-        model_complexity=2,
-        smooth_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-        soft_landmark_confidence=0.2,
-        crop_padding=0.15,
-        face_hold_frames=3,
+    # `isolate_holistic=True` -> MediaPipe chạy ở tiến trình riêng (không giành GIL với video).
+    holistic: Any = (
+        RemoteHolistic(extractor_kwargs=_holistic_kwargs())
+        if isolate_holistic
+        else HolisticLandmarkExtractor(**_holistic_kwargs())
     )
     if init_holistic:
-        holistic.__enter__()
+        if isolate_holistic:
+            holistic.start()
+        else:
+            holistic.__enter__()
 
     stack = GazeStack(session_id=session_id, tracking_module=tracking_module, holistic=holistic)
 

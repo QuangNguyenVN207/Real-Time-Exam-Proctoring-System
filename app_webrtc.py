@@ -142,6 +142,8 @@ def init_system_resources():
         "action_disarm_paper": False,    # Thay cho phím D
         "paper_status_msg": "SETUP - Đang chờ cố định baseline",
         "frame_count": 0,
+        "last_gaze_push": 0.0,
+        "last_vision_push": 0.0,
         "logs": [],
         "log_cooldown": {}
     }
@@ -323,8 +325,15 @@ def init_system_resources():
 
         # Stack DUY NHẤT cho hành vi: tracking + holistic + classifier (c2 Exchange, c3 Looking, suspicious).
         # Khung xương trên video hiển thị được vẽ lại từ latest_packet/latest_results, không chạy model lần 2.
-        stack = gaze_scan.build_stack(device=PERSON_DEVICE, live_pair=["student_01:student_02"])
+        # `isolate_holistic=True`: MediaPipe giữ GIL ~100 ms/tick nên chạy ở tiến trình riêng —
+        # nếu để trong app, callback WebRTC bị chặn và hình giật/trễ dần.
+        stack = gaze_scan.build_stack(
+            device=PERSON_DEVICE,
+            live_pair=["student_01:student_02"],
+            isolate_holistic=True,
+        )
         shared_state["gaze_model"] = stack
+        shared_state["gaze_worker"] = stack.holistic
         shared_state["tracking_manager"] = stack.manager
         shared_state["holistic_model"] = stack.holistic
         shared_state["live_classifier"] = stack.live_classifier
@@ -410,7 +419,16 @@ def init_system_resources():
 # Kích hoạt Cache
 FRAME_QUEUE, PAPER_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
-FPS_SKIP = 1
+# Nhịp đẩy frame cho luồng "nặng" (YOLO vật cấm + FaceNet). Đo trên RTX 4050: 22 + 32 ms nên
+# trần ~18 fps; đẩy mỗi frame chỉ sinh ra drop liên tục và tranh GIL với callback. 10 fps là dư.
+VISION_TARGET_FPS = 10.0
+VISION_MIN_INTERVAL = 1.0 / VISION_TARGET_FPS
+# Nhịp đẩy frame vào luồng HÀNH VI. Model causal được train ở 8 fps
+# (stage6_bundle_exact/.../temporal_policy.json: target_fps=8, max_derivative_gap_ms=450) nên đẩy
+# 8 fps là đúng phân bố lúc train. Trước đây đẩy MỌI frame: queue maxsize=2 vứt bớt 2/3 số tick,
+# chỉ tốn CPU/GPU và tranh GIL với callback WebRTC.
+GAZE_TARGET_FPS = 8.0
+GAZE_MIN_INTERVAL = 1.0 / GAZE_TARGET_FPS
 # Cùng một nội dung cảnh báo không lặp lại trong sidebar trong N giây. Chỉ gộp DÒNG LOG:
 # overlay vẫn được làm mới mỗi alert, và offline/`events.jsonl` vẫn ghi đủ từng lần phát hiện.
 LOG_COOLDOWN = 2.0
@@ -485,28 +503,36 @@ def _process_incoming_frame(frame: av.VideoFrame) -> av.VideoFrame:
         except queue.Empty:
             break
 
-    # 3. Đẩy ảnh mới vào Queue cho AI xử lý (Frame Skipping)
+    # 3. Đẩy ảnh mới vào Queue cho AI xử lý (frame skipping + chỉ copy MỘT lần mỗi frame).
+    #
+    # Bước 5 vẽ overlay đè lên `img`, nên queue phải nhận bản copy; nhưng bản cũ copy 3 lần ở
+    # full-res cho 3 queue. Nay copy một lần rồi chia sẻ — các luồng AI chỉ đọc frame này.
+    analysis_img = None
+    frame_no = SHARED_STATE["frame_count"]
 
-    # Bơm ảnh cho luồng Skeleton (Tốc độ cao: Lấy 1 ảnh mỗi 2 frame ~ 10 FPS)
-    if SHARED_STATE["frame_count"] % 1 == 0:
-        if GAZE_QUEUE.full():
-            try: GAZE_QUEUE.get_nowait()
-            except queue.Empty: pass
-            METRICS.drop("queue.gaze")
-        GAZE_QUEUE.put((img.copy(), current_time))
-    # Bơm ảnh cho luồng AI Đếm Giấy (Chạy ngầm độc lập - Lấy 1 ảnh mỗi 2 frame)
-    if SHARED_STATE["frame_count"] % 5 == 0:
-        if PAPER_QUEUE.full():
-            try: PAPER_QUEUE.get_nowait()
-            except queue.Empty: pass
-            METRICS.drop("queue.paper")
-        PAPER_QUEUE.put((img.copy(), current_time))
-    if SHARED_STATE["frame_count"] % FPS_SKIP == 0:
-        if FRAME_QUEUE.full():
-            try: FRAME_QUEUE.get_nowait()
-            except queue.Empty: pass
-            METRICS.drop("queue.vision")
-        FRAME_QUEUE.put((img.copy(), current_time))
+    def _push(target, metric_key: str) -> None:
+        nonlocal analysis_img
+        if target.full():
+            try:
+                target.get_nowait()
+            except queue.Empty:
+                pass
+            METRICS.drop(f"queue.{metric_key}")
+        if analysis_img is None:
+            analysis_img = img.copy()
+        target.put((analysis_img, current_time))
+
+    # Hành vi: 8 fps theo đồng hồ thật (xem GAZE_TARGET_FPS), không phải mỗi frame.
+    now_mono = time.monotonic()
+    if now_mono - SHARED_STATE.get("last_gaze_push", 0.0) >= GAZE_MIN_INTERVAL:
+        SHARED_STATE["last_gaze_push"] = now_mono
+        _push(GAZE_QUEUE, "gaze")
+    # Đếm giấy: giấy nằm yên trên bàn, 4 fps là quá đủ.
+    if frame_no % 5 == 0:
+        _push(PAPER_QUEUE, "paper")
+    if now_mono - SHARED_STATE.get("last_vision_push", 0.0) >= VISION_MIN_INTERVAL:
+        SHARED_STATE["last_vision_push"] = now_mono
+        _push(FRAME_QUEUE, "vision")
 
     # 4. Chụp ảnh đăng ký khuôn mặt
     if SHARED_STATE.get("save_face_flag"):
@@ -562,6 +588,38 @@ def _render_metrics_table():
         st.caption("Lỗi gần nhất — " + " · ".join(errors))
 
 
+@st.fragment(run_every="1s")
+def _render_live_panel() -> None:
+    """Cột phải (lịch sử cảnh báo + sức khoẻ module) tự làm mới mỗi 1 s.
+
+    Trước đây dùng `st_autorefresh(interval=3000)`: mỗi 3 s Streamlit **rerun cả trang** — render
+    lại dataframe/log, tạo lại component WebRTC và tranh GIL với luồng suy luận. Hình vì thế
+    khựng đúng nhịp 3 s. `st.fragment(run_every=...)` chỉ chạy lại đúng khối này.
+    """
+    st.markdown("### 📜 Lịch Sử Cảnh Báo")
+    logs = list(SHARED_STATE["logs"])
+    log_html = "<br>".join(logs) if logs else "Hệ thống đang chạy..."
+    st.markdown(
+        f"<div style='height: 500px; overflow-y: auto; background-color: #f0f2f6; padding: 10px; "
+        f"border-radius: 10px;'>{log_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("🩺 Sức khoẻ module (fps / độ trễ / rớt frame)", expanded=True):
+        _render_metrics_table()
+        worker = SHARED_STATE.get("gaze_worker")
+        if worker is not None:
+            stats = getattr(worker, "stats", None) or {}
+            st.caption(
+                f"MediaPipe Holistic: **{worker.mode}** · "
+                f"remote={stats.get('remote', 0)} · tại chỗ={stats.get('fallback', 0)}"
+                + (f" · lỗi gần nhất: {worker.last_error}" if worker.last_error else "")
+            )
+        if st.button("♻️ Reset số đo", key="reset_metrics"):
+            METRICS.reset()
+            st.rerun(scope="fragment")
+
+
 st.set_page_config(layout="wide", page_title="AI Exam Proctoring (WebRTC)")
 st.markdown("<h1 style='text-align: center; color: #4CAF50;'>HỆ THỐNG GIÁM SÁT PHÒNG THI AI (WEBRTC)</h1>", unsafe_allow_html=True)
 
@@ -584,22 +642,28 @@ with col1:
             
     # # Hiển thị trạng thái đếm giấy hiện tại
     # st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
-    # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
+    # Cấu hình WebRTC. Audio tắt ở đây vì micro đã chạy độc lập qua PyAudio.
+    #
+    # 960x540 @ 20 fps, không để Chrome tự chọn: VP8 encode ở 720p mất ~25 ms khi máy bận
+    # (52% hạn 50 ms của 20 fps) và p95 vượt hạn -> aiortc trả lại frame cũ -> hình giật.
+    # Ở 540p encode còn ~11 ms (p95 ~22 ms). Mọi model chỉ dùng tối đa 640 px nên không mất
+    # độ chính xác; ảnh đăng ký mặt vẫn nét hơn hẳn mức 320x240 mà Chrome tự hạ trước đây.
+    # KHÔNG dùng STUN: trình duyệt và Streamlit chạy cùng máy (Windows -> WSL2), host candidate
+    # là đủ; STUN chỉ thêm một vòng ICE ra Internet và treo nếu mạng công ty chặn UDP.
     webrtc_ctx = webrtc_streamer(
         key="exam-proctor",
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
         media_stream_constraints={
-            "video": True,
-            # "video": {
-            #     "width": {"min": 1280, "ideal": 1920, "max": 1920},
-            #     "height": {"min": 720, "ideal": 1080, "max": 1080},
-            #     "frameRate": {"ideal": 30, "max": 30}
-            # },
-            "audio": False # Chặn WebRTC thu âm để tránh đụng độ với luồng PyAudio
+            "video": {
+                "width": {"ideal": 960, "max": 1280},
+                "height": {"ideal": 540, "max": 720},
+                "frameRate": {"ideal": 20, "max": 20},
+            },
+            "audio": False,  # Chặn WebRTC thu âm để tránh đụng độ với luồng PyAudio
         },
         async_processing=True,
-        rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
+        rtc_configuration=RTCConfiguration({"iceServers": []}),
     )
 
 with col2:
@@ -618,24 +682,8 @@ with col2:
     # Hiển thị trạng thái đếm giấy hiện tại
     st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
 
-    st.markdown("### 📜 Lịch Sử Cảnh Báo")
-
-    # ---> LỆNH TỰ ĐỘNG LÀM MỚI GIAO DIỆN MỖI 3 GIÂY (3000 mili-giây) <---
-    st_autorefresh(interval=3000, key="auto_refresh_log")
-
-    # Lấy Log mới nhất từ Shared State
-    log_html = "<br>".join(SHARED_STATE["logs"]) if SHARED_STATE["logs"] else "Hệ thống đang chạy..."
-    st.markdown(f"<div style='height: 500px; overflow-y: auto; background-color: #f0f2f6; padding: 10px; border-radius: 10px;'>{log_html}</div>", unsafe_allow_html=True)
-    
-    # Nút Refresh Log bằng tay (vì WebRTC chạy ngầm, giao diện cần trigger để hiện Log mới)
-    # st.button("🔄 Làm mới Log", use_container_width=True)
-
-    with st.expander("🩺 Sức khoẻ module (fps / độ trễ / rớt frame)", expanded=True):
-        # Cùng nhịp 3s với log: đọc snapshot rất nhẹ, không giành GIL với luồng suy luận.
-        _render_metrics_table()
-        if st.button("♻️ Reset số đo", key="reset_metrics"):
-            METRICS.reset()
-            st.rerun()
+    # Khối log + bảng sức khoẻ tự làm mới mỗi 1 s (chỉ khối này, không rerun cả trang).
+    _render_live_panel()
 
 # ==========================================
 # 5. CHẠY OFFLINE TRÊN MỘT FILE VIDEO (không cần camera/micro)

@@ -19,6 +19,8 @@ from types import SimpleNamespace
 from typing import Any, Callable, Collection, Iterable
 from urllib.request import Request, urlopen
 
+import numpy as np
+
 from ...settings import (
     DEFAULT_HOLISTIC_CONFIDENCE,
     DEFAULT_HOLISTIC_SOFT_CONFIDENCE,
@@ -1441,29 +1443,44 @@ class HolisticLandmarkExtractor:
         if not indexed:
             return
 
+        # Gộp mọi đoạn thẳng của một bộ landmark vào MỘT lời gọi cv2.polylines.
+        # Bản cũ gọi cv2.line cho từng connection (~250 lời gọi/track/frame): mỗi lời gọi là một
+        # lần round-trip qua GIL, nên khi các luồng AI khác bận, riêng khâu vẽ đã mất 40+ ms.
+        segments = []
         for start_index, end_index in connections:
             start = indexed.get(start_index)
             end = indexed.get(end_index)
             if start is None or end is None:
                 continue
-            self._cv2.line(
+            segments.append(
+                ((round(start.frame_x), round(start.frame_y)),
+                 (round(end.frame_x), round(end.frame_y)))
+            )
+        if segments:
+            self._cv2.polylines(
                 frame,
-                (round(start.frame_x), round(start.frame_y)),
-                (round(end.frame_x), round(end.frame_y)),
+                [np.asarray(segment, dtype=np.int32) for segment in segments],
+                False,
                 line_color,
                 thickness,
                 self._cv2.LINE_AA,
             )
 
-        for point in indexed.values():
-            self._cv2.circle(
-                frame,
-                (round(point.frame_x), round(point.frame_y)),
-                radius,
-                point_color,
-                -1,
-                self._cv2.LINE_AA,
-            )
+        # Chấm điểm: gán trực tiếp bằng numpy (một phép gán mảng) thay vì ~200 lời gọi
+        # cv2.circle mỗi frame — mỗi lời gọi cv2 đều phải round-trip qua GIL.
+        dot_x = np.fromiter(
+            (round(point.frame_x) for point in indexed.values()), dtype=np.int32, count=len(indexed)
+        )
+        dot_y = np.fromiter(
+            (round(point.frame_y) for point in indexed.values()), dtype=np.int32, count=len(indexed)
+        )
+        height, width = frame.shape[:2]
+        radius_i = max(1, int(radius))
+        for x, y in zip(dot_x.tolist(), dot_y.tolist()):
+            x1, x2 = max(0, min(x - radius_i, width - 1)), max(0, min(x + radius_i + 1, width))
+            y1, y2 = max(0, min(y - radius_i, height - 1)), max(0, min(y + radius_i + 1, height))
+            if x2 > x1 and y2 > y1:
+                frame[y1:y2, x1:x2] = point_color
 
     def _close_processors_not_in(self, track_ids: set[int]) -> None:
         for track_id in tuple(self._processors):

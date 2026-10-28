@@ -10,7 +10,9 @@
 
 **Là gì:** một tiến trình Streamlit duy nhất giám sát phòng thi qua WebRTC; 4 module AI chạy ở 4 daemon
 thread và nói chuyện bằng `queue.Queue`; micro bị PyAudio/`sounddevice` chiếm trực tiếp chứ không đi qua
-WebRTC. Không còn FastAPI backend, không có `frontend/`.
+WebRTC. Không còn FastAPI backend, không có `frontend/`. Riêng **MediaPipe Holistic chạy ở một tiến trình
+con** (`pipeline/holistic_worker.py`, socket AF_UNIX + pickle) vì nó giữ GIL ~100 ms mỗi tick và làm hình
+camera giật/trễ — xem §2.3 và §8.3.
 
 | Muốn gì | Mở đâu |
 | :-- | :-- |
@@ -38,9 +40,36 @@ openvino 2026.3.0) — dùng làm mốc, đừng tốn 4 phút đo lại:**
 | Causal classifier | cửa sổ **24** landmark frame/actor, warmup **4** ⇒ tăng stride `action` làm **đổi điểm** c2/c3, không chỉ đổi tốc độ |
 | Tính tái lập của điểm hành vi | **Không** tái lập giữa 2 lần chạy cùng code: đo 2026-10-28 hai lần liền cho `c2` 0.6908 vs 0.6952, `suspicious` 0.8584 vs 0.8149 ⇒ chỉ A/B bằng **quyết định/cảnh báo + thời gian**, đừng A/B bằng điểm |
 
+**Máy thứ hai — AMD Ryzen 7 7435HS (16 thread) + RTX 4050 Laptop, Windows 11 + WSL2 Ubuntu 24.04,
+Python 3.12.3, torch 2.14.1+cu130, onnxruntime-gpu 1.31.1, 11 GB RAM thấy từ WSL2 (đo 2026-10-28).**
+Số dưới đây là của **máy này**, không trộn với bảng Intel ở trên:
+
+| Đại lượng | Trước (720p, gaze mỗi frame, MediaPipe trong app) | Sau (960×540, gaze 8 fps, vision 10 fps, MediaPipe tiến trình riêng) |
+| :-- | :-- | :-- |
+| callback WebRTC (bơm frame + vẽ) | p50 `32.9` · p95 `83.0` · max `211.8` ms | p50 `13.3` · p95 `24.0` · max `44.6` ms |
+| VP8 encode (aiortc) | p50 `24.1` · p95 `41.3` · max `209.1` ms | p50 `10.5` · p95 `19.3` · max `42.0` ms |
+| Gaze (tracking + holistic + classifier) | `3.4 fps` · p50 `294` ms · 2 track | `4.0–4.7 fps` · p50 `225–260` ms · 2 track |
+| FaceNet (ArcFace, `CUDAExecutionProvider`) | p50 `232` ms trên CPU → `28.7` ms trên CUDA | p50 `44.8` ms @ 640 px trong luồng 10 fps |
+| YOLO vật cấm (`fp16` khi CUDA) | p50 `17.6` ms standalone | p50 `24.8` ms trong luồng 10 fps |
+| GIL bị MediaPipe giữ mỗi tick 2 track | `100–113 ms` (cold `886 ms`) | `0` — chạy ở tiến trình con |
+| `task_input_size` 256/320/384/512 | không đổi chi phí (`151–157 ms`) | giữ mặc định 512 |
+| Vẽ overlay trong callback (gồm khung xương) | p50 `4.1` · p95 `41.5` · max `48.4` ms | p50 `2.2` · p95 `6.0` · max `18.9` ms (riêng `draw_results` 2 track: p50 `0.66` ms) |
+
+Ngân sách 20 fps là **50 ms/frame**; hai cột trên đo cùng một harness (`scripts/replay_realtime.py
+--encode`) trên cùng video 20 s (nguồn 1280×720: cột "trước" giữ 720p + `--no-isolate`, cột "sau" thêm
+`--resize 960x540`).
+
 **Bẫy đã trả giá — đọc trước khi sửa:**
 - `annotated.mp4` là mpeg4 Simple Profile ⇒ trình duyệt không phát được; UI phải tạo `playback_h264.mp4` (§11.4).
 - `st_autorefresh` 1.2s làm suy luận chậm **~3.3 lần** (face 0.35s → 1.20s); đã chốt `OFFLINE_REFRESH_MS = 4000` (§11.4).
+  Khối **log + sức khoẻ module của trang realtime** thì đã đổi sang `st.fragment(run_every="1s")`: rerun cả
+  trang mỗi 3 s làm component WebRTC dựng lại và hình khựng đúng nhịp đó (§11.4).
+- **MediaPipe Tasks giữ GIL suốt lần suy luận** (đo: `100–113 ms`/tick 2 track, lần đầu `886 ms`). Callback
+  WebRTC là thread Python nên bị chặn; `streamlit_webrtc/process.py::AsyncMediaProcessTrack.recv` khi đó trả
+  lại **`_last_out_frame`** (frame CŨ) ⇒ hình vừa giật vừa trễ dần. Đó là lý do tồn tại
+  `backend/ai_services/pipeline/holistic_worker.py` (tiến trình con) — đừng "tối ưu" bằng cách bỏ nó.
+- **Micro trong WSL2** cần plugin ALSA `pulse` (gói `libasound2-plugins`, mặc định KHÔNG có trong ảnh WSL).
+  Thiếu nó thì PyAudio vẫn liệt kê `default` nhưng mở stream là lỗi; cách không cần `sudo` ở §5.1.
 - streamlit_webrtc 0.77 **không** có `ctx.running`; phải dùng `webrtc_ctx.state.playing`.
 - `SuppressOutput` / `suppress_alsa_logs` dup2 fd 1&2 của **cả tiến trình** lúc nạp model ⇒ mất vài dòng log
   "✅ đã nạp xong" của thread khác; thêm `PYTHONUNBUFFERED=1` khi cần xem log.
@@ -98,32 +127,39 @@ xem [§11](#11-luồng-offline-run_offlinepy)).
 
 ```
 Browser (getUserMedia)
-   │  WebRTC SENDRECV, audio:False
+   │  WebRTC SENDRECV, audio:False, 960x540@20fps
    ▼
-video_frame_callback()                 app_webrtc.py:449   (chạy trên event loop, PHẢI nhanh)
+video_frame_callback()                 app_webrtc.py:467   (chạy trên event loop, PHẢI nhanh < 50 ms)
    │  1. av.VideoFrame -> numpy BGR
    │  2. xúc RESULT_QUEUE -> ACTIVE_OVERLAYS + SHARED_STATE["logs"]  (gộp dòng trùng bằng LOG_COOLDOWN)
-   │  3. bơm frame copy vào 3 queue theo stride
-   │  4. draw_warning_overlays() -> trả frame đã vẽ về browser
+   │  3. bơm frame (copy 1 lần/frame) vào 3 queue: gaze 8 fps · giấy 4 fps · vision 10 fps
+   │  4. draw_warning_overlays() -> trả frame đã vẽ về browser -> VP8 encode (~11 ms @540p)
    ▼
 4 thread AI  ──(kết quả dict)──►  RESULT_QUEUE (maxsize=100)
+
+fast_gaze_thread ──socket AF_UNIX + pickle──► tiến trình con MediaPipe
+    (RemoteHolistic)                            (nice 10, giữ 4 core cho app)
 ```
 
 Frame luôn **bỏ frame cũ nhất** khi queue đầy (`maxsize=2` + `get_nowait()` trước khi `put`) — ưu tiên
 độ trễ thấp hơn là không rớt frame. Mọi lần rớt được đếm vào `METRICS` và hiện ở bảng
 "🩺 Sức khoẻ module" (cột **rớt**).
 
-### 2.2 Phân phối frame (`app_webrtc.py:487-509`)
+### 2.2 Phân phối frame (`app_webrtc.py:513-535`)
 
-| Queue | Stride | Việc làm |
+| Queue | Nhịp (đo trên đồng hồ thật, không phải đếm frame) | Việc làm |
 | :-- | :-- | :-- |
-| `GAZE_QUEUE` | **mọi frame** (`% 1`) | tracking + holistic + causal classifier |
-| `PAPER_QUEUE` | mỗi 5 frame | đếm giấy theo người |
-| `FRAME_QUEUE` | mỗi `FPS_SKIP = 1` frame → **mọi frame** | YOLO vật cấm + ArcFace verify |
+| `GAZE_QUEUE` | **8 fps** — `GAZE_TARGET_FPS = 8.0` (`:430`), khớp `temporal_policy.json target_fps=8` | tracking + holistic + causal classifier |
+| `PAPER_QUEUE` | mỗi 5 frame (≈ 4 fps ở 20 fps) | đếm giấy theo người |
+| `FRAME_QUEUE` | **10 fps** — `VISION_TARGET_FPS = 10.0` (`:424`) | YOLO vật cấm + ArcFace verify |
 
-`FPS_SKIP = 1` (`app_webrtc.py:413`) đang ghi đè mất `settings.object_detect_every_n_frames = 2`
-(`backend/core/config.py:44`) ở tầng ứng dụng — và cũng khác luôn `FPS_SKIP = 5` khai báo ở
-`config.py:7` (hằng số trùng tên nhưng app không import). Đây là điểm nóng nhất về hiệu năng của hệ thống.
+Trước 2026-10-28 cả hai queue đầu đẩy **mọi frame** (`FPS_SKIP = 1`). Với `maxsize=2` thì 2/3 số tick bị
+`get_nowait()` vứt đi ngay, chỉ tốn CPU/GPU và tranh GIL với callback. Cổng thời gian còn đúng một tác dụng
+phụ có lợi: nhịp vào model **không đổi** khi máy chậm (đếm frame thì tụt theo), nên cửa sổ 24 frame của
+causal classifier vẫn tương ứng ~3 s như lúc train.
+
+Mỗi frame callback chỉ `img.copy()` **một lần** rồi chia sẻ cho các queue (bản cũ copy 3 lần ở full-res).
+`FPS_SKIP` trong `backend/core/config.py` là hằng số legacy, app không import.
 
 ### 2.3 Bốn luồng AI (`init_system_resources`, `app_webrtc.py:118`)
 
@@ -136,8 +172,31 @@ nạp xong** (vài phút ở lần chạy đầu, xem §8).
 | :-- | :-- | :-- | :-- |
 | `heavy_vision_thread` | `:151` | `ObjectDetector` + `FaceVerifier` | `module="object_detect"`, `module="face_verify"` |
 | `paper_vision_thread` | `:238` | `UltralyticsPersonDetector` + `ObjectDetectModule` + `PaperCountPipeline` | `module="paper_count"` |
-| `fast_gaze_thread` | `:321` | `PersonTrackingModule` + `HolisticLandmarkExtractor` + causal classifier (`gaze_scan.build_stack`) — **stack hành vi duy nhất** | `module="pose_gaze"` |
-| `audio_ai_thread` | `:349` | `RealtimeAudioWorker` (PyAudio/sounddevice + VAD + PhoWhisper + PhoBERT) | `module="audio_phobert_pipeline"` |
+| `fast_gaze_thread` | `:323` | `PersonTrackingModule` + causal classifier (`gaze_scan.build_stack(isolate_holistic=True)`) trong app, **MediaPipe Holistic ở tiến trình con** (`pipeline/holistic_worker.RemoteHolistic`) — **stack hành vi duy nhất** | `module="pose_gaze"` |
+| `audio_ai_thread` | `:358` | `RealtimeAudioWorker` (PyAudio/sounddevice + VAD + PhoWhisper + PhoBERT) | `module="audio_phobert_pipeline"` |
+
+**Vì sao Holistic ở tiến trình riêng (§8.3 có số đo):** MediaPipe Tasks (pybind11) giữ GIL trong suốt lần
+suy luận, ~100 ms cho 2 track. GIL là của **cả tiến trình**, nên thread callback + encode VP8 bị chặn; aiortc
+hết frame kịp thì trả lại frame cũ → hình giật và trễ dần. Giao thức giữa hai bên:
+
+```
+cha -> con : {"cmd": "init", "kwargs": {...}}                    (một lần)
+con -> cha : {"ok": True, "pid": ...}
+cha -> con : {"cmd": "process", "frame": ndarray, "packet": TrackPacket}
+con -> cha : {"ok": True, "results": tuple[TrackHolisticResult, ...]}
+cha -> con : {"cmd": "quit"}
+```
+
+- Chỉ **dataclass thuần** (`TrackHolisticResult` / `LandmarkPoint` / `BoundingBox`) qua dây, không có protobuf.
+- Tiến trình con chạy `nice 10` và bị giới hạn affinity còn `cpu_count - PROCTOR_HOLISTIC_RESERVED_CORES`
+  core (mặc định để dành 4) — nếu để MediaPipe ăn hết 16 thread thì encode 720p từ 7 ms tăng lên 26 ms.
+- Con chết/timeout (`request_timeout=4s`, `max_restarts=3`) → `RemoteHolistic` tự dựng lại; quá số lần thì
+  **chạy Holistic ngay trong app** như cũ, luồng hành vi không bao giờ chết, chỉ chậm lại. Trạng thái hiện
+  tại in ở hộp 🩺 (`mode=process|in-process`, `remote=`, `tại chỗ=`).
+- Vẽ khung xương **không** đi qua tiến trình con: `draw_results` là hàm OpenCV thuần, chạy trên một
+  `HolisticLandmarkExtractor` chưa nạp model ở tiến trình chính.
+- Chạy thử riêng: `.venv/bin/python -m backend.ai_services.pipeline.holistic_worker --selftest`.
+- Offline (`run_offline.py`) **không** tách tiến trình: chạy theo lô, không ai xem trực tiếp.
 
 ### 2.4 Package dùng chung cho mọi runtime: `backend/ai_services/pipeline/`
 
@@ -151,7 +210,8 @@ Phần logic "1 frame vào → alert ra" không còn nằm trong hai file app n�
 | `face_scan.py` | `scan_stranger_with_masking` `:23` (detect 1 lần/ frame), `crop_for_registration` `:56` | `app_webrtc.py:171` / `:187` | `run_offline.py:276` |
 | `object_scan.py` | `scan_objects` `:14` (lọc nhãn giấy khỏi vật cấm) | `app_webrtc.py:220` | `run_offline.py:274` |
 | `paper_scan.py` | `arm_baseline` `:12`, `build_alert` `:23` | `app_webrtc.py:282` / `:311` | `run_offline.py:337` / `:347` |
-| `gaze_scan.py` | `build_stack` `:93`, `scan_frame` `:148` (trả **list** alert, mỗi actor một alert), `GazeStack.draw_skeleton` `:76` | `app_webrtc.py:326` / `:341` | `run_offline.py:261` / `:285` |
+| `gaze_scan.py` | `build_stack` `:113` (`isolate_holistic=`), `scan_frame` `:168` (trả **list** alert, mỗi actor một alert), `GazeStack.draw_skeleton` `:82` | `app_webrtc.py:330` / `:350` | `run_offline.py:269` / `:299` |
+| `holistic_worker.py` | `RemoteHolistic` `:69` (proxy cùng giao diện `HolisticLandmarkExtractor`), `worker_main` `:299`, `--selftest` `:357` | `gaze_scan.build_stack` khi `isolate_holistic=True` (`app_webrtc.py:333`) | — (offline chạy tại chỗ) |
 | `audio_scan.py` | `DynamicSpeechChunker` `:28`, `is_alert` `:121`, `to_alert` `:127` | `realtime_audio_ubuntu.py:49` + `:98`; `realtime_audio_worker.py:28` | `run_offline.py:97` (chunker) + `:120` (`to_alert`) |
 | `metrics.py` | `METRICS.time(stage)` / `METRICS.drop(stage)` / `METRICS.snapshot()` | 8 stage trong app (§8.2) | `scripts/replay_realtime.py` |
 
@@ -226,12 +286,18 @@ nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 
 ### 3.4 Hành vi — tracking + Holistic + causal classifier
 
-Toàn bộ stack này nằm trong `pipeline/gaze_scan.py`: `build_stack()` (`:93-145`) nạp
-`PersonTrackingModule` + `HolisticLandmarkExtractor` + classifier, `scan_frame()` (`:148-190`) chạy một
-frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:326/341`) và
-offline (`run_offline.py:261/285`) dùng chung hai lời gọi này. **Đây là stack hành vi duy nhất**:
-`GazeStack` giữ `latest_packet`/`latest_results` và `draw_skeleton()` (`:76`) để UI vẽ khung xương trên
+Toàn bộ stack này nằm trong `pipeline/gaze_scan.py`: `build_stack()` (`:113-165`) nạp
+`PersonTrackingModule` + `HolisticLandmarkExtractor` + classifier, `scan_frame()` (`:168-212`) chạy một
+frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:330/350`) và
+offline (`run_offline.py:269/299`) dùng chung hai lời gọi này. **Đây là stack hành vi duy nhất**:
+`GazeStack` giữ `latest_packet`/`latest_results` và `draw_skeleton()` (`:82`) để UI vẽ khung xương trên
 frame hiển thị mà không chạy model lần hai.
+
+`build_stack(isolate_holistic=True)` (chỉ realtime dùng) thay `HolisticLandmarkExtractor` bằng
+`RemoteHolistic` — proxy **cùng giao diện** nhưng `process_packet()` đi qua socket sang tiến trình con
+(`pipeline/holistic_worker.py`, §2.3/§8.3). Nhờ vậy thời gian Holistic (trung bình `225–260 ms` cho 2 track
+trên RTX 4050) không còn chặn callback WebRTC, dù gaze thực tế chỉ đạt **4.0–4.7 fps** chứ không phải 8 fps
+như cổng thời gian đặt ra — xem §9.
 
 `PoseGazeDetector` (`pose_gaze_service.py:83-141`) là vỏ ngoài cũ của cùng stack (YOLO person tracking →
 MediaPipe Holistic theo crop từng người → XGBoost causal), trả
@@ -388,11 +454,34 @@ Hai luồng chạy được, nhưng có ba chỗ không tự nhiên mà có:
    `cpu` (dòng 2); trên RTX phải đổi sang `onnxruntime-gpu` + torch `--index-url .../whl/cu12x`, ngược lại
    **không** cần 3 dòng `openvino/onnxruntime-openvino/optimum` (77-81). `sudo apt install ffmpeg
    portaudio19-dev libgl1` — ffmpeg bắt buộc để UI phát được video offline (`to_h264`).
+
+   Bản đã kiểm trên RTX 4050 (2026-10-28): `torch 2.14.1+cu130` + **`onnxruntime-gpu==1.31.1`** (khớp CUDA 13
+   và cuDNN 9 đi kèm torch; `pip uninstall -y onnxruntime` trước, hai gói này ghi đè cùng module `onnxruntime`).
+   `scripts/check_env.py` phải in ra `CUDAExecutionProvider`. Đo được: `FaceVerifier._detect_faces` 1280×720
+   **232 ms → 28.7 ms** chỉ nhờ đổi provider. `ObjectDetector` tự bật `half=True` khi `kind == "cuda"`.
+   `face_verify.py:38-43` gọi `ort.preload_dlls()` để nạp cuDNN của torch, và vẫn rơi về CPU nếu CUDA lỗi.
 3. **Camera thì ổn, micro là chỗ dễ gãy** — frame WebRTC đi từ trình duyệt phía Windows nên WSL không cần
    `/dev/video0`; nhưng micro được thu **phía server** (`audio: False` trong `media_stream_constraints`), mà
    PyAudio/PortAudio trong WSL chỉ thấy PulseAudio nếu có `pulseaudio` + `libasound2-plugins`. Micro hỏng thì
    app vẫn lên bình thường (lỗi được catch), chỉ mất cảnh báo âm thanh. Luồng **offline không cần micro**,
    nên đây là cách an toàn nhất để kiểm chứng mọi thứ trên WSL: `.venv/bin/python run_offline.py <file>`.
+
+   **Cách không cần `sudo` (đã chạy được trên máy RTX 4050, 2026-10-28).** Ảnh WSL không có sẵn plugin
+   `pulse`, nên `pcm.!default { type pulse }` báo `cannot open shared library`; PyAudio *vẫn* liệt kê
+   `default` (ALSA null device) nhưng mở stream là lỗi ngay. Giải nén gói vào `$HOME`:
+
+   ```bash
+   cd /tmp && apt-get download libasound2-plugins        # không cần root
+   dpkg-deb -x libasound2-plugins_*.deb root
+   mkdir -p ~/.local/lib && cp -r root/usr/lib/x86_64-linux-gnu/alsa-lib ~/.local/lib/
+   printf 'pcm.!default { type pulse }\nctl.!default { type pulse }\n' > ~/.asoundrc
+   ```
+
+   `realtime_audio_ubuntu.py:11-30` tự đặt `ALSA_PLUGIN_DIR=~/.local/lib/alsa-lib` **trước** `import pyaudio`
+   khi thấy file đó tồn tại (biến đã có sẵn thì tôn trọng), nên chỉ cần 4 lệnh trên là app dùng được micro.
+   Bản "sạch" nếu có quyền root: `sudo apt install -y libasound2-plugins pulseaudio-utils`.
+   Kiểm tra nhanh: mở stream `pyaudio` 44.1 kHz đọc 8000 sample phải trả `rms` khác 0 — im lặng thì kiểm
+   *Settings > Privacy > Microphone* của Windows (cho phép desktop apps) trước khi nghi code.
 
 Export model cho máy chỉ có iGPU:
 
@@ -438,30 +527,34 @@ Cấu hình thêm:
 | Biến / tham số | Tác dụng |
 | :-- | :-- |
 | `PROCTOR_DEVICE=cuda\|intel\|cpu` | Ép thiết bị suy luận |
+| `PROCTOR_HOLISTIC_RESERVED_CORES` (4) | Số core **để dành cho app** khi MediaPipe chạy ở tiến trình con (§2.3) |
 | `--server.headless true` | Chạy không mở browser tự động (tiện khi test bằng script) |
 | `settings.face_similarity_threshold` (0.4) | Ngưỡng cosine → "người lạ" |
-| `settings.object_detect_every_n_frames` (2) | stride YOLO giấy; **bị `FPS_SKIP=1` ghi đè ở luồng nặng** |
+| `settings.object_detect_every_n_frames` (2) | stride YOLO giấy (luồng nặng của app dùng cổng 10 fps, không dùng biến này) |
 | `settings.paper_count_confirm_inferences` (2) | số lần inference liên tiếp để báo phao mới |
 
 ---
 
 ## 7. Vận hành giao diện
 
-Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:605-641`):
+Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:669-686`):
 
 1. **📸 Đăng ký khuôn mặt** — luồng nặng crop khuôn mặt lớn nhất +40px margin, lưu
    `data/student_faces/student_<ts>.jpg` (bản cho AI) và `data/registered_logs/full_student_<ts>.jpg`
    (bản toàn cảnh cho người), rồi `face_model._load_database()` nạp lại.
 2. **🔒 Cố định Baseline (A)** / **🔄 Reset Setup (D)** — ARM/DISARM pipeline giấy; dòng `st.info` phía dưới
    hiện `paper_status_msg` ("SETUP…" / "ARMED! Baseline: N giấy.").
-3. **Lịch sử cảnh báo** — `st_autorefresh(interval=3000)`, giữ 20 dòng gần nhất, có màu đỏ cho vi phạm.
+3. **Lịch sử cảnh báo** — `st.fragment(run_every="1s")` (`app_webrtc.py:591`), giữ 20 dòng gần nhất, có màu
+   đỏ cho vi phạm. (Trước 2026-10-28 là `st_autorefresh(interval=3000)` ⇒ rerun **cả trang** mỗi 3 s, dựng lại
+   component WebRTC và làm hình khựng đúng nhịp đó — §8.3.)
 4. **🎬 Chạy offline trên file video** (khối expander cuối trang) — chọn nguồn file
    (đường dẫn trên máy, hoặc upload ≤200MB), chọn module + stride + `max-seconds` / `setup-seconds` / TTL rồi
    bấm Start. `OfflineJob` (`offline_job.py`) chạy `run_offline.main()` ở luồng nền; UI tự refresh mỗi 4s
    (`OFFLINE_REFRESH_MS`) để hiện tiến độ + ảnh khung hình đang xử lý, xong thì **phát video kết quả ngay
    trong trang** (§11.4). Nút bị chặn khi camera realtime đang phát.
-5. **🩺 Sức khoẻ module** (`app_webrtc.py:633-641`, cùng nhịp refresh 3s với log) — bảng fps / p50 / p95 /
-   max / số frame rớt của từng stage, lấy trực tiếp từ `pipeline/metrics.METRICS`; kèm nút **Reset số đo**.
+5. **🩺 Sức khoẻ module** (`app_webrtc.py:606-624`, cùng fragment 1 s với log) — bảng fps / p50 / p95 /
+   max / số frame rớt của từng stage, lấy trực tiếp từ `pipeline/metrics.METRICS`; kèm dòng trạng thái
+   MediaPipe (`mode=process|in-process`, `remote=`, `tại chỗ=`) và nút **Reset số đo**.
    Đây là nơi trả lời "module nào đang tụt" mà không phải cắm profiler; số liệu tích luỹ tới lần reset
    (hoặc tới khi tiến trình restart).
 
@@ -535,7 +628,16 @@ phát video theo đúng fps để thấy fps thật và số frame rớt:
 ```bash
 .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --seconds 16   # nhịp thật
 .venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --fast --modules action
+# đo đúng thứ người dùng cảm nhận: encode VP8 như aiortc, hạ 540p, tách MediaPipe
+.venv/bin/python scripts/replay_realtime.py <video> --seconds 15 --modules object,face,action \
+    --encode --resize 960x540
+# A/B cột "trước": để Holistic chạy tại chỗ trong tiến trình chính
+.venv/bin/python scripts/replay_realtime.py <video> --encode --no-isolate
 ```
+
+Cờ đáng nhớ: `--encode` (thêm stage `VP8 encode` giống aiortc), `--resize WxH`, `--no-isolate`
+(`HolisticLandmarkExtractor` tại chỗ thay `RemoteHolistic`), `--json <file>` (ghi snapshot để so máy khác),
+`--fast` (đọc video nhanh nhất để đo trần từng module).
 
 Đo 2026-10-28, 16s @30fps, **bật cả 4 module**, cùng lúc trên iGPU (các module tranh nhau nên p50 cao hơn
 chạy một mình):
@@ -571,6 +673,45 @@ app vẫn khởi động đủ 4 luồng (`[INFO] ✅ Fast Gaze Thread … đã 
 `[Pipeline] Khởi tạo hoàn tất trong 12.06s`) và UI render như trước; phần chưa chạy được chỉ là lúc có
 camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame đó trên file thật.
 
+### 8.3 Tối ưu độ mượt realtime — máy RTX 4050 / WSL2 (2026-10-28)
+
+Vấn đề người dùng báo: **hình camera bị trễ và giật**, không phải cảnh báo chậm. Cơ chế:
+
+1. `streamlit_webrtc/process.py::AsyncMediaProcessTrack.recv` gọi `processor.recv(frame)` **tuần tự**; nếu
+   callback chưa xong frame trước thì nó trả lại `_last_out_frame` (frame cũ) và bỏ frame mới.
+2. Callback nằm cùng tiến trình với 4 luồng AI. MediaPipe Holistic giữ GIL ~100 ms/tick 2 track ⇒ trong lúc
+   đó callback **không thể chạy**, nên cứ ~2 s lại có một khựng lớn, và hình tích luỹ trễ.
+
+Sửa (đo bằng `scripts/replay_realtime.py --encode`, video 20 s, 4 module):
+
+| Thay đổi | Vì sao |
+| :-- | :-- |
+| MediaPipe Holistic sang **tiến trình con** (`holistic_worker.py`) | GIL là của cả tiến trình; tách ra thì nó chậm bao nhiêu cũng không chặn video |
+| `nice 10` + giữ lại 4 core (`PROCTOR_HOLISTIC_RESERVED_CORES`) | MediaPipe spawn thread theo số core; ăn hết 16 thread làm encode 720p 7 ms → 26 ms |
+| Camera **960×540 @ 20 fps** (trước: `"video": True`, Chrome tự chọn, có lúc tụt 320×240) | VP8 encode 540p `11 ms` vs 720p `25 ms` khi máy bận; model chỉ dùng tối đa 640 px nên không mất chính xác, ảnh đăng ký mặt vẫn nét hơn 320×240 |
+| Gaze **8 fps**, vision **10 fps** (trước: mọi frame) | `queue.maxsize=2` vứt 2/3 tick; 8 fps khớp `temporal_policy target_fps=8` của model causal |
+| `img.copy()` **1 lần/frame** thay vì 3 | mỗi lần copy 720p là ~1 MB memcpy trong callback |
+| `st.fragment(run_every="1s")` cho khối log/sức khoẻ (trước `st_autorefresh(3000)`) | rerun cả trang 3 s/lần ⇒ component WebRTC dựng lại + tranh GIL ⇒ hình khựng đúng nhịp 3 s |
+| `cv2.polylines` gộp + gán numpy thay ~250 `cv2.line` + `cv2.circle`/track | mỗi lời gọi OpenCV là một round-trip GIL; p50 vẽ 2 track `0.66 ms` |
+| `iceServers: []` (bỏ STUN Google) | client và server cùng máy; STUN chỉ thêm một vòng ICE ra Internet, treo nếu UDP bị chặn |
+| `half=True` cho YOLO khi CUDA, `onnxruntime-gpu` cho ArcFace | 232 ms → 28.7 ms cho FaceNet |
+
+Kết quả (cùng harness, cùng video; chi tiết ở bảng §0 "Máy thứ hai"):
+
+| Stage | Trước | Sau |
+| :-- | :-- | :-- |
+| callback | p50 32.9 · p95 83.0 · **max 211.8** ms | p50 13.3 · p95 24.0 · **max 44.6** ms |
+| VP8 encode | p50 24.1 · p95 41.3 · max 209.1 ms | p50 10.5 · p95 19.3 · max 42.0 ms |
+| gaze | 3.4 fps (p50 294 ms) | 4.0–4.7 fps (p50 225–260 ms) |
+| rớt frame `vision` | 118/300 | 16–19/300 |
+
+Cách tắt khi cần so sánh: `scripts/replay_realtime.py --no-isolate` (chạy Holistic tại chỗ) và
+`PROCTOR_HOLISTIC_RESERVED_CORES=0` (không giới hạn core của tiến trình con). Trên Windows bản native
+`os.nice`/`sched_setaffinity` không tồn tại — code bỏ qua, chỉ mất phần ưu tiên CPU, vẫn tách tiến trình.
+
+**Chưa đo được**: cảm nhận thật trên trình duyệt (cần camera + người dùng). Số trên là của harness phát lại
+đúng cấu trúc callback + VP8 encode.
+
 ---
 
 ## 9. Giới hạn đã biết (đọc trước khi sửa)
@@ -579,12 +720,13 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
    tự chạy tracking + holistic + classifier, rồi `gaze_scan.scan_frame()` **chạy lại đúng stack đó** với bộ
    thứ hai ⇒ 2 lần YOLO + 2 lần MediaPipe mỗi frame, và hai bộ alert `pose_gaze` khác nhau (bộ cũ còn bắn
    `c1`/`c4` trái contract). Nay chỉ còn `gaze_scan`; khung xương hiển thị được vẽ lại từ
-   `GazeStack.latest_packet/latest_results` qua `GazeStack.draw_skeleton()` (`gaze_scan.py:76`), không chạy
+   `GazeStack.latest_packet/latest_results` qua `GazeStack.draw_skeleton()` (`gaze_scan.py:82`), không chạy
    model lần hai. Offline: `--modules pose,action` chỉ chạy một lần. Đo được: offline 225.8s → 147.6s.
    **Hệ quả cần biết**: alert `pose_gaze` chỉ còn `c2`/`c3`/`suspicious_activity`, không còn nhãn
    "Sử dụng điện thoại/phao thi" do pose đoán (theo contract, c1/c4 phải do YOLO quyết).
-2. **`FPS_SKIP = 1`** bắt YOLO vật cấm + verify mặt chạy mọi frame, trái với chủ trương
-   `object_detect_every_n_frames = 2` trong config.
+2. ~~**`FPS_SKIP = 1`** bắt YOLO vật cấm + verify mặt chạy mọi frame~~ **đã sửa 2026-10-28**: thay bằng cổng
+   thời gian `VISION_TARGET_FPS = 10` + `GAZE_TARGET_FPS = 8` (`app_webrtc.py:424-431`), vì `maxsize=2` vứt
+   gần hết tick khi đẩy mọi frame (§2.2, §8.3).
 3. ~~`core, devices = initialize_openvino()`~~ **đã sửa khi gộp entry point**: hàm cũ trả về MỘT giá trị
    (`devices`) nhưng bị unpack hai nên chỉ chạy được khi OpenVINO thấy đúng 2 thiết bị (`core='CPU'`,
    `devices='GPU'` — cả hai sai bản chất); máy chỉ có CPU hoặc có thêm NPU sẽ `ValueError` ngay lúc import.
@@ -646,6 +788,16 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
      tracker/MediaPipe/classifier/pipeline giấy đều có trạng thái riêng (track_id, cửa sổ 24 frame, session),
      dùng chung sẽ làm bẩn state realtime. Chỉ model thuần suy luận (YOLO vật cấm, FaceVerifier) là chia sẻ
      được, nhưng tiết kiệm không đáng so với rủi ro.
+18. **Trần của gaze là ~4–5 fps, không phải 8 fps** (đo 2026-10-28, RTX 4050/WSL2, 2 track): một tick
+     `process_packet` của MediaPipe mất `225–260 ms`, tức trần lý thuyết ~4 Hz. Cổng thời gian
+     `GAZE_TARGET_FPS = 8` chỉ quyết định **nhịp đẩy** vào queue; queue `maxsize=2` rớt phần dư nên không có
+     hại, nhưng đừng kỳ vọng 8 fps thật. Hạ `task_input_size` 512 → 256 **không** giúp (đo `150–157 ms` cho cả
+     4 mức 256/320/384/512) — chi phí nằm ở số lần gọi model cho từng track, không ở pixel.
+     Muốn nhanh hơn thật thì phải giảm số track (`max_tracks`), bỏ bớt landmark, hoặc dùng model nhẹ hơn —
+     cả ba đều đổi phân bố đặc trưng của causal classifier, tức phải retrain, **đừng tự ý đổi**.
+19. **Tiến trình Holistic và giới hạn core**: `PROCTOR_HOLISTIC_RESERVED_CORES` (mặc định 4) là số core
+     **để dành cho app**. Đặt về 0 trên máy ít core (≤ 4) sẽ khiến encode VP8 chậm lại và hình giật trở lại —
+     trên máy như vậy nên giảm `max_tracks` trước khi bỏ phần để dành core.
 
 ---
 
@@ -714,7 +866,7 @@ là cách kiểm chứng `pipeline/` (§2.4) chạy đúng khi không có browse
 | Tham số | Mặc định | Ý nghĩa |
 | :-- | :-- | :-- |
 | `--modules` | `object,face,paper,pose,action,audio` | bật/tắt từng luồng. `pose` là **bí danh cũ của `action`** (một stack duy nhất) — chọn cả hai vẫn chạy một lần |
-| `--stride-heavy/-paper/-pose/-action` | `1/5/1/1` | y hệt stride realtime (`1/5/1/1`, §2.2); tăng lên để chạy nhanh |
+| `--stride-heavy/-paper/-pose/-action` | `1/5/1/1` | stride của offline (mặc định y như cũ). Realtime nay dùng **cổng thời gian** 10 fps (vision) / 8 fps (hành vi) / 4 fps (giấy), nên đừng so stride offline với realtime bằng số |
 | `--setup-seconds` | `5` | tới mốc này thì tự ARM baseline giấy (realtime là nút bấm) |
 | `--ttl` | `1.5` | `OVERLAY_TTL` tính theo **giây video**, nên overlay trên `annotated.mp4` biến mất đúng như ngoài UI |
 | `--max-seconds` / `--max-frames` | `0` (hết file) | cắt ngắn để test |
@@ -768,9 +920,12 @@ Ràng buộc đã kiểm chứng:
   CLI chạy một mình `face=0.155s / action=0.186s` (2026-10-28); trong UI với refresh **1.2s** từng đo được
   `face 1.203 / action 1.137` (~3.3 lần chậm, cả lần chạy 503 frame hết 703s); với refresh **4.0s** còn
   `0.353 / 0.198` — nhanh hơn cả CLI vì model đã nạp sẵn trong tiến trình. Mỗi lần Streamlit rerun
-  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:647`)
+  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:695`)
   và `PREVIEW_INTERVAL_S = 3.0` (`offline_job.py:23`) đi đôi nhau. Lần chạy UI 8s ngày 2026-10-28 (241 frame,
   đủ 5 module): **69.1s**, tức 0.287s/frame — chậm hơn CLI ~40% vì lý do trên.
+  *Khác trang realtime*: khối log + 🩺 của trang chính đã đổi sang `st.fragment(run_every="1s")`
+  (`app_webrtc.py:591`) nên **không** rerun cả trang; khối offline vẫn phải `st_autorefresh(4000)` vì nó đọc
+  file kết quả trên đĩa chứ không đọc biến trong RAM.
 - **RAM là ràng buộc thật, không phải TTL.** Đo 2026-10-28 (CLI, cùng 8s, cùng stride): `--ttl 0.5` hết
   `131.1s`, `--ttl 1.5` hết `130.0s`, overlay tối đa 2 ở cả hai ⇒ TTL không làm tăng RAM/thời gian. Cái làm
   tràn RAM là tổng: app realtime ~3GB + job offline ~3GB + IDE/Chrome. Job con nay đỉnh ~2.7GB (trước 3.1GB)

@@ -6,10 +6,31 @@ import sys
 from contextlib import contextmanager
 
 import numpy as np
-import pyaudio
 
-from backend.ai_services.whisper.audio_pipeline import AudioPipeline
-from backend.ai_services.pipeline import audio_scan
+
+def _configure_alsa_plugins() -> None:
+    """Trỏ ALSA tới plugin pulse nằm trong `~/.local/lib/alsa-lib` (nếu có).
+
+    WSLg cho Windows dùng được micro qua PulseAudio socket `/mnt/wslg/PulseServer`, nhưng ảnh
+    Ubuntu không cài sẵn `libasound2-plugins`, nên `pcm.!default { type pulse }` trong
+    `~/.asoundrc` báo "cannot open shared library" và PyAudio chỉ thấy `default` giả.
+    README §5.1 ghi cách giải nén gói đó vào `~/.local/lib/alsa-lib` **không cần sudo**; ở đây
+    chỉ cần đặt `ALSA_PLUGIN_DIR` trước khi libasound được nạp (tức trước `import pyaudio`).
+    Nếu máy đã cài `libasound2-plugins` (plugin ở `/usr/lib/*/alsa-lib`) thì biến này không cần.
+    """
+    if os.environ.get("ALSA_PLUGIN_DIR"):
+        return  # người dùng đã tự đặt -> tôn trọng
+    local_dir = os.path.expanduser("~/.local/lib/alsa-lib")
+    if os.path.isfile(os.path.join(local_dir, "libasound_module_pcm_pulse.so")):
+        os.environ["ALSA_PLUGIN_DIR"] = local_dir
+
+
+_configure_alsa_plugins()
+
+import pyaudio  # noqa: E402  (phải import SAU khi đặt ALSA_PLUGIN_DIR)
+
+from backend.ai_services.whisper.audio_pipeline import AudioPipeline  # noqa: E402
+from backend.ai_services.pipeline import audio_scan  # noqa: E402
 
 # =========================
 # Tắt log ALSA rác trên Linux
@@ -37,7 +58,11 @@ class RealtimeAudioWorker:
         self.pipeline = AudioPipeline()
         self.audio_queue = queue.Queue(maxsize=20)
         self.stop_event = threading.Event()
-        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        # Thread tạo trong `start()` (không phải ở đây) để worker có thể dừng rồi chạy lại:
+        # một đối tượng Thread của Python chỉ start được MỘT lần.
+        self.worker_thread = None
+        self._stop_lock = threading.Lock()
+        self._stopped = False
 
         self.audio_stream = None
         self.pyaudio_instance = None
@@ -129,47 +154,56 @@ class RealtimeAudioWorker:
                 print(f"[Worker] Error: {e}")
 
     def stop(self):
-        print("[Audio] 🛑 Đang dừng RealtimeAudioWorker...")
-        self.stop_event.set()
-        if self.audio_stream is not None:
+        # `stop()` được gọi từ 2 nơi: nút/timer bên ngoài và `finally` của `start()`.
+        # Bản cũ đọc `self.audio_stream` 3 lần -> luồng kia set None ở giữa -> văng
+        # "'NoneType' object has no attribute 'close'". Giữ tham chiếu cục bộ + khoá.
+        with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            self.started = False
+
+            print("[Audio] 🛑 Đang dừng RealtimeAudioWorker...")
+            self.stop_event.set()
+            stream, self.audio_stream = self.audio_stream, None
+            if stream is not None:
+                try:
+                    if stream.is_active():
+                        stream.stop_stream()
+                except Exception as e:
+                    print(f"[Audio] Lỗi stop stream: {e}")
+
+                try:
+                    stream.close()
+                except Exception as e:
+                    print(f"[Audio] Lỗi close stream: {e}")
+
+            instance, self.pyaudio_instance = self.pyaudio_instance, None
+            if instance is not None:
+                try:
+                    instance.terminate()
+                except Exception as e:
+                    print(f"[Audio] Lỗi terminate PyAudio: {e}")
+
+            # Đánh thức worker thread nếu đang chờ queue
             try:
-                if self.audio_stream.is_active():
-                    self.audio_stream.stop_stream()
-            except Exception as e:
-                print(f"[Audio] Lỗi stop stream: {e}")
+                self.audio_queue.put_nowait(None)
+            except Exception:
+                pass
 
-            try:
-                self.audio_stream.close()
-            except Exception as e:
-                print(f"[Audio] Lỗi close stream: {e}")
-
-            self.audio_stream = None
-
-        if self.pyaudio_instance is not None:
-            try:
-                self.pyaudio_instance.terminate()
-            except Exception as e:
-                print(f"[Audio] Lỗi terminate PyAudio: {e}")
-
-            self.pyaudio_instance = None
-
-        # Đánh thức worker thread nếu đang chờ queue
-        try:
-            self.audio_queue.put_nowait(None)
-        except Exception:
-            pass
-
-        if self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=2.0)
-        self.started = False
-        print("[Audio] ✅ RealtimeAudioWorker đã dừng.")
+            if self.worker_thread is not None and self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=2.0)
+            print("[Audio] ✅ RealtimeAudioWorker đã dừng.")
 
     # =========================
     # Start
     # =========================
     def start(self):
-        if self.started: return
-        self.started = True
+        with self._stop_lock:
+            if self.started:
+                return
+            self.started = True
+            self._stopped = False
         self.stop_event.clear()
 
         print("[Audio] 🔊 Khởi động PyAudio...")
@@ -185,6 +219,8 @@ class RealtimeAudioWorker:
 
         # Chunker làm việc theo sample rate thật của card âm thanh
         self.chunker = audio_scan.DynamicSpeechChunker(self.input_sr)
+        # Thread mới mỗi lần start -> dừng rồi bật lại được (Thread của Python chỉ start 1 lần).
+        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
 
         blocksize = int(self.input_sr * self.CHUNK_SECONDS)
@@ -197,6 +233,9 @@ class RealtimeAudioWorker:
         print("Listening... (Ctrl+C to stop)")
         print("Tip: giữ im lặng ~1 giây đầu để lấy noise profile.\n")
 
+        # Mở stream: lỗi ở bước này là "không có micro" thật (thiếu plugin pulse / quyền
+        # micro Windows) -> in gợi ý cụ thể. Lỗi ở vòng chờ bên dưới chỉ là do stop() đóng
+        # stream trước, không phải sự cố.
         try:
             with suppress_alsa_logs():
                 stream = p.open(
@@ -207,16 +246,30 @@ class RealtimeAudioWorker:
                     frames_per_buffer=blocksize,
                     stream_callback=self._audio_callback
                 )
-            self.audio_stream = stream
             stream.start_stream()
-
-            while stream.is_active() and not self.stop_event.is_set():
-                time.sleep(0.1)
-
         except Exception as e:
-            print(f"[Audio] ❌ Audio stream error: {e}")
-        finally:
+            print(f"[Audio] ❌ Không mở được micro: {e}")
+            print("[Audio] Gợi ý (WSL): cần libasound2-plugins để ALSA đi qua PulseAudio của WSLg.")
+            print("        sudo apt install -y libasound2-plugins pulseaudio-utils")
+            print("        rồi `~/.asoundrc` có pcm.!default { type pulse } (README §5.1).")
+            print("        Trên Windows: Settings > Privacy > Microphone > cho phép desktop apps.")
             self.stop()
+            return
+
+        self.audio_stream = stream
+        if self.stop_event.is_set():
+            # stop() có thể đã chạy xong trước khi ta kịp gán -> tự đóng, tránh rò stream.
+            try:
+                stream.close()
+            except Exception:
+                pass
+            self.audio_stream = None
+            return
+        # Chờ tới khi có người gọi stop(). Dùng stop_event (không dùng stream.is_active())
+        # vì stop() có thể đã đóng stream -> is_active() raise "Stream not open".
+        while not self.stop_event.is_set():
+            time.sleep(0.1)
+        self.stop()
 
 if __name__ == "__main__":
     RealtimeAudioWorker().start()

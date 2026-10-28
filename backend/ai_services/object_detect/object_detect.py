@@ -91,6 +91,8 @@ class ObjectDetector:
                 frame,
                 conf=self.confidence_threshold,
                 # device=self.device,
+                # fp16 trên NVIDIA: ~1.5–2x nhanh hơn, cùng kết quả (chỉ bật khi đang chạy CUDA).
+                half=(self.device_info.kind == "cuda"),
                 verbose=False,
             )
             # print(f"[DEBUG YOLO] Kết quả thô từ model.predict: {results}")

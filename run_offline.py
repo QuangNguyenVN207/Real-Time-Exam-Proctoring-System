@@ -373,7 +373,8 @@ def parse_args(argv=None):
     parser.add_argument("--modules", default=",".join(ALL_MODULES),
                         help="object,face,paper,pose,action,audio (pose là bí danh của action)")
     parser.add_argument("--stride-heavy", type=int, default=1,
-                        help="cứ N frame chạy YOLO vật cấm + verify mặt (realtime: FPS_SKIP=1)")
+                        help="cứ N frame chạy YOLO vật cấm + verify mặt "
+                             "(realtime: cổng thời gian VISION_TARGET_FPS=10, không dùng stride)")
     parser.add_argument("--stride-paper", type=int, default=5)
     parser.add_argument("--stride-pose", type=int, default=1)
     parser.add_argument("--stride-action", type=int, default=1)
