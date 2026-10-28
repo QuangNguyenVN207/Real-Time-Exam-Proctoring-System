@@ -59,8 +59,9 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit_autorefresh import st_autorefresh
 
-# ---> ENTRY POINT DUY NHẤT: tự nhận nền tảng để chọn thiết bị + worker âm thanh <---
-# Windows/NVIDIA dùng `select_device()` và `.pt` gốc; Ubuntu/iGPU giữ nguyên bộ OpenVINO cũ.
+# ---> ENTRY POINT DUY NHẤT: thiết bị/model chọn theo GPU đã resolve, chỉ worker micro là theo OS <---
+# Hai entry point cũ tách theo OS, nên chạy WSL + NVIDIA vẫn rơi vào nhánh Ubuntu (paper + tracking
+# bị ép chạy CPU). Nay chọn theo `select_device().kind`; `PROCTOR_DEVICE=cuda|intel|cpu` vẫn ép được.
 IS_WINDOWS = sys.platform.startswith("win")
 
 
@@ -69,7 +70,8 @@ def _openvino_devices():
     """Liệt kê thiết bị OpenVINO (chẩn đoán iGPU). Trả [] nếu máy không cài OpenVINO."""
     try:
         import openvino as ov
-        devices = ov.Core().available_devices
+        core = ov.Core()
+        devices = core.available_devices
         print(f"[INFO] OpenVINO đã sẵn sàng trên các thiết bị: {devices}")
         return devices
     except Exception as e:
@@ -77,16 +79,19 @@ def _openvino_devices():
         return []
 
 
-if IS_WINDOWS:
-    from backend.core.device import select_device
-    DEVICE = select_device()
-    print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name})")
-    VISION_MODEL_PATH, VISION_DEVICE = "weights/best (1).pt", None
-    PERSON_DEVICE = "auto"          # paper pipeline + person tracking
-else:
-    OPENVINO_DEVICES = _openvino_devices()
-    VISION_MODEL_PATH, VISION_DEVICE = "weights/best_openvino_model", "GPU"
-    PERSON_DEVICE = "cpu"
+# (đường dẫn model vật cấm, device cho ObjectDetector, device cho paper + person tracking)
+_DEVICE_PROFILE = {
+    "cuda": ("weights/best (1).pt", None, "auto"),
+    "intel": ("weights/best_openvino_model", "GPU", "cpu"),
+    "cpu": ("weights/best (1).pt", None, "cpu"),
+}
+
+from backend.core.device import select_device
+DEVICE = select_device()
+VISION_MODEL_PATH, VISION_DEVICE, PERSON_DEVICE = _DEVICE_PROFILE.get(DEVICE.kind, _DEVICE_PROFILE["cpu"])
+OPENVINO_DEVICES = _openvino_devices() if DEVICE.kind == "intel" else []
+# print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) -> vật cấm={VISION_MODEL_PATH}"
+    #   f"/{VISION_DEVICE}, paper+tracking={PERSON_DEVICE}")
 
 # Import các module AI của bạn
 from pathlib import Path

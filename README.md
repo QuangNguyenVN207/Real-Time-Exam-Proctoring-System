@@ -39,7 +39,7 @@ xem [§11](#11-luồng-offline-run_offlinepy)).
 Browser (getUserMedia)
    │  WebRTC SENDRECV, audio:False
    ▼
-video_frame_callback()                 app_webrtc.py:415   (chạy trên event loop, PHẢI nhanh)
+video_frame_callback()                 app_webrtc.py:422   (chạy trên event loop, PHẢI nhanh)
    │  1. av.VideoFrame -> numpy BGR
    │  2. xúc RESULT_QUEUE -> ACTIVE_OVERLAYS + SHARED_STATE["logs"]
    │  3. bơm frame copy vào 3 queue theo stride
@@ -51,7 +51,7 @@ video_frame_callback()                 app_webrtc.py:415   (chạy trên event l
 Frame luôn **bỏ frame cũ nhất** khi queue đầy (`maxsize=2` + `get_nowait()` trước khi `put`) — ưu tiên
 độ trễ thấp hơn là không rớt frame.
 
-### 2.2 Phân phối frame (`app_webrtc.py:452-467`)
+### 2.2 Phân phối frame (`app_webrtc.py:459-474`)
 
 | Queue | Stride | Việc làm |
 | :-- | :-- | :-- |
@@ -59,15 +59,15 @@ Frame luôn **bỏ frame cũ nhất** khi queue đầy (`maxsize=2` + `get_nowai
 | `PAPER_QUEUE` | mỗi 5 frame | đếm giấy theo người |
 | `FRAME_QUEUE` | mỗi `FPS_SKIP = 1` frame → **mọi frame** | YOLO vật cấm + ArcFace verify |
 
-`FPS_SKIP = 1` (`app_webrtc.py:399`) đang ghi đè mất `settings.object_detect_every_n_frames = 2`
+`FPS_SKIP = 1` (`app_webrtc.py:406`) đang ghi đè mất `settings.object_detect_every_n_frames = 2`
 (`backend/core/config.py:44`) ở tầng ứng dụng — và cũng khác luôn `FPS_SKIP = 5` khai báo ở
 `config.py:7` (hằng số trùng tên nhưng app không import). Đây là điểm nóng nhất về hiệu năng của hệ thống.
 
-### 2.3 Bốn luồng AI (`init_system_resources`, `app_webrtc.py:111`)
+### 2.3 Bốn luồng AI (`init_system_resources`, `app_webrtc.py:118`)
 
 Tất cả chạy trong `@st.cache_resource` → **chỉ khởi tạo một lần cho cả tiến trình**. Bốn `Event`
 (`vision_ready`, `paper_ready`, `audio_ready`, `gaze_ready`) được `wait()` trước khi hàm trả về
-(`app_webrtc.py:389-392`), nghĩa là **trang web bị block ở trạng thái "Running…" cho tới khi cả 4 model
+(`app_webrtc.py:396-399`), nghĩa là **trang web bị block ở trạng thái "Running…" cho tới khi cả 4 model
 nạp xong** (vài phút ở lần chạy đầu, xem §8).
 
 | Luồng | Dòng | Nạp gì | Đẩy vào `RESULT_QUEUE` |
@@ -84,16 +84,16 @@ Phần logic "1 frame vào → alert ra" không còn nằm trong hai file app n�
 
 | Module | Hàm | Realtime gọi ở | Offline gọi ở |
 | :-- | :-- | :-- | :-- |
-| `events.py` | `to_log_line` `:16`, `prune_overlays` `:78`, `expire_overlays` `:87` | `app_webrtc.py:431` / `:439` / `:408` | `run_offline.py:149` / `:166` / `:172` |
-| `overlays.py` | `draw` `:26` (+ `log_lines` để burn cột lịch sử) | `app_webrtc.py:410` | `run_offline.py:173` |
-| `face_scan.py` | `scan_stranger_with_masking` `:18`, `crop_for_registration` `:57` | `app_webrtc.py:162` / `:178` | `run_offline.py:278` |
-| `object_scan.py` | `scan_objects` `:14` (lọc nhãn giấy khỏi vật cấm) | `app_webrtc.py:210` | `run_offline.py:276` |
-| `paper_scan.py` | `arm_baseline` `:12`, `build_alert` `:23` | `app_webrtc.py:268` / `:296` | `run_offline.py:340` / `:350` |
-| `gaze_scan.py` | `build_stack` `:79`, `scan_frame` `:134` (trả **list** alert, mỗi actor một alert) | `app_webrtc.py:311` / `:332` | `run_offline.py:262` / `:288` |
+| `events.py` | `to_log_line` `:16`, `prune_overlays` `:78`, `expire_overlays` `:87` | `app_webrtc.py:438` / `:446` / `:415` | `run_offline.py:149` / `:166` / `:172` |
+| `overlays.py` | `draw` `:26` (+ `log_lines` để burn cột lịch sử) | `app_webrtc.py:417` | `run_offline.py:173` |
+| `face_scan.py` | `scan_stranger_with_masking` `:18`, `crop_for_registration` `:57` | `app_webrtc.py:169` / `:185` | `run_offline.py:278` |
+| `object_scan.py` | `scan_objects` `:14` (lọc nhãn giấy khỏi vật cấm) | `app_webrtc.py:217` | `run_offline.py:276` |
+| `paper_scan.py` | `arm_baseline` `:12`, `build_alert` `:23` | `app_webrtc.py:275` / `:303` | `run_offline.py:340` / `:350` |
+| `gaze_scan.py` | `build_stack` `:79`, `scan_frame` `:134` (trả **list** alert, mỗi actor một alert) | `app_webrtc.py:318` / `:339` | `run_offline.py:262` / `:288` |
 | `audio_scan.py` | `DynamicSpeechChunker` `:28`, `is_alert` `:121`, `to_alert` `:127` | `realtime_audio_ubuntu.py:49` + `:98`; `realtime_audio_worker.py:28` | `run_offline.py:97` (chunker) + `:120` (`to_alert`) |
 
 Hai hàm cũ trong app giữ nguyên chữ ký nhưng chỉ delegate — `get_largest_stranger_with_masking`
-(`app_webrtc.py:161-162`) và `draw_warning_overlays` (`app_webrtc.py:404-410`) — nên không phải sửa các chỗ gọi.
+(`app_webrtc.py:168-169`) và `draw_warning_overlays` (`app_webrtc.py:411-417`) — nên không phải sửa các chỗ gọi.
 Riêng `face_scan.crop_for_registration` và `audio_scan.is_alert` **không** có chỗ gọi phía offline (không có
 nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 
@@ -141,7 +141,7 @@ nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 - Máy trạng thái (`paper_count_monitor.py`):
   - **SETUP** (`armed=False`): gom tối đa 60 snapshot số giấy, baseline = **mode** của chuỗi đó (`:507`).
   - **ARM** (`arm()`, `:80`): đóng băng `baseline_count` + `baseline_clusters`. Nút "🔒 Cố định Baseline (A)"
-    gọi `arm_paper_monitoring()`; "🔄 Reset Setup (D)" tạo `session_id` mới (`app_webrtc.py:530-534`,
+    gọi `arm_paper_monitoring()`; "🔄 Reset Setup (D)" tạo `session_id` mới (`app_webrtc.py:537-541`,
     logic gộp ở `pipeline/paper_scan.py:12-20`).
   - **Gom cụm**: union-find nhập 2 box khi IoP(phần tử nhỏ) ≥ `0.35` **hoặc** khoảng cách tâm chuẩn hoá
     ≤ `0.70` (`paper_count_monitor.py:285-330`; giá trị lấy từ `config.py:123-124` qua
@@ -157,14 +157,14 @@ nút đăng ký mặt; audio file luôn đi qua `to_alert`).
   risk_score:1.0, bbox_xyxy, owner_track_id, owner_person_id}`; `paper_scan.build_alert()` **vứt** alert
   `smartphone_detected` phát sinh từ module này (`paper_scan.py:36-40`).
 - Bật tắt: `smartphone_fallback_enabled = False` (`config.py:45`) và cả hai runtime còn force-tắt trong
-  pipeline giấy (`app_webrtc.py:242-249`, `run_offline.py:251-257`) ⇒ nhánh COCO fallback
+  pipeline giấy (`app_webrtc.py:249-256`, `run_offline.py:251-257`) ⇒ nhánh COCO fallback
   (`object_detect.py:839`) là **code chết**.
 
 ### 3.4 Hành vi — tracking + Holistic + causal classifier
 
 Toàn bộ stack này nằm trong `pipeline/gaze_scan.py`: `build_stack()` (`:79-131`) nạp
 `PersonTrackingModule` + `HolisticLandmarkExtractor` + classifier, `scan_frame()` (`:134-176`) chạy một
-frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:311/332`) và
+frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:318/339`) và
 offline (`run_offline.py:262/288`) dùng chung.
 
 `PoseGazeDetector` (`pose_gaze_service.py:83-141`) **không tự tính góc Euler**; nó là bọc ngoài của
@@ -281,25 +281,49 @@ Real-Time-Exam-Proctoring-System/
 `resolve_model_path()` tự đổi `weights/best (1).pt` → `weights/best_openvino_model/` hoặc `best.onnx`
 tuỳ thiết bị (`device.py:141`).
 
-**Chỉ còn một entry point.** `app_webrtc.py:63` đặt `IS_WINDOWS = sys.platform.startswith("win")` rồi rẽ
-đúng 4 chỗ mà hai file cũ từng khác; `app_webrtc_win.py` chỉ còn 12 dòng `runpy.run_path()` để lệnh
-`streamlit run app_webrtc_win.py` trên máy Windows không vỡ:
+**Chỉ còn một entry point.** `app_webrtc_win.py` chỉ còn 12 dòng `runpy.run_path()` để lệnh
+`streamlit run app_webrtc_win.py` không vỡ, còn cấu hình thiết bị nằm trong một bảng tra theo
+**kind của thiết bị đã resolve** (`app_webrtc.py:83-93`), không phải theo OS:
 
-| | nhánh Ubuntu (`:85-88`) | nhánh Windows (`:79-84`) |
-| :-- | :-- | :-- |
-| Chọn thiết bị | `_openvino_devices()` in danh sách thiết bị OpenVINO (`:86`, hàm ở `:66-76`) | `select_device()` (`:80-82`) |
-| YOLO vật cấm | `weights/best_openvino_model` + `device="GPU"` (`:87` → dùng ở `:150-151`) | `weights/best (1).pt` + `device=None` (`:83`) |
-| Paper / tracking | `PERSON_DEVICE = "cpu"` (`:88` → dùng ở `:230`, `:232`, `:311`) | `PERSON_DEVICE = "auto"` (`:84`) |
-| Micro | `realtime_audio_ubuntu.py` (PyAudio) — import ở `:102` | `realtime_audio_worker.py` (sounddevice) — import ở `:100` |
+| `select_device().kind` | Model vật cấm | `device` ObjectDetector | `PERSON_DEVICE` (paper + tracking) |
+| :-- | :-- | :-- | :-- |
+| `cuda` (NVIDIA, kể cả WSL) | `weights/best (1).pt` | `None` | `"auto"` |
+| `intel` (iGPU Arc/HD) | `weights/best_openvino_model` | `"GPU"` | `"cpu"` |
+| `cpu` | `weights/best (1).pt` | `None` | `"cpu"` |
 
-Bốn giá trị đó **giữ nguyên y hệt hai file cũ** (đã kiểm bằng cách chạy độc lập từng nhánh), nên Ubuntu/iGPU
-không đổi hành vi; muốn thống hết về `select_device()` chỉ cần sửa 4 hằng trên. Logic per-frame đã nằm ở
-`pipeline/` (§2.4) nên cả hai nhánh + `run_offline.py` cùng dùng chung một code.
+Ba dòng trên chính là giá trị mà hai file entry point cũ vẫn dùng (`app_webrtc.py:84-86`), nên
+Windows+NVIDIA và Ubuntu+iGPU **không đổi hành vi**; khác biệt là WSL+NVIDIA giờ lấy profile `cuda`
+thay vì bị kéo vào nhánh Ubuntu (trước đó paper + tracking bị ép chạy CPU dù có RTX).
+`VISION_MODEL_PATH`/`PERSON_DEVICE` được dùng ở `:157-158` và `:237`, `:239`, `:318`.
+Ép ngược bằng `PROCTOR_DEVICE=cuda|intel|cpu` vì `select_device()` đọc biến đó (`device.py:130`).
+
+**Chỉ còn một thứ phân nhánh theo OS: worker micro** (`:105-108`) — Windows dùng
+`realtime_audio_worker.py` (sounddevice), Linux/WSL dùng `realtime_audio_ubuntu.py` (PyAudio), vì
+cả hai đều là chuyện thiết bị âm thanh của hệ điều hành, không liên quan GPU.
 
 > Ghi chú: `device="GPU"` vẫn hoạt động vì `ObjectDetector` tự gọi `resolve_device()` — alias `"gpu"`
 > được chuẩn hoá về `auto` (`device.py:96`). `gaze_scan.build_stack()` cũng tự chuẩn hoá thiết bị trước
 > khi đưa cho ultralytics (`gaze_scan.py:89-91`) — đây là lỗi đã sửa: trước đó `"auto"` lọt xuống
 > `PersonTrackingConfig` làm mọi frame hành vi ném `Invalid CUDA 'device=auto'`.
+
+### 5.1 Máy Windows + NVIDIA + WSL2
+
+Hai luồng chạy được, nhưng có ba chỗ không tự nhiên mà có:
+
+1. **File không nằm trong git** — phải chuyển kèm: `stage6_bundle_exact/` (18MB, XGBoost causal; thiếu thì
+   `action` chỉ in `[WARNING] Không thể nạp Causal Action Classifier` rồi **im lặng 0 cảnh báo** —
+   `.gitignore:88`), và `data/student_faces/` (thiếu thì mọi khuôn mặt đều là `NGUOI LA`; đăng ký lại bằng
+   nút 📸). `backend/ai_services/whisper/weights/` (PhoWhisper bản OpenVINO) **không cần** trên máy NVIDIA:
+   `phowhisper_service.py:16` thấy CUDA là tự tải `vinai/PhoWhisper-small` (cần internet lần đầu).
+2. **Cài đúng bản CUDA** — `requirements.txt` đang ghi `onnxruntime` (CPU, dòng 22) và chú thích torch bản
+   `cpu` (dòng 2); trên RTX phải đổi sang `onnxruntime-gpu` + torch `--index-url .../whl/cu12x`, ngược lại
+   **không** cần 3 dòng `openvino/onnxruntime-openvino/optimum` (77-81). `sudo apt install ffmpeg
+   portaudio19-dev libgl1` — ffmpeg bắt buộc để UI phát được video offline (`to_h264`).
+3. **Camera thì ổn, micro là chỗ dễ gãy** — frame WebRTC đi từ trình duyệt phía Windows nên WSL không cần
+   `/dev/video0`; nhưng micro được thu **phía server** (`audio: False` trong `media_stream_constraints`), mà
+   PyAudio/PortAudio trong WSL chỉ thấy PulseAudio nếu có `pulseaudio` + `libasound2-plugins`. Micro hỏng thì
+   app vẫn lên bình thường (lỗi được catch), chỉ mất cảnh báo âm thanh. Luồng **offline không cần micro**,
+   nên đây là cách an toàn nhất để kiểm chứng mọi thứ trên WSL: `.venv/bin/python run_offline.py <file>`.
 
 Export model cho máy chỉ có iGPU:
 
@@ -338,7 +362,7 @@ streamlit run app_webrtc_win.py
 
 Mở `http://localhost:8501` → bấm **START** ở khối WebRTC → cấp quyền camera.
 Micro được PyAudio/`sounddevice` chiếm trực tiếp tiến trình server, **không** cần cấp quyền trong
-`media_stream_constraints` (`"audio": False`, `app_webrtc.py:510-517`).
+`media_stream_constraints` (`"audio": False`, `app_webrtc.py:517-524`).
 
 Cấu hình thêm:
 
@@ -354,7 +378,7 @@ Cấu hình thêm:
 
 ## 7. Vận hành giao diện
 
-Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:523-548`):
+Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:530-556`):
 
 1. **📸 Đăng ký khuôn mặt** — luồng nặng crop khuôn mặt lớn nhất (đã masking) +40px margin, lưu
    `data/student_faces/student_<ts>.jpg` (bản cho AI) và `data/registered_logs/full_student_<ts>.jpg`
@@ -362,7 +386,7 @@ Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:523-548`)
 2. **🔒 Cố định Baseline (A)** / **🔄 Reset Setup (D)** — ARM/DISARM pipeline giấy; dòng `st.info` phía dưới
    hiện `paper_status_msg` ("SETUP…" / "ARMED! Baseline: N giấy.").
 3. **Lịch sử cảnh báo** — `st_autorefresh(interval=3000)`, giữ 20 dòng gần nhất, có màu đỏ cho vi phạm.
-4. **🎬 Chạy offline trên file video** (`app_webrtc.py:554-686`, khối expander cuối trang) — chọn nguồn file
+4. **🎬 Chạy offline trên file video** (`app_webrtc.py:559-696`, khối expander cuối trang) — chọn nguồn file
    (đường dẫn trên máy, hoặc upload ≤200MB), chọn module + stride + `max-seconds` / `setup-seconds` / TTL rồi
    bấm Start. `OfflineJob` (`offline_job.py`) chạy `run_offline.main()` ở luồng nền; UI tự refresh mỗi 1.2s để
    hiện tiến độ + ảnh khung hình đang xử lý (nhịp 4s, `OFFLINE_REFRESH_MS`), xong thì **phát video kết quả ngay
@@ -449,7 +473,7 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
 ## 9. Giới hạn đã biết (đọc trước khi sửa)
 
 1. **Chồng lặp tính toán ở luồng gaze**: `PoseGazeDetector.process_frame()` tự chạy tracking + holistic +
-   classifier, rồi `pipeline/gaze_scan.py:134` (luồng `fast_gaze_thread`, `app_webrtc.py:332`) **chạy lại
+   classifier, rồi `pipeline/gaze_scan.py:134` (luồng `fast_gaze_thread`, `app_webrtc.py:339`) **chạy lại
    đúng stack đó** với một bộ tracking/holistic/classifier thứ hai ⇒ 2 lần YOLO + 2 lần MediaPipe mỗi frame.
    `run_offline.py` cố tình giữ nguyên hành vi này để so sánh được với realtime (tắt bằng `--modules`).
 2. **`FPS_SKIP = 1`** bắt YOLO vật cấm + verify mặt chạy mọi frame, trái với chủ trương
@@ -604,7 +628,7 @@ Ràng buộc đã kiểm chứng:
   CLI chạy một mình `face=0.414s / pose=0.327s / action=0.340s`; trong UI với refresh **1.2s** thành
   `1.203 / 0.993 / 1.137` (~3.3 lần chậm, cả lần chạy 503 frame hết 703s); với refresh **4.0s** còn
   `0.353 / 0.165 / 0.198` — nhanh hơn cả CLI vì model đã nạp sẵn trong tiến trình. Mỗi lần Streamlit rerun
-  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:560`)
+  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:565`)
   và `PREVIEW_INTERVAL_S = 3.0` (`offline_job.py:23`) đi đôi nhau.
 - Không có nút huỷ giữa chừng: đã bấm Start thì phải chờ xong (`--max-seconds` là cách cắt ngắn).
 
