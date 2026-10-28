@@ -6,6 +6,53 @@
 
 ---
 
+## 0. Đọc nhanh (AI hoặc người mới — khỏi phải đo lại)
+
+**Là gì:** một tiến trình Streamlit duy nhất giám sát phòng thi qua WebRTC; 4 module AI chạy ở 4 daemon
+thread và nói chuyện bằng `queue.Queue`; micro bị PyAudio/`sounddevice` chiếm trực tiếp chứ không đi qua
+WebRTC. Không còn FastAPI backend, không có `frontend/`.
+
+| Muốn gì | Mở đâu |
+| :-- | :-- |
+| Hiểu đường đi của frame + stride | §2.1, §2.2 |
+| Phần phát hiện dùng chung (realtime + offline + khối UI) | `backend/ai_services/pipeline/` — §2.4 |
+| Chạy camera thật | §6 (`streamlit run app_webrtc.py`) |
+| Chạy 1 file video → video burn cảnh báo | §11 (`run_offline.py`) hoặc khối 🎬 cuối trang — §11.4 |
+| Chọn thiết bị / model | §5 (theo `select_device().kind`, **không** theo OS) |
+| Máy Windows + NVIDIA + WSL2 cần thêm gì | §5.1 |
+
+**Số đã đo trên máy tham chiếu (Intel Core Ultra 7 155H + iGPU Arc, Ubuntu, Python 3.12.3,
+openvino 2026.3.0) — dùng làm mốc, đừng tốn 4 phút đo lại:**
+
+| Đại lượng | Giá trị đo được |
+| :-- | :-- |
+| Thời gian một lần chạy module (stride 3) | vật cấm `0.040s` · mặt `0.345s` · pose `0.324s` · hành vi `0.345s` |
+| Nạp model | app `11.7–13.5s` lần đầu, `5–8s` khi OS đã cache file model; riêng audio (VAD+PhoWhisper+PhoBERT) `8.4s` |
+| Thông lượng offline | 16.8s video (503 frame) hết `225.8s` với stride 3/5/3/3 ⇒ **~13× realtime** |
+| Sức chứa realtime (suy ra, **chưa đo qua camera**) | ở `stride=1` như app hiện tại, riêng thread nặng ~`0.39s/frame` (~2.6fps) và thread gaze ~`0.67s/frame` (~1.5fps) ⇒ không theo kịp 30fps trên iGPU này. Đường đi WebRTC thật vẫn chưa đo vì cần camera người (§8) |
+| Chi phí đổi sang H.264 cho UI | `3.7s`, 23.5MB → 5.0MB |
+| Ngưỡng phải nhớ | `OVERLAY_TTL=1.5s` · queue worker `maxsize=2` (rơi frame cũ nhất) · `RESULT_QUEUE maxsize=100` · sidebar giữ 20 dòng · bảng burn vào video giữ 8 dòng |
+| Causal classifier | cửa sổ **24** landmark frame/actor, warmup **4** ⇒ tăng stride `action` làm **đổi điểm** c2/c3, không chỉ đổi tốc độ |
+
+**Bẫy đã trả giá — đọc trước khi sửa:**
+- `annotated.mp4` là mpeg4 Simple Profile ⇒ trình duyệt không phát được; UI phải tạo `playback_h264.mp4` (§11.4).
+- `st_autorefresh` 1.2s làm suy luận chậm **~3.3 lần** (face 0.35s → 1.20s); đã chốt `OFFLINE_REFRESH_MS = 4000` (§11.4).
+- streamlit_webrtc 0.77 **không** có `ctx.running`; phải dùng `webrtc_ctx.state.playing`.
+- `SuppressOutput` / `suppress_alsa_logs` dup2 fd 1&2 của **cả tiến trình** lúc nạp model ⇒ mất vài dòng log
+  "✅ đã nạp xong" của thread khác; thêm `PYTHONUNBUFFERED=1` khi cần xem log.
+- `alerts_by_module` / `alerts_by_actor` đếm cả frame `status="info"` của pipeline giấy (§9 mục 11).
+- `PoseGazeDetector` và `gaze_scan` là **hai stack song song chạy trên cùng một frame** (§9 mục 1) — cố ý,
+  để offline so sánh được với realtime, không phải bug mới phát sinh.
+- Video test `data/IMG_7817.MOV` không có điện thoại/tai nghe và cả hai actor đều bị kết `c5` dù
+  `c2_score` lên tới 0.9776 ⇒ **không có cảnh báo hành vi là chuyện bình thường**, đừng đi tìm lỗi wiring (§8).
+
+**Không có trong git, phải chuyển tay khi clone:** `stage6_bundle_exact/` (18MB artifact XGBoost causal —
+thiếu thì module `action` chỉ in một dòng `[WARNING]` rồi **im lặng 0 cảnh báo**), `data/student_faces/`,
+`backend/ai_services/whisper/weights/` (bản OpenVINO; máy NVIDIA tự tải `vinai/PhoWhisper-small` từ HF),
+`offline_out/`.
+
+---
+
 ## 1. Tóm tắt
 
 Hệ thống giám sát hành vi gian lận **trong một tiến trình Streamlit duy nhất**. Video vào/ra qua

@@ -1,2 +1,35 @@
+# Dữ liệu test tracking để trong git-lfs
 test_data_tracking/webcam_holistic_1787244223067_2b197509/camera.mp4 filter=lfs diff=lfs merge=lfs -text
 test_data_tracking/webcam_holistic_1787244223067_2b197509/frames.jsonl filter=lfs diff=lfs merge=lfs -text
+
+# Mặc định: nhận diện text tự động, lưu LF trong repo và checkout ra LF.
+# Python/JSON/YAML không cần CRLF; quy về một kiểu để diff Windows <-> Linux không đổi cả file.
+* text=auto eol=lf
+
+# Tài liệu markdown giữ CRLF ở working tree: README.md vốn được lưu với blob CRLF từ đầu và
+# được mở bằng editor Windows. Blob vẫn là LF (đã normalize), nên từ nay diff chỉ hiện dòng thật sự sửa.
+*.md text eol=crlf
+
+# Nhị phân: tuyệt đối không đụng line ending.
+*.pt binary
+*.onnx binary
+*.bin binary
+*.ubj binary
+*.npy binary
+*.npz binary
+*.pkl binary
+*.faiss binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.mov binary
+*.m4v binary
+*.mkv binary
+*.avi binary
+*.wav binary
+*.mp3 binary
+*.m4a binary
+*.pdf binary
+*.zip binary
+*.gz binary

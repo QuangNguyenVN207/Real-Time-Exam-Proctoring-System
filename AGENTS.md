@@ -32,3 +32,30 @@ Real time classification with hardware limitation in mind
 - Restoration may include deleting generated outputs and undoing code changes when necessary.
 - Before any restoration that may remove user data, inspect and report the exact scope of changes.
 - **for new pipeline**: Work on branch `new-test-pipieline` 
+
+## Project orientation for AI agents (read before exploring)
+
+Start at `README.md` section 0 ("Đọc nhanh"): it holds the architecture map, the numbers already measured
+on the reference machine, the known traps, and the list of files that are gitignored but required at
+runtime. Sections 2-11 are the detail. **Do not re-measure what section 0 / section 8 already states** —
+reuse the figures and say which machine they came from (Intel Core Ultra 7 155H + iGPU Arc, Ubuntu,
+Python 3.12.3). NVIDIA / Windows numbers are **not** measured yet, so treat any CUDA claim as unverified.
+
+- **One Streamlit process, one entry point.** `app_webrtc.py` is the whole app; `app_webrtc_win.py` is a
+  12-line `runpy` shim kept only so old launch commands still work. Do not re-split them.
+- **Shared detection code.** Per-frame logic lives in `backend/ai_services/pipeline/` (pure functions: no
+  threads, no `st.*`). It is used by the realtime threads, the in-UI offline block and `run_offline.py`.
+  Fix it once there, never inside an app file.
+- **Device selection is keyed on hardware, not OS.** `select_device().kind` (`cuda` / `intel` / `cpu`)
+  picks the model path and devices, so WSL + NVIDIA gets the CUDA profile; `PROCTOR_DEVICE` overrides it.
+  Only the microphone worker is OS-keyed (`sounddevice` on Windows, `PyAudio` on Linux/WSL).
+- **Offline mirrors realtime.** `run_offline.py <video>` writes `annotated.mp4` (burned overlays + warning
+  panel), `events.jsonl`, `log.txt`, `report.json`. `report.json` keys evidence by `(video, actor_id)` in
+  `actors`, including actors whose final class is `c5` — that satisfies the actor-level rule above.
+- **Deliberate trade-offs, not bugs** (ask before changing): the duplicated gaze stack (README section 9
+  item 1), `alerts_by_module` counting paper `status="info"` frames (item 11), the 4s UI autorefresh
+  interval (section 11.4, measured 3.3x inference slowdown at 1.2s), and `mp4v` output for CLI with H.264
+  generated only for browser playback.
+- **Camera vs microphone in WSL.** WebRTC frames come from the browser, so no `/dev/video0` is needed in
+  WSL; the microphone is captured server-side and is the fragile part there. The offline flow needs no
+  camera or microphone — prefer it for verifying detection behaviour on a new machine.
