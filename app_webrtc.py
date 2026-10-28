@@ -52,26 +52,41 @@ import cv2
 import threading
 import time
 import queue
+from typing import Optional
 import numpy as np
 import av
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 from streamlit_autorefresh import st_autorefresh
 
-# ---> KIỂM TRA THIẾT BỊ OPENVINO CHO INTEL GPU <---
+# ---> ENTRY POINT DUY NHẤT: tự nhận nền tảng để chọn thiết bị + worker âm thanh <---
+# Windows/NVIDIA dùng `select_device()` và `.pt` gốc; Ubuntu/iGPU giữ nguyên bộ OpenVINO cũ.
+IS_WINDOWS = sys.platform.startswith("win")
+
+
 @st.cache_resource
-def initialize_openvino():
+def _openvino_devices():
+    """Liệt kê thiết bị OpenVINO (chẩn đoán iGPU). Trả [] nếu máy không cài OpenVINO."""
     try:
         import openvino as ov
-        core = ov.Core()
-        devices = core.available_devices
+        devices = ov.Core().available_devices
         print(f"[INFO] OpenVINO đã sẵn sàng trên các thiết bị: {devices}")
         return devices
     except Exception as e:
         print(f"[WARNING] Không khởi tạo được OpenVINO: {e}")
         return []
-# Gọi hàm ngay phía dưới:
-core, devices = initialize_openvino()
+
+
+if IS_WINDOWS:
+    from backend.core.device import select_device
+    DEVICE = select_device()
+    print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name})")
+    VISION_MODEL_PATH, VISION_DEVICE = "weights/best (1).pt", None
+    PERSON_DEVICE = "auto"          # paper pipeline + person tracking
+else:
+    OPENVINO_DEVICES = _openvino_devices()
+    VISION_MODEL_PATH, VISION_DEVICE = "weights/best_openvino_model", "GPU"
+    PERSON_DEVICE = "cpu"
 
 # Import các module AI của bạn
 from pathlib import Path
@@ -81,23 +96,15 @@ from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDe
 from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
 from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
-from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
-from backend.ai_services.pose_gaze.pose_gaze.holistic.landmark import HolisticLandmarkExtractor
-from backend.ai_services.pose_gaze.pose_gaze.tracking.manager import TrackingManager
-from backend.ai_services.pose_gaze.pose_gaze.tracking.webcam import PersonTrackingModule, PersonTrackingConfig
-from backend.ai_services.pose_gaze.pose_gaze.holistic.test_media.test_media import create_live_classifier
-from backend.ai_services.pose_gaze.pose_gaze.settings import (
-    DEFAULT_HOLISTIC_CONFIDENCE,
-    DEFAULT_HOLISTIC_SOFT_CONFIDENCE,
-    DEFAULT_MAX_MISSED_FRAMES,
-    DEFAULT_MIN_IOU,
-    DEFAULT_PERSON_CONFIDENCE,
-    PROJECT_ROOT,
-)
-
-DEFAULT_ACTION_ARTIFACTS = {
-    "extended": PROJECT_ROOT / "stage6_bundle_exact" / "causal_8fps_stage6_mixed_084699_final_20260827",
-}
+# Micro: PyAudio trên Linux, sounddevice trên Windows (hai worker riêng biệt)
+if IS_WINDOWS:
+    from backend.ai_services.whisper.realtime_audio_worker import RealtimeAudioWorker
+else:
+    from backend.ai_services.whisper.realtime_audio_ubuntu import RealtimeAudioWorker
+# Logic per-module đã tách ra package dùng chung (realtime + offline chạy ra cảnh báo y hệt nhau)
+from backend.ai_services.pipeline import audio_scan, events, face_scan, gaze_scan, object_scan, paper_scan
+from backend.ai_services.pipeline import overlays as overlay_draw
+from offline_job import OfflineJob
 
 # ==========================================
 # 1. KHỞI TẠO TÀI NGUYÊN (CHẠY 1 LẦN DUY NHẤT)
@@ -142,8 +149,8 @@ def init_system_resources():
             # Xóa tham số enable_smartphone_fallback
             # Thêm confidence_threshold để dễ dàng test (giảm xuống 0.3 để OpenVINO nhạy hơn)
             yolo_model = ObjectDetector(
-                model_path="weights/best_openvino_model", 
-                device="GPU",
+                model_path=VISION_MODEL_PATH,
+                device=VISION_DEVICE,
                 confidence_threshold=0.7
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
@@ -154,45 +161,7 @@ def init_system_resources():
         
         # ---> BÍ QUYẾT ĐỒNG BỘ: Tạo hàm Masking chung cho cả Camera và Đăng ký <---
         def get_largest_stranger_with_masking(img, ts):
-            faces = face_model._detect_faces(img)
-            # print(f"[DEBUG FACE] Số lượng khuôn mặt phát hiện trong frame: {len(faces) if faces else 0}")
-            if not faces:
-                # print("[DEBUG FACE] Không tìm thấy khuôn mặt nào trong frame.")
-                return None, None
-                
-            # Sắp xếp khuôn mặt theo diện tích từ TO đến NHỎ
-            faces = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-            h, w = img.shape[:2]
-            
-            # Kiểm tra từng khuôn mặt bằng cách cắt trực tiếp (Crop)
-            for i, target_face in enumerate(faces):
-                masked_frame = img.copy()
-                
-                # Vẽ ô đen che giấu TẤT CẢ các khuôn mặt khác
-                for j, other_face in enumerate(faces):
-                    if i != j:
-                        ox1, oy1, ox2, oy2 = map(int, other_face.bbox)
-                        # Nới rộng ô đen ra 10 pixel để xóa thật sạch
-                        cv2.rectangle(masked_frame, 
-                                      (max(0, ox1 - 10), max(0, oy1 - 10)), 
-                                      (min(w, ox2 + 10), min(h, oy2 + 10)), 
-                                      (0, 0, 0), -1)
-                                      
-                # Gửi ảnh đã che đen đi kiểm tra (AI giờ chỉ còn thấy 1 mặt duy nhất)
-                verify_result = face_model.verify_face(masked_frame, ts)
-                
-                if verify_result and verify_result.get("status") == "alert":
-                    # print(f"[DEBUG FACE] 🚨 CẢNH BÁO: Phát hiện người lạ (alert) thực sự tại bbox: {target_face.bbox}")
-                    # Ghi đè lại tọa độ gốc để khung vàng vẽ đúng vị trí trên video gốc
-                    verify_result["details"]["unauthorized_bbox"] = [int(x) for x in target_face.bbox]
-                    return verify_result, target_face.bbox
-                else:
-                    # print(f"[DEBUG FACE] ✅ Xác thực thành công: Là người quen (Không phải người lạ).")
-                    pass
-                    
-            # Nếu tất cả các mặt đều là người quen
-            # print("[DEBUG FACE] Tất cả các mặt đều được nhận diện là người quen.")
-            return None, faces[0].bbox
+            return face_scan.scan_stranger_with_masking(face_model, img, ts)
         # -------------------------------------------------------------------------
         
         vision_ready.set()
@@ -204,35 +173,22 @@ def init_system_resources():
                 frame_to_save = shared_state["register_frame"]
                 if frame_to_save is not None:
                     try:
-                        h, w = frame_to_save.shape[:2]
-                        
                         # Gọi hàm Masking chung
                         _, target_bbox = get_largest_stranger_with_masking(frame_to_save, time.time())
                                 
                         if target_bbox is not None:
-                            # Bước 5: Nới rộng khung chữ nhật
-                            x1, y1, x2, y2 = map(int, target_bbox)
-                            margin = 40
-                            x1_ext = max(0, x1 - margin)
-                            y1_ext = max(0, y1 - margin)
-                            x2_ext = min(w, x2 + margin)
-                            y2_ext = min(h, y2 + margin)
-                            
+                            crop = face_scan.crop_for_registration(frame_to_save, target_bbox)
+
                             # 1. BẢN CHO AI: Chỉ cắt khuôn mặt lưu vào thư mục chuẩn
-                            face_crop = frame_to_save[y1_ext:y2_ext, x1_ext:x2_ext]
-                            if face_crop.size > 0:
+                            if crop["face_crop"].size > 0:
                                 ai_file = f"data/student_faces/student_{int(time.time())}.jpg"
-                                cv2.imwrite(ai_file, face_crop)
+                                cv2.imwrite(ai_file, crop["face_crop"])
                             
                             # 2. BẢN TOÀN CẢNH CHO BẠN: Vẽ khung xanh và lưu ra thư mục riêng
-                            save_frame = frame_to_save.copy()
-                            cv2.rectangle(save_frame, (x1_ext, y1_ext), (x2_ext, y2_ext), (0, 255, 0), 2)
-                            cv2.putText(save_frame, "REGISTERED", (x1_ext, y1_ext - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                            
                             import os
                             os.makedirs("data/registered_logs", exist_ok=True)
                             human_file = f"data/registered_logs/full_student_{int(time.time())}.jpg"
-                            cv2.imwrite(human_file, save_frame)
+                            cv2.imwrite(human_file, crop["full_view"])
                             
                             # Nạp lại Face Vector (AI lúc này chỉ đọc bản cắt trong student_faces)
                             face_model._load_database()
@@ -251,52 +207,15 @@ def init_system_resources():
             data = frame_q.get()
             if data is None: break
             frame, timestamp = data
-            # print(f"[DEBUG YOLO] Nhận frame từ queue: {timestamp}")
-            result_yolo = yolo_model.process_frame(frame, timestamp)
-            # [DEBUG 1] In ra toàn bộ kết quả thô trả về từ mô hình
-            # print(f"[DEBUG YOLO] Kết quả thô từ ObjectDetector: {result_yolo}")
-    
-            if result_yolo is not None:
-                detections = result_yolo.get("detections", [])
-                # 🛑 LỌC BỎ CÁC NHÃN LIÊN QUAN ĐẾN GIẤY / TÀI LIỆU CỦA MODEL CŨ
-                filtered_detections = []
-                for det in detections:
-                    label = str(det.get("label", "")).lower()
-                    # 1. Chặn các nhãn giấy/tài liệu nếu lọt vào đây
-                    if label in ["paper", "document", "cheatsheet", "sheet", "tai_lieu", "giay", "book"]:
-                        continue
-                  
-                    filtered_detections.append(det)
-                
-                result_yolo["detections"] = filtered_detections
-        
-                # [DEBUG 2] Kiểm tra số lượng vật thể bắt được
-                if len(filtered_detections) > 0:
-                    # print(f"[DEBUG YOLO] Đã bắt được {len(detections)} vật thể. Cập nhật status thành 'alert'.")
-                    result_yolo["status"] = "alert" # BẮT BUỘC: Đánh dấu là cảnh báo để hàm Main xử lý
-                    result_yolo["module"] = "object_detect"
-                    # Đẩy vào queue nếu chưa đầy
-                    if not result_q.full():
-                        result_q.put(result_yolo)
-                        # print("[DEBUG YOLO] Đã đẩy cảnh báo vật thể vào RESULT_QUEUE thành công.")
-                    else:
-                        print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
-                else:
-                    # Nếu sau khi lọc mà không còn gì, bỏ qua trạng thái alert để không gửi rác lên queue
-                    result_yolo = None
 
-            if result_yolo:
-                # Ép key "module" để WebRTC nhận diện luồng
-                if "module" not in result_yolo:
-                    result_yolo["module"] = "object_detect"
-                
-                # Logic xác định dị thường cho ObjectDetector: có vật thể trong list 'detections'
-                has_anomaly = len(result_yolo.get("detections", [])) > 0
-                
-                if has_anomaly:
-                    result_yolo["status"] = "alert"
-            
-            # ---> ĐỒNG BỘ: Luồng Camera giám sát giờ cũng dùng Masking để quét người lạ <---
+            # Vật cấm (đã lọc nhãn giấy trong object_scan) + người lạ (masking) đi qua queue chung
+            alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
+            if alert_object is not None:
+                if not result_q.full():
+                    result_q.put(alert_object)
+                else:
+                    print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
+
             result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
             if result_face and not result_q.full(): 
                 result_q.put(result_face)
@@ -310,9 +229,9 @@ def init_system_resources():
             person_detector = UltralyticsPersonDetector(
                 model_path=Path("weights/yolov8n.pt"),
                 confidence_threshold=0.55, 
-                device="cpu"
+                device=PERSON_DEVICE
             )
-            paper_object_detector = ObjectDetectModule(device="cpu")
+            paper_object_detector = ObjectDetectModule(device=PERSON_DEVICE)
             
             session_id = f"paper_session_{int(time.time())}"
             paper_pipeline = PaperCountPipeline(
@@ -348,9 +267,9 @@ def init_system_resources():
             # 1. Xử lý nút bấm ARM / DISARM
             try:
                 if shared_state.get("action_arm_paper"):
-                    state_info = paper_pipeline.arm_paper_monitoring(session_id)
-                    baseline_count = state_info.get('baseline_count', 0) if isinstance(state_info, dict) else 0
-                    shared_state["paper_status_msg"] = f"ARMED! Baseline: {baseline_count} giấy."
+                    shared_state["paper_status_msg"] = paper_scan.arm_baseline(
+                        paper_pipeline, session_id
+                    )["status_msg"]
                     shared_state["action_arm_paper"] = False
                     
                 if shared_state.get("action_disarm_paper"):
@@ -376,29 +295,11 @@ def init_system_resources():
                 result_paper = None
 
             # 3. Đẩy kết quả giấy & cảnh báo vào RESULT_QUEUE chung
-            if result_paper and not result_q.full():
-                alerts = result_paper.get("alerts", [])
-                papers = result_paper.get("papers", [])
-                # [DEBUG PAPER] Bắt bệnh lý do cảnh báo lạ
-                if alerts:
-                    print(f"[DEBUG PAPER] 🚨 Kích hoạt báo động! Danh sách lỗi: {alerts} | Số lượng tờ giấy trên bàn: {len(papers)}")
-    
-                    # Sửa lại 'label' thành string key và dùng .get() để an toàn tuyệt đối
-                    first_alert = alerts[0]
-                    if isinstance(first_alert, dict) and first_alert.get('label') == 'smartphone_detected':
-                        alerts = []
-                        print("[DEBUG PAPER] ⚠️ Cảnh báo: Phát hiện smartphone trên bàn (bị nhầm là giấy).")
-        
-                    for p in papers:
-                        print(f"   -> Giấy #{p.get('observation_index')}: Trạng thái = {p.get('status')}")
-                paper_data = {
-                    "module": "paper_count",
-                    "status": "alert" if result_paper.get("alerts") else "info",
-                    "timestamp": timestamp,
-                    "alerts": alerts,
-                    "papers": papers
-                }
-                result_q.put(paper_data)
+            alert_paper = paper_scan.build_alert(result_paper, timestamp)
+            if alert_paper is not None and not result_q.full():
+                if alert_paper["alerts"]:
+                    print(f"[DEBUG PAPER] 🚨 Kích hoạt báo động! Danh sách lỗi: {alert_paper['alerts']} | Số lượng tờ giấy trên bàn: {len(alert_paper['papers'])}")
+                result_q.put(alert_paper)
 
     # LUỒNG 2: Xử lý nhẹ (MediaPipe PoseGaze) - Chạy siêu tốc
     def fast_gaze_thread():
@@ -407,54 +308,12 @@ def init_system_resources():
         # 1. Khởi tạo PoseGaze gốc
         gaze_model = PoseGazeDetector()
         shared_state["gaze_model"] = gaze_model
-        # 2. Khởi tạo Tracking & Holistic từ test_webcam.py (Dùng session động để tránh trùng lặp)
-        session_id = f"gaze_session_{int(time.time())}"
-        # 2. Khởi tạo Tracking & Holistic từ test_webcam.py
-        tracking_module = PersonTrackingModule(
-            PersonTrackingConfig(
-                session_id=session_id,
-                confidence_threshold=0.5,
-                device="cpu",
-                max_tracks=2,
-            )
-        )
-        # Thêm dòng này để xử lý an toàn nếu manager giữ lại session cũ
-        try:
-            tracking_module.manager.create_session(session_id, restore_existing=True)
-        except Exception:
-            pass
-        shared_state["tracking_manager"] = tracking_module.manager
-        
-        holistic = HolisticLandmarkExtractor(
-            static_image_mode=False,
-            model_complexity=2,
-            smooth_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-            soft_landmark_confidence=0.2,
-            crop_padding=0.15,
-            face_hold_frames=3,
-        )
-        holistic.__enter__()
-        shared_state["holistic_model"] = holistic
 
-        # 3. Khởi tạo Causal Classifier (c2: Exchange, c3: Looking, suspicious_activity)
-        live_classifier = None
-        try:
-            class ArgsMock:
-                causal_model_dir = DEFAULT_ACTION_ARTIFACTS["extended"]
-                xgboost_model_dir = DEFAULT_ACTION_ARTIFACTS["extended"]
-                xgboost_device = "cpu"
-                actions = "c2,c3,suspicious_activity"
-                live_pair = ["student_01:student_02"]
-                student_prefix = "student_"
-
-            load_res = create_live_classifier(ArgsMock(), clip_id=f"webrtc_{session_id}", structured=True)
-            live_classifier = load_res.classifier
-            shared_state["live_classifier"] = live_classifier
-            print("[INFO] ✅ Nạp thành công Causal Action Classifier (Exchange, Looking,...)")
-        except Exception as e:
-            print(f"[WARNING] Không thể nạp Causal Action Classifier: {e}")
+        # 2+3. Tracking + Holistic + Causal Classifier (c2 Exchange, c3 Looking, suspicious)
+        stack = gaze_scan.build_stack(device=PERSON_DEVICE, live_pair=["student_01:student_02"])
+        shared_state["tracking_manager"] = stack.manager
+        shared_state["holistic_model"] = stack.holistic
+        shared_state["live_classifier"] = stack.live_classifier
 
         gaze_ready.set()
         print("[INFO] ✅ Fast Gaze Thread (Nâng cao) đã nạp xong!")
@@ -472,53 +331,9 @@ def init_system_resources():
                 result_q.put(result_gaze)
 
             # --- Step B: Chạy Tracking & Holistic & Causal Classifier (Exchange, Looking) ---
-            try:
-                packet = tracking_module.process_frame(frame)
-                
-                # Tự động gán student_id nếu chưa có
-                for track in packet.tracks:
-                    if track.is_present and not track.student_id:
-                        packet = tracking_module.manager.assign_student(
-                            session_id,
-                            track_id=track.track_id,
-                            student_id=f"student_{track.track_id:02d}",
-                        )
-                
-                # Trích xuất Holistic Landmarks
-                holistic_results = holistic.process_packet(frame, packet)
-                labels = {
-                    "c2": "EXCHANGE (Trao đổi)", 
-                    "c3": "LOOKING (Quay ngó)", 
-                    "suspicious_activity": "HOẠT ĐỘNG BẤT THƯỜNG"
-                }
-                # Cập nhật phân loại hành vi
-                if live_classifier is not None:
-                    classifications = live_classifier.update(
-                        frame_index=packet.frame_id,
-                        timestamp_ms=packet.timestamp_ms,
-                        results=holistic_results,
-                    )
-                    current_frame_actors = set(classifications.keys())
-                    # Bắn cảnh báo nếu phát hiện hành vi gian lận c2 (Exchange), c3 (Looking), v.v.
-                    for actor_id, clf in classifications.items():
-                        pred_class = clf.get("predicted_class", "c5")
-                        if pred_class in ["c2", "c3", "suspicious_activity"]:
-                            
-                            action_label = labels.get(pred_class, pred_class.upper())
-
-                            c2_c3_alert = {
-                                "module": "pose_gaze",
-                                "status": "warning",
-                                "timestamp": timestamp,
-                                "details": {
-                                    "action": f"{actor_id}: {action_label}"
-                                }
-                            }
-                            if not result_q.full():
-                                result_q.put(c2_c3_alert)
-
-            except Exception as ex:
-                pass  # Bỏ qua lỗi suy luận nhỏ để giữ luồng realtime
+            for c2_c3_alert in gaze_scan.scan_frame(stack, frame, timestamp):
+                if not result_q.full():
+                    result_q.put(c2_c3_alert)
 
     # --- LUỒNG AI ÂM THANH (Dùng PyAudio độc lập) ---
     def audio_ai_thread():
@@ -542,24 +357,13 @@ def init_system_resources():
                 # print("[DEBUG AUDIO] 🎙️ VAD đã cắt được câu! Đang đẩy vào AudioPipeline...")
 
                 res = original_pipeline(*args, **kwargs)
-                # In toàn bộ kết quả thô trả về từ PhoWhisper & PhoBERT
-                # print(f"[DEBUG AUDIO] 🧠 Kết quả trả về từ Backend: {res}")
 
-                if res:
-                    transcription = res.get("transcription", "").strip()
-                    if transcription:
-                        if not result_q.full():
-                            res["module"] = "audio_phobert_pipeline"
-                            result_q.put(res)
-                            # print(f"[DEBUG AUDIO] 📤 Đã đẩy kết quả transcription ('{transcription}') vào hàng đợi UI thành công.")
-                        else:
-                            print("[DEBUG AUDIO] ⚠️ RESULT_QUEUE đã đầy, rớt gói tin âm thanh!")
+                alert_audio = audio_scan.to_alert(res)
+                if alert_audio is not None:
+                    if not result_q.full():
+                        result_q.put(alert_audio)
                     else:
-                        # print("[DEBUG AUDIO] ⚠️ VAD cắt nhầm tạp âm (Transcription bị rỗng ''), bỏ qua không đẩy lên UI.")
-                        pass
-                else:
-                    # print("[DEBUG AUDIO] ⚠️ AudioPipeline trả về None.")
-                    pass
+                        print("[DEBUG AUDIO] ⚠️ RESULT_QUEUE đã đầy, rớt gói tin âm thanh!")
                     
                 return res
                 
@@ -600,89 +404,12 @@ FPS_SKIP = 1
 # 2. HÀM VẼ GIAO DIỆN (ĐƯỢC GỌI TRONG WEBRTC)
 # ==========================================
 def draw_warning_overlays(frame):
-    current_time = time.time()
-    
-    # 1. Vẽ Skeleton 3D trước (để nó nằm dưới)
     gaze_ai = SHARED_STATE.get("gaze_model")
-    if gaze_ai and hasattr(gaze_ai, 'draw_skeleton'):
-        gaze_ai.draw_skeleton(frame)
-    # 1b. THÊM MỚI: Vẽ Holistic Landmarks nếu có
-    holistic_ai = SHARED_STATE.get("holistic_model")
-    tracking_mgr = SHARED_STATE.get("tracking_manager")
-    if holistic_ai and hasattr(holistic_ai, "draw_results"):
-        # Lấy kết quả holistic gần nhất để vẽ lên khung hình
-        pass # holistic_ai tự quản lý vẽ khi được gọi
-    if not ACTIVE_OVERLAYS: 
-        return frame
-    
-    # 2. Vẽ Bounding Box Cảnh báo (nằm trên)
     with OVERLAY_LOCK:
-        valid_overlays = [item for item in ACTIVE_OVERLAYS if current_time - item.get('display_timestamp', current_time) <= OVERLAY_TTL]
-        ACTIVE_OVERLAYS.clear()
-        ACTIVE_OVERLAYS.extend(valid_overlays)
-        
-        for alert in ACTIVE_OVERLAYS:
-            module = alert.get("module", "")
-            details = alert.get("details", {})
-            
-            if module == "object_detect":
-                # Lấy danh sách vật thể chuẩn từ ObjectDetector
-                detections = alert.get("detections", [])
-
-                # [DEBUG 4] Báo cáo số lượng bounding box đang được OpenCV vẽ
-                # if len(detections) > 0:
-                #     print(f"[DEBUG DRAW] Đang tiến hành vẽ {len(detections)} khung (Bounding Box) lên màn hình...")
-
-                for det in detections:
-                    bbox = det.get("bbox")
-                    label = det.get("label", "VAT CAM")
-                    conf = det.get("confidence", 0.0)
-                    # [DEBUG 5] Kiểm tra xem tọa độ bbox có bị rỗng hay sai định dạng không
-                    # print(f"[DEBUG DRAW] Tọa độ vẽ: {bbox}, Nhãn: {label}, Confidence: {conf}")
-                    
-                    if isinstance(label, str):
-                        label = label.upper()
-
-                    if bbox is not None and len(bbox) == 4:
-                        x1, y1, x2, y2 = map(int, bbox)
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                        cv2.putText(frame, label, (x1 + 5, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-            elif module == "face_verify":
-                bbox = details.get("unauthorized_bbox")
-                # print(f"[DEBUG DRAW] Đang vẽ khung nhận diện người lạ với bbox: {bbox}")
-                if bbox is not None and len(bbox) == 4:
-                    x1, y1, x2, y2 = map(int, bbox)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 140, 255), 2)
-                    cv2.putText(frame, "NGUOI LA", (x1 + 5, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-            elif module == "pose_gaze":
-                action = details.get("action", "VI PHAM TU THE").upper()
-                cv2.rectangle(frame, (0, frame.shape[0] - 40), (frame.shape[1], frame.shape[0]), (0, 0, 200), -1)
-                cv2.putText(frame, f"[CANH BAO TU THE]: {action}", (20, frame.shape[0] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-            # =========================================================
-            # ---> BẮT ĐẦU CHÈN LOGIC 5: VẼ KHUNG GIẤY Ở ĐÂY <---
-            # =========================================================
-            elif module == "paper_count" and alert.get("papers"):
-                for paper in alert["papers"]:
-                    x1, y1, x2, y2 = paper["bbox_xyxy"]
-                    status_paper = paper["status"]
-                    
-                    # Phân biệt Baseline (màu Vàng/Cyan) và Cheatsheet (Màu Đỏ)
-                    is_suspicious = (status_paper == "suspicious_new_paper")
-                    color = (0, 0, 255) if is_suspicious else (0, 255, 255)
-                    
-                    # Nhãn text
-                    label = "CHEAT SHEET (NEW)" if is_suspicious else f"Paper #{paper.get('observation_index', '?')}"
-                    
-                    # Vẽ Box và Text
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
-                    cv2.putText(frame, label, (x1, max(18, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-            # =========================================================
-            # ---> KẾT THÚC LOGIC 5 <---
-            # =========================================================
-    return frame
+        current_time = time.time()
+        events.expire_overlays(ACTIVE_OVERLAYS, current_time, OVERLAY_TTL)
+        snapshot = list(ACTIVE_OVERLAYS)
+    return overlay_draw.draw(frame, snapshot, gaze_model=gaze_ai)
 
 # ==========================================
 # 3. CALLBACK VIDEO XỬ LÝ FRAME WEBRTC
@@ -700,89 +427,19 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
             alert = RESULT_QUEUE.get_nowait()
 
             module_name = alert.get("module", "")
-            status = alert.get("status")
             timestamp = alert.get("timestamp", current_time)
-            details = alert.get("details", {})
-            # [DEBUG 3] In ra xem Main Thread có bắt được alert từ YOLO không
-            # if module_name == "object_detect":
-            #     print(f"[DEBUG MAIN] Nhận được từ Queue - Module: {module_name}, Status: {status}, Detections: {alert.get('detections')}")
-            # CẬP NHẬT FIX: Đóng dấu thời gian lúc luồng main NHẬN ĐƯỢC cảnh báo
-            alert['display_timestamp'] = time.time()
+            alert['display_timestamp'] = current_time
+
+            log_msg = events.to_log_line(alert, now=current_time)
 
             if module_name == "system":
-                SHARED_STATE["logs"].insert(0, f"**[{time.strftime('%H:%M:%S')}]** {alert.get('message')}")
+                if log_msg:
+                    SHARED_STATE["logs"].insert(0, log_msg)
                 continue
 
-            alert['display_timestamp'] = current_time
-            time_str = time.strftime('%H:%M:%S', time.localtime(timestamp))
-            
             with OVERLAY_LOCK:
-                filtered_overlays = [a for a in ACTIVE_OVERLAYS if not (a.get("module") == module_name and a.get("timestamp", 0) < timestamp)]
-                ACTIVE_OVERLAYS.clear()
-                ACTIVE_OVERLAYS.extend(filtered_overlays)
-                ACTIVE_OVERLAYS.append(alert)
-                
-            # Tạo log hiển thị bên cột phải
-            log_msg = ""
-            status = alert.get("status", "")
-            # print(f"[DEBUG MAIN] Nhận alert từ queue - Module: {module_name}, Status: {status}")
-            if module_name == "face_verify" and status == "alert":
-                log_msg = f"**[{time_str}]** 🕵️‍♂️ PHÁT HIỆN NGƯỜI LẠ!"
-                # print(f"[DEBUG MAIN] 🚨 Kích hoạt log 'PHÁT HIỆN NGƯỜI LẠ' lên giao diện lịch sử!")
-            elif module_name == "object_detect" and status == "alert":
-                # 🔥 TÁCH RIÊNG LOG VẬT CẤM (SMARTPHONE, EARPHONE,...)
-                detected_labels = [det.get("label", "vật thể") for det in alert.get("detections", [])]
-                label_str = ", ".join(detected_labels).upper()
-                log_msg = f"**[{time_str}]** <span style='color:red'>📱 PHÁT HIỆN VẬT CẤM: {label_str}</span>"
-            elif module_name == "paper_count" and status == "alert":
-                alerts = alert.get("alerts", [])
-                papers = alert.get("papers", [])
-                
-                has_true_paper_violation = False
-                detected_device_label = ""
-                
-                # 1. Kiểm tra xem trong danh sách papers có tờ nào là phao mới (suspicious_new_paper) không
-                for p in papers:
-                    if p.get("status") == "suspicious_new_paper":
-                        has_true_paper_violation = True
-                        
-                # 2. Kiểm tra chi tiết từng alert bên trong
-                for a in alerts:
-                    label = str(a.get("label", "")).lower()
-                    source = str(a.get("source", "")).lower()
-                    
-                    if "smartphone" in label or "phone" in label or "device" in label or "object_detect" in source:
-                        detected_device_label = label.upper() if label else "SMARTPHONE"
-                    if "paper" in label or "cheat" in label or "sheet" in label or "monitor" in source:
-                        has_true_paper_violation = True
+                events.prune_overlays(ACTIVE_OVERLAYS, alert)
 
-                # 3. Phân tách rõ ràng log hiển thị dựa trên bản chất sự thật
-                if detected_device_label and not has_true_paper_violation:
-                    # Nếu thực chất là do object detector bắt nhầm điện thoại
-                    pass
-                    # log_msg = f"**[{time_str}]** <span style='color:red'>📱 PHÁT HIỆN VẬT CẤM 2: {detected_device_label}</span>"
-                elif has_true_paper_violation:
-                    # Chỉ khi thực sự có vi phạm liên quan đến giấy/phao thi mới báo cheatsheet
-                    log_msg = f"**[{time_str}]** <span style='color:red'>📄 PHÁT HIỆN TÀI LIỆU LẠ (CHEATSHEET)!</span>"
-                # else:
-                #     # Dự phòng nếu có alert khác chung chung
-                #     log_msg = f"**[{time_str}]** <span style='color:red'>⚠️ CẢNH BÁO BẤT THƯỜNG TRÊN BÀN THI</span>"
-            elif module_name == "pose_gaze" and status == "warning":
-                action_text = details.get('action', 'Bất thường')
-                if "EXCHANGE" in action_text or "LOOKING" in action_text or "HOẠT ĐỘNG BẤT THƯỜNG" in action_text:
-                    log_msg = f"**[{time_str}]** <span style='color:red'>🚨 GIAN LẬN HÀNH VI: {action_text}</span>"
-                else:
-                    log_msg = f"**[{time_str}]** ⚠️ TƯ THẾ: {action_text}"
-            elif "audio" in module_name or "transcription" in alert or "transcription" in details:
-                transcription = alert.get("transcription", details.get("transcription", "")).strip()
-                if transcription:  
-                    risk_level = str(alert.get('risk', '')).lower()
-                    audio_status = str(alert.get('status', '')).lower()
-                    if risk_level in ['cheating', 'high', 'medium'] or audio_status == 'alert':
-                        log_msg = f"**[{time_str}]** <span style='color:red'>🚨 GIAN LẬN ÂM THANH: '{transcription}'</span>"
-                    else:
-                        log_msg = f"**[{time_str}]** 🎙️ Hội thoại: '{transcription}'"
-            
             if log_msg:
                 SHARED_STATE["logs"].insert(0, log_msg)
                 if len(SHARED_STATE["logs"]) > 20:
@@ -848,7 +505,7 @@ with col1:
     # # Hiển thị trạng thái đếm giấy hiện tại
     # st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
     # Cấu hình WebRTC (Tắt Audio của WebRTC vì Audio đã chạy độc lập qua PyAudio)
-    webrtc_streamer(
+    webrtc_ctx = webrtc_streamer(
         key="exam-proctor",
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
@@ -892,3 +549,143 @@ with col2:
     
     # Nút Refresh Log bằng tay (vì WebRTC chạy ngầm, giao diện cần trigger để hiện Log mới)
     # st.button("🔄 Làm mới Log", use_container_width=True)
+
+# ==========================================
+# 5. CHẠY OFFLINE TRÊN MỘT FILE VIDEO (không cần camera/micro)
+# ==========================================
+OFFLINE_MODULES = ["object", "face", "paper", "pose", "action", "audio"]
+OFFLINE_UPLOAD_DIR = Path("offline_out/_uploads")
+# Mỗi lần Streamlit rerun là giành GIL với luồng suy luận: đo trên iGPU Arc, refresh 1.2s làm mỗi frame
+# lâu gấp ~3 lần (face 0.35s -> 1.20s); 4s thì trở lại bằng CLI chạy một mình.
+OFFLINE_REFRESH_MS = 4000
+
+
+def _offline_input_path(uploaded, typed_path: str) -> Optional[Path]:
+    """`run_offline` cần đường dẫn thật: file upload được ghi ra đĩa, đường dẫn thì dùng thẳng."""
+    if uploaded is not None:
+        OFFLINE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        target = OFFLINE_UPLOAD_DIR / f"{uploaded.size}_{uploaded.name}"
+        if not target.exists():
+            with open(target, "wb") as fh:
+                fh.write(uploaded.getbuffer())
+        return target
+    typed_path = typed_path.strip()
+    return Path(typed_path).expanduser() if typed_path else None
+
+
+def _render_offline_result(snap: dict) -> None:
+    """Video phát trực tiếp trong trình duyệt + tóm tắt theo từng actor + nút tải kết quả."""
+    if snap["playback"]:
+        st.markdown("#### 📺 Video kết quả (H.264, phát ngay tại đây)")
+        st.video(snap["playback"])
+    else:
+        st.warning("Không tạo được bản H.264 (thiếu ffmpeg?) — tải `annotated.mp4` bên dưới và mở bằng VLC.")
+
+    report = snap["report"] or {}
+    by_module = report.get("alerts_by_module", {})
+    actors = report.get("actors", {})
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Frame đã xử lý", report.get("frames_processed", snap["frame_id"]))
+    m2.metric("Sự kiện ghi nhận", sum(by_module.values()))
+    m3.metric("Thời gian xử lý", f"{report.get('wall_time_s', snap['elapsed'])}s")
+
+    if by_module:
+        st.markdown("**Theo module:** " + " · ".join(f"`{k}` {v}" for k, v in sorted(by_module.items())))
+    if actors:
+        st.markdown("**Theo actor** (điểm max kể cả khi kết luận `c5`):")
+        for actor_id, info in sorted(actors.items()):
+            scores = ", ".join(f"{k.replace('_score', '')}={v}" for k, v in (info.get("max_score") or {}).items())
+            st.text(f"{actor_id}: class={info.get('final_class') or info.get('predicted_class')} "
+                    f"frames={info.get('frames')} alerts={info.get('alerts')} max({scores})")
+
+    st.markdown("**Tải kết quả**")
+    d1, d2, d3, d4 = st.columns(4)
+    out_dir = Path(snap["out_dir"])
+    for col, name in ((d1, "playback_h264.mp4"), (d2, "log.txt"), (d3, "report.json"), (d4, "events.jsonl")):
+        path = out_dir / name
+        if path.exists():
+            with open(path, "rb") as fh:
+                col.download_button(f"⬇ {name}", fh.read(), file_name=name, use_container_width=True)
+
+
+with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay trong trình duyệt", expanded=False):
+    st.caption("Dùng đúng bộ phát hiện của camera (`backend/ai_services/pipeline/`): vừa chạy vừa xem khung hình "
+               "đã burn cảnh báo, xong thì nhận video phát trực tiếp + `events.jsonl` / `report.json`. "
+               "Quá trình chạy nằm ở luồng nền nên giao diện không bị đơ.")
+
+    job = st.session_state.get("offline_job")
+    busy = bool(job and job.running)
+    camera_on = bool(webrtc_ctx is not None and webrtc_ctx.state and webrtc_ctx.state.playing)
+
+    if camera_on:
+        st.error("⛔ Camera realtime đang phát — bấm STOP trước khi chạy offline. "
+                 "Luồng offline nạp một bộ model RIÊNG nên chạy cả hai sẽ nhân đôi RAM/iGPU.")
+
+    src_mode = st.radio("Nguồn file", ["Đường dẫn trên máy", "Tải file lên"],
+                        horizontal=True, key="off_src", disabled=busy)
+    if src_mode == "Tải file lên":
+        uploaded = st.file_uploader("Video (.mp4 / .MOV / .mkv / .avi) — Streamlit chặn ở 200MB/lần",
+                                    type=["mp4", "mov", "mkv", "avi", "m4v"], key="off_file")
+        typed_path = ""
+    else:
+        uploaded = None
+        typed_path = st.text_input("Đường dẫn file trên máy chạy Streamlit",
+                                   value="data/IMG_7817.MOV", key="off_path")
+    video_path = _offline_input_path(uploaded, typed_path)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        max_seconds = st.number_input("Chỉ chạy N giây đầu (0 = cả file)", 0.0, 3600.0, 20.0, 5.0,
+                                 key="off_maxs")
+        setup_seconds = st.number_input("ARM baseline giấy sau (giây)", 0.0, 300.0, 5.0, 1.0, key="off_setup")
+    with c2:
+        stride = st.slider("Stride nặng (YOLO/mặt/pose/action) — lớn = nhanh", 1, 8, 3, key="off_stride")
+        stride_paper = st.slider("Stride giấy", 1, 10, 5, key="off_stride_paper")
+    with c3:
+        modules = st.multiselect("Module bật", OFFLINE_MODULES, default=OFFLINE_MODULES, key="off_modules")
+        ttl = st.number_input("TTL overlay (giây video)", 0.5, 10.0, 1.5, 0.5, key="off_ttl")
+
+    if video_path is None:
+        start_enabled = False
+        st.info("Chọn file hoặc nhập đường dẫn để bắt đầu.")
+    elif not video_path.exists():
+        start_enabled = False
+        st.error(f"Không thấy file: {video_path}")
+    elif not modules:
+        start_enabled = False
+        st.warning("Chọn ít nhất một module phát hiện.")
+    else:
+        start_enabled = True
+
+    if st.button("▶ Bắt đầu chạy offline", type="primary", key="off_start",
+                 disabled=(busy or camera_on or not start_enabled)):
+        out_dir = Path("offline_out") / f"ui_{video_path.stem}_{int(time.time())}"
+        argv = [str(video_path), "--output", str(out_dir),
+                "--max-seconds", str(max_seconds), "--setup-seconds", str(setup_seconds), "--ttl", str(ttl),
+                "--stride-heavy", str(stride), "--stride-paper", str(stride_paper),
+                "--stride-pose", str(stride), "--stride-action", str(stride)]
+        argv += ["--modules", ",".join(modules)]
+        st.session_state.offline_job = OfflineJob(argv, out_dir, video_path).start()
+        st.rerun()
+
+    job = st.session_state.get("offline_job")
+    if job is not None:
+        snap = job.snapshot()
+        if snap["status"] == "running":
+            text = f"Frame {snap['frame_id']}/{snap['total_frames'] or '?'} · {snap['alerts']} cảnh báo"
+            if snap["detail"]:
+                text += f" · {snap['detail']}"
+            st.progress(snap["fraction"], text=text)
+            if snap["preview"]:
+                st.image(snap["preview"], caption="Khung hình offline mới nhất (đã burn cảnh báo)",
+                         use_container_width=True)
+            if snap["logs"]:
+                st.markdown("**Cảnh báo mới nhất**")
+                for line in snap["logs"]:
+                    st.text(overlay_draw.plain_text(line))
+            st_autorefresh(interval=OFFLINE_REFRESH_MS, key="off_refresh")
+        elif snap["status"] == "error":
+            st.error(f"Lỗi khi chạy offline: {snap['error']}")
+            st.caption(f"Log chi tiết trong {snap['out_dir']}")
+        elif snap["status"] == "done":
+            _render_offline_result(snap)
