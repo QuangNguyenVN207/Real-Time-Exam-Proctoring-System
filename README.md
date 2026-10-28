@@ -20,19 +20,23 @@ WebRTC. Không còn FastAPI backend, không có `frontend/`.
 | Chạy 1 file video → video burn cảnh báo | §11 (`run_offline.py`) hoặc khối 🎬 cuối trang — §11.4 |
 | Chọn thiết bị / model | §5 (theo `select_device().kind`, **không** theo OS) |
 | Máy Windows + NVIDIA + WSL2 cần thêm gì | §5.1 |
+| Biết module nào đang chậm / rớt frame | hộp **🩺 Sức khoẻ module** trên UI (§7) hoặc `scripts/replay_realtime.py` (§8.2) |
 
 **Số đã đo trên máy tham chiếu (Intel Core Ultra 7 155H + iGPU Arc, Ubuntu, Python 3.12.3,
 openvino 2026.3.0) — dùng làm mốc, đừng tốn 4 phút đo lại:**
 
 | Đại lượng | Giá trị đo được |
 | :-- | :-- |
-| Thời gian một lần chạy module (stride 3) | vật cấm `0.040s` · mặt `0.345s` · pose `0.324s` · hành vi `0.345s` |
+| Thời gian một lần chạy module (offline, stride 3, đo 2026-10-28) | vật cấm `0.035s` · mặt `0.155s` · hành vi `0.186s` (module `pose` đã bỏ — §9 mục 1) |
 | Nạp model | app `11.7–13.5s` lần đầu, `5–8s` khi OS đã cache file model; riêng audio (VAD+PhoWhisper+PhoBERT) `8.4s` |
-| Thông lượng offline | 16.8s video (503 frame) hết `225.8s` với stride 3/5/3/3 ⇒ **~13× realtime** |
-| Sức chứa realtime (suy ra, **chưa đo qua camera**) | ở `stride=1` như app hiện tại, riêng thread nặng ~`0.39s/frame` (~2.6fps) và thread gaze ~`0.67s/frame` (~1.5fps) ⇒ không theo kịp 30fps trên iGPU này. Đường đi WebRTC thật vẫn chưa đo vì cần camera người (§8) |
+| Thông lượng offline | 16.8s video (503 frame) hết `104.1s` với stride 3/5/3/3 ⇒ **~6.2× thời lượng video** (trước tối ưu: `225.8s`) |
+| Sức chứa realtime (replay 480 frame @30fps, **bật cả 4 module**) | callback p50 `4.5ms` (28.6fps vào) · mặt p50 `251ms` · YOLO `56ms` · giấy `587ms` · hành vi `275ms`; rớt frame: gaze `426/480`, vision `433/480`, giấy `60/96`. Camera thật vẫn chưa đo (§8) |
+| Chạy lại phép đo | `scripts/replay_realtime.py <video>` — không cần camera, dựng lại đúng 4 luồng + queue `maxsize=2` (§8.2) |
+| Video thứ hai (2026-10-28) | `data/WIN_20260802_12_05_12_Pro.mp4` 1920×1080 @30fps, 532 frame: offline **145.5s** (stride 3/5/3/3), `face` 0.244s · `action` 0.306s; có **28 alert `pose_gaze`** |
 | Chi phí đổi sang H.264 cho UI | `3.7s`, 23.5MB → 5.0MB |
-| Ngưỡng phải nhớ | `OVERLAY_TTL=1.5s` · queue worker `maxsize=2` (rơi frame cũ nhất) · `RESULT_QUEUE maxsize=100` · sidebar giữ 20 dòng · bảng burn vào video giữ 8 dòng |
+| Ngưỡng phải nhớ | `OVERLAY_TTL=1.5s` · `LOG_COOLDOWN=2s` (gộp dòng log trùng) · queue worker `maxsize=2` (rơi frame cũ nhất) · `RESULT_QUEUE maxsize=100` · sidebar giữ 20 dòng · bảng burn vào video giữ 8 dòng |
 | Causal classifier | cửa sổ **24** landmark frame/actor, warmup **4** ⇒ tăng stride `action` làm **đổi điểm** c2/c3, không chỉ đổi tốc độ |
+| Tính tái lập của điểm hành vi | **Không** tái lập giữa 2 lần chạy cùng code: đo 2026-10-28 hai lần liền cho `c2` 0.6908 vs 0.6952, `suspicious` 0.8584 vs 0.8149 ⇒ chỉ A/B bằng **quyết định/cảnh báo + thời gian**, đừng A/B bằng điểm |
 
 **Bẫy đã trả giá — đọc trước khi sửa:**
 - `annotated.mp4` là mpeg4 Simple Profile ⇒ trình duyệt không phát được; UI phải tạo `playback_h264.mp4` (§11.4).
@@ -41,10 +45,20 @@ openvino 2026.3.0) — dùng làm mốc, đừng tốn 4 phút đo lại:**
 - `SuppressOutput` / `suppress_alsa_logs` dup2 fd 1&2 của **cả tiến trình** lúc nạp model ⇒ mất vài dòng log
   "✅ đã nạp xong" của thread khác; thêm `PYTHONUNBUFFERED=1` khi cần xem log.
 - `alerts_by_module` / `alerts_by_actor` đếm cả frame `status="info"` của pipeline giấy (§9 mục 11).
-- `PoseGazeDetector` và `gaze_scan` là **hai stack song song chạy trên cùng một frame** (§9 mục 1) — cố ý,
-  để offline so sánh được với realtime, không phải bug mới phát sinh.
+- **Chỉ còn MỘT stack hành vi** (`pipeline/gaze_scan.py`). `PoseGazeDetector` đã bị bỏ khỏi runtime ngày
+  2026-10-28 (§9 mục 1); nó chỉ còn trong `app_ubuntu.py`, `app_win.py`, `backend/main.py` — các file legacy
+  **không phải entry point**.
+- `face_verify` bản cũ (tô đen mặt khác rồi detect lại) cho embedding lệch hẳn so với detect một lần: trên
+  `data/IMG_7817.MOV` (cả 2 actor đều đã đăng ký) nó bắn **51 cảnh báo giả**, bản detect-once bắn **41**
+  và nhanh **2.68×** (§9 mục 14). Đừng "khôi phục masking" mà không đo lại.
 - Video test `data/IMG_7817.MOV` không có điện thoại/tai nghe và cả hai actor đều bị kết `c5` dù
-  `c2_score` lên tới 0.9776 ⇒ **không có cảnh báo hành vi là chuyện bình thường**, đừng đi tìm lỗi wiring (§8).
+  `c2_score` lên tới 0.61–0.98 (thay đổi mỗi lần chạy) ⇒ **không có cảnh báo hành vi là chuyện bình thường**,
+  đừng đi tìm lỗi wiring (§8). Video `data/WIN_20260802_12_05_12_Pro.mp4` thì **có** cảnh báo hành vi
+  (28 `pose_gaze` cho `student_01`) — dùng nó khi cần test nhánh cảnh báo.
+- **Job offline phải chạy ở tiến trình riêng.** Chạy trong tiến trình Streamlit (bản trước 2026-10-28) là
+  nạp bộ model thứ hai vào cùng process đang giữ ~3GB → cạn RAM, `oom_kill_process` giết cả app/IDE (§11.4).
+- **TTL overlay không liên quan tới RAM hay tốc độ**: `--ttl 0.5` và `1.5` cho cùng thời gian (131.1s vs
+  130.0s, overlay tối đa 2). Muốn giảm RAM thì giảm module/bớt giây video, không phải chỉnh TTL.
 
 **Không có trong git, phải chuyển tay khi clone:** `stage6_bundle_exact/` (18MB artifact XGBoost causal —
 thiếu thì module `action` chỉ in một dòng `[WARNING]` rồi **im lặng 0 cảnh báo**), `data/student_faces/`,
@@ -86,9 +100,9 @@ xem [§11](#11-luồng-offline-run_offlinepy)).
 Browser (getUserMedia)
    │  WebRTC SENDRECV, audio:False
    ▼
-video_frame_callback()                 app_webrtc.py:422   (chạy trên event loop, PHẢI nhanh)
+video_frame_callback()                 app_webrtc.py:449   (chạy trên event loop, PHẢI nhanh)
    │  1. av.VideoFrame -> numpy BGR
-   │  2. xúc RESULT_QUEUE -> ACTIVE_OVERLAYS + SHARED_STATE["logs"]
+   │  2. xúc RESULT_QUEUE -> ACTIVE_OVERLAYS + SHARED_STATE["logs"]  (gộp dòng trùng bằng LOG_COOLDOWN)
    │  3. bơm frame copy vào 3 queue theo stride
    │  4. draw_warning_overlays() -> trả frame đã vẽ về browser
    ▼
@@ -96,17 +110,18 @@ video_frame_callback()                 app_webrtc.py:422   (chạy trên event l
 ```
 
 Frame luôn **bỏ frame cũ nhất** khi queue đầy (`maxsize=2` + `get_nowait()` trước khi `put`) — ưu tiên
-độ trễ thấp hơn là không rớt frame.
+độ trễ thấp hơn là không rớt frame. Mọi lần rớt được đếm vào `METRICS` và hiện ở bảng
+"🩺 Sức khoẻ module" (cột **rớt**).
 
-### 2.2 Phân phối frame (`app_webrtc.py:459-474`)
+### 2.2 Phân phối frame (`app_webrtc.py:487-509`)
 
 | Queue | Stride | Việc làm |
 | :-- | :-- | :-- |
-| `GAZE_QUEUE` | **mọi frame** (`% 1`) | pose/gaze + tracking + holistic + causal classifier |
+| `GAZE_QUEUE` | **mọi frame** (`% 1`) | tracking + holistic + causal classifier |
 | `PAPER_QUEUE` | mỗi 5 frame | đếm giấy theo người |
 | `FRAME_QUEUE` | mỗi `FPS_SKIP = 1` frame → **mọi frame** | YOLO vật cấm + ArcFace verify |
 
-`FPS_SKIP = 1` (`app_webrtc.py:406`) đang ghi đè mất `settings.object_detect_every_n_frames = 2`
+`FPS_SKIP = 1` (`app_webrtc.py:413`) đang ghi đè mất `settings.object_detect_every_n_frames = 2`
 (`backend/core/config.py:44`) ở tầng ứng dụng — và cũng khác luôn `FPS_SKIP = 5` khai báo ở
 `config.py:7` (hằng số trùng tên nhưng app không import). Đây là điểm nóng nhất về hiệu năng của hệ thống.
 
@@ -114,15 +129,15 @@ Frame luôn **bỏ frame cũ nhất** khi queue đầy (`maxsize=2` + `get_nowai
 
 Tất cả chạy trong `@st.cache_resource` → **chỉ khởi tạo một lần cho cả tiến trình**. Bốn `Event`
 (`vision_ready`, `paper_ready`, `audio_ready`, `gaze_ready`) được `wait()` trước khi hàm trả về
-(`app_webrtc.py:396-399`), nghĩa là **trang web bị block ở trạng thái "Running…" cho tới khi cả 4 model
+(`app_webrtc.py:405-408`), nghĩa là **trang web bị block ở trạng thái "Running…" cho tới khi cả 4 model
 nạp xong** (vài phút ở lần chạy đầu, xem §8).
 
 | Luồng | Dòng | Nạp gì | Đẩy vào `RESULT_QUEUE` |
 | :-- | :-- | :-- | :-- |
-| `heavy_vision_thread` | `:125` | `ObjectDetector` + `FaceVerifier` | `module="object_detect"`, `module="face_verify"` |
-| `paper_vision_thread` | `:206` | `UltralyticsPersonDetector` + `ObjectDetectModule` + `PaperCountPipeline` | `module="paper_count"` |
-| `fast_gaze_thread` | `:285` | `PersonTrackingModule` + `HolisticLandmarkExtractor` + causal classifier (`gaze_scan.build_stack`) + `PoseGazeDetector` | `module="pose_gaze"` |
-| `audio_ai_thread` | `:319` | `RealtimeAudioWorker` (PyAudio/sounddevice + VAD + PhoWhisper + PhoBERT) | `module="audio_phobert_pipeline"` |
+| `heavy_vision_thread` | `:151` | `ObjectDetector` + `FaceVerifier` | `module="object_detect"`, `module="face_verify"` |
+| `paper_vision_thread` | `:238` | `UltralyticsPersonDetector` + `ObjectDetectModule` + `PaperCountPipeline` | `module="paper_count"` |
+| `fast_gaze_thread` | `:321` | `PersonTrackingModule` + `HolisticLandmarkExtractor` + causal classifier (`gaze_scan.build_stack`) — **stack hành vi duy nhất** | `module="pose_gaze"` |
+| `audio_ai_thread` | `:349` | `RealtimeAudioWorker` (PyAudio/sounddevice + VAD + PhoWhisper + PhoBERT) | `module="audio_phobert_pipeline"` |
 
 ### 2.4 Package dùng chung cho mọi runtime: `backend/ai_services/pipeline/`
 
@@ -131,16 +146,17 @@ Phần logic "1 frame vào → alert ra" không còn nằm trong hai file app n�
 
 | Module | Hàm | Realtime gọi ở | Offline gọi ở |
 | :-- | :-- | :-- | :-- |
-| `events.py` | `to_log_line` `:16`, `prune_overlays` `:78`, `expire_overlays` `:87` | `app_webrtc.py:438` / `:446` / `:415` | `run_offline.py:149` / `:166` / `:172` |
-| `overlays.py` | `draw` `:26` (+ `log_lines` để burn cột lịch sử) | `app_webrtc.py:417` | `run_offline.py:173` |
-| `face_scan.py` | `scan_stranger_with_masking` `:18`, `crop_for_registration` `:57` | `app_webrtc.py:169` / `:185` | `run_offline.py:278` |
-| `object_scan.py` | `scan_objects` `:14` (lọc nhãn giấy khỏi vật cấm) | `app_webrtc.py:217` | `run_offline.py:276` |
-| `paper_scan.py` | `arm_baseline` `:12`, `build_alert` `:23` | `app_webrtc.py:275` / `:303` | `run_offline.py:340` / `:350` |
-| `gaze_scan.py` | `build_stack` `:79`, `scan_frame` `:134` (trả **list** alert, mỗi actor một alert) | `app_webrtc.py:318` / `:339` | `run_offline.py:262` / `:288` |
+| `events.py` | `to_log_line` `:16`, `prune_overlays` `:78`, `expire_overlays` `:87` | `app_webrtc.py:469` / `:477` / `:425` | `run_offline.py:149` / `:166` / `:172` |
+| `overlays.py` | `draw` `:26` (+ `log_lines` để burn cột lịch sử) | `app_webrtc.py:428` | `run_offline.py:173` |
+| `face_scan.py` | `scan_stranger_with_masking` `:23` (detect 1 lần/ frame), `crop_for_registration` `:56` | `app_webrtc.py:171` / `:187` | `run_offline.py:276` |
+| `object_scan.py` | `scan_objects` `:14` (lọc nhãn giấy khỏi vật cấm) | `app_webrtc.py:220` | `run_offline.py:274` |
+| `paper_scan.py` | `arm_baseline` `:12`, `build_alert` `:23` | `app_webrtc.py:282` / `:311` | `run_offline.py:337` / `:347` |
+| `gaze_scan.py` | `build_stack` `:93`, `scan_frame` `:148` (trả **list** alert, mỗi actor một alert), `GazeStack.draw_skeleton` `:76` | `app_webrtc.py:326` / `:341` | `run_offline.py:261` / `:285` |
 | `audio_scan.py` | `DynamicSpeechChunker` `:28`, `is_alert` `:121`, `to_alert` `:127` | `realtime_audio_ubuntu.py:49` + `:98`; `realtime_audio_worker.py:28` | `run_offline.py:97` (chunker) + `:120` (`to_alert`) |
+| `metrics.py` | `METRICS.time(stage)` / `METRICS.drop(stage)` / `METRICS.snapshot()` | 8 stage trong app (§8.2) | `scripts/replay_realtime.py` |
 
 Hai hàm cũ trong app giữ nguyên chữ ký nhưng chỉ delegate — `get_largest_stranger_with_masking`
-(`app_webrtc.py:168-169`) và `draw_warning_overlays` (`app_webrtc.py:411-417`) — nên không phải sửa các chỗ gọi.
+(`app_webrtc.py:169-170`) và `draw_warning_overlays` (`app_webrtc.py:421-427`) — nên không phải sửa các chỗ gọi.
 Riêng `face_scan.crop_for_registration` và `audio_scan.is_alert` **không** có chỗ gọi phía offline (không có
 nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 
@@ -172,11 +188,12 @@ nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 - So khớp: **cosine similarity** (`_known_vectors @ query`), ngưỡng `settings.face_similarity_threshold = 0.4`
   (`backend/core/config.py:143`). Dưới ngưỡng → `status="alert"`, `message="unauthorized_person"`,
   `details={similarity_score, unauthorized_bbox}` (`face_verify.py:187-213`).
-- Mẹo **masking** (`pipeline/face_scan.py:18-55`): vẽ ô đen lên mọi khuôn mặt khác rồi verify từng mặt,
-  để `verify_face` (vốn chỉ báo mặt đầu tiên khớp kém) không "ăn gian" kết quả giữa nhiều người.
-  Trả `unauthorized_bbox` gốc về cho UI vẽ khung vàng "NGUOI LA".
-  ⚠️ Giá phải trả: mỗi frame gọi `_detect_faces` `1 + N` lần (`verify_face` tự detect lại bên trong).
-  Cùng module này có `crop_for_registration()` (`:57`) dùng cho nút đăng ký mặt (+40px quanh khuôn lớn nhất).
+- `pipeline/face_scan.py:23` (`scan_stranger_with_masking`) detect **một lần** cho cả frame, rồi so khớp
+  `normed_embedding` của từng mặt theo thứ tự diện tích giảm dần và trả người lạ đầu tiên gặp.
+  Bản 2026-10-28 trước đây tô đen các mặt khác rồi gọi `verify_face` (tự detect lại) cho từng người;
+  cách đó tốn `1 + N` lần detect/frame và — đo trên clip thật — cho embedding lệch, nhiều cảnh báo giả hơn
+  (§9 mục 14). Tên hàm giữ nguyên để không phải sửa chỗ gọi.
+  Cùng module này có `crop_for_registration()` (`:56`) dùng cho nút đăng ký mặt (+40px quanh khuôn lớn nhất).
 
 ### 3.3 Giấy thi / phao — `PaperCountPipeline` + `CountBasedPaperMonitor`
 
@@ -209,14 +226,18 @@ nút đăng ký mặt; audio file luôn đi qua `to_alert`).
 
 ### 3.4 Hành vi — tracking + Holistic + causal classifier
 
-Toàn bộ stack này nằm trong `pipeline/gaze_scan.py`: `build_stack()` (`:79-131`) nạp
-`PersonTrackingModule` + `HolisticLandmarkExtractor` + classifier, `scan_frame()` (`:134-176`) chạy một
-frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:318/339`) và
-offline (`run_offline.py:262/288`) dùng chung.
+Toàn bộ stack này nằm trong `pipeline/gaze_scan.py`: `build_stack()` (`:93-145`) nạp
+`PersonTrackingModule` + `HolisticLandmarkExtractor` + classifier, `scan_frame()` (`:148-190`) chạy một
+frame và **trả về danh sách alert, mỗi actor một alert** — nên realtime (`app_webrtc.py:326/341`) và
+offline (`run_offline.py:261/285`) dùng chung hai lời gọi này. **Đây là stack hành vi duy nhất**:
+`GazeStack` giữ `latest_packet`/`latest_results` và `draw_skeleton()` (`:76`) để UI vẽ khung xương trên
+frame hiển thị mà không chạy model lần hai.
 
-`PoseGazeDetector` (`pose_gaze_service.py:83-141`) **không tự tính góc Euler**; nó là bọc ngoài của
-cùng một stack: YOLO person tracking → MediaPipe Holistic theo crop từng người → XGBoost causal.
-Trả `None` hoặc `{module:"pose_gaze", status:"warning", timestamp, details:{action, actor_id, score}}`.
+`PoseGazeDetector` (`pose_gaze_service.py:83-141`) là vỏ ngoài cũ của cùng stack (YOLO person tracking →
+MediaPipe Holistic theo crop từng người → XGBoost causal), trả
+`{module:"pose_gaze", status:"warning", timestamp, details:{action, actor_id, score}}`. Từ 2026-10-28 nó
+**không còn trong runtime** (chỉ còn trong `app_ubuntu.py`/`app_win.py`/`backend/main.py` — file legacy);
+lý do bỏ và số đo ở §9 mục 1.
 
 - **Tracking** (`backend/ai_services/pose_gaze/tracking/`): `track_id` (số, tạm) vs `student_id`
   (định danh gán bởi giám thị, `manager.assign_student()`). `packet = TrackPacket(session_id, frame_id,
@@ -242,9 +263,10 @@ Trả `None` hoặc `{module:"pose_gaze", status:"warning", timestamp, details:{
   frame âm sau không kéo về `c5`. **Việc tách `suspicious_activity` → c1/c4 bằng YOLO chưa được nối vào
   đâu cả** (không có trong `app_webrtc*.py`, `backend/`, `scripts/`, `notebooks/`); `c1_model_dir`,
   `c4_model_dir`, `c7_model_dir` trong `pose_gaze_service.py:61-63` không được đọc.
-  Trong `pose_gaze_service.py:116-121` vẫn còn nhãn `c1`/`c4` — **không bao giờ reachable**; điều kiện
-  `"warming" not in str(classification)` (`:114`) cũng không lọc được gì vì không khoá nào chứa chuỗi đó
-  (warmup thật do `predicted_class == "c5"` chặn).
+  Trong `pose_gaze_service.py:116-121` (file legacy, không còn chạy) vẫn còn nhãn `c1`/`c4` — **không bao
+  giờ reachable**; điều kiện `"warming" not in str(classification)` (`:114`) cũng không lọc được gì vì
+  không khoá nào chứa chuỗi đó (warmup thật do `predicted_class == "c5"` chặn). Runtime hiện tại chỉ phát
+  `c2`/`c3`/`suspicious_activity` từ `gaze_scan.ALERT_CLASSES`.
 
 ### 3.5 Âm thanh — VAD + PhoWhisper + PhoBERT
 
@@ -290,7 +312,7 @@ Real-Time-Exam-Proctoring-System/
 │       ├── pipeline/        # LOGIC DÙNG CHUNG realtime + offline (§2.4), không thread/không st.*
 │       │   ├── events.py    #   alert -> dòng log, giữ/hạn overlay theo TTL
 │       │   ├── overlays.py  #   vẽ khung + nhãn + (offline) burn bảng cảnh báo
-│       │   ├── face_scan.py #   masking verify người lạ + crop đăng ký mặt
+│       │   ├── face_scan.py #   verify người lạ (detect 1 lần) + crop đăng ký mặt
 │       │   ├── object_scan.py # YOLO vật cấm, lọc nhãn giấy
 │       │   ├── paper_scan.py#   ARM baseline + đóng gói alert giấy
 │       │   ├── gaze_scan.py #   tracking + holistic + causal classifier
@@ -425,19 +447,23 @@ Cấu hình thêm:
 
 ## 7. Vận hành giao diện
 
-Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:530-556`):
+Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:605-641`):
 
-1. **📸 Đăng ký khuôn mặt** — luồng nặng crop khuôn mặt lớn nhất (đã masking) +40px margin, lưu
+1. **📸 Đăng ký khuôn mặt** — luồng nặng crop khuôn mặt lớn nhất +40px margin, lưu
    `data/student_faces/student_<ts>.jpg` (bản cho AI) và `data/registered_logs/full_student_<ts>.jpg`
    (bản toàn cảnh cho người), rồi `face_model._load_database()` nạp lại.
 2. **🔒 Cố định Baseline (A)** / **🔄 Reset Setup (D)** — ARM/DISARM pipeline giấy; dòng `st.info` phía dưới
    hiện `paper_status_msg` ("SETUP…" / "ARMED! Baseline: N giấy.").
 3. **Lịch sử cảnh báo** — `st_autorefresh(interval=3000)`, giữ 20 dòng gần nhất, có màu đỏ cho vi phạm.
-4. **🎬 Chạy offline trên file video** (`app_webrtc.py:559-696`, khối expander cuối trang) — chọn nguồn file
+4. **🎬 Chạy offline trên file video** (khối expander cuối trang) — chọn nguồn file
    (đường dẫn trên máy, hoặc upload ≤200MB), chọn module + stride + `max-seconds` / `setup-seconds` / TTL rồi
-   bấm Start. `OfflineJob` (`offline_job.py`) chạy `run_offline.main()` ở luồng nền; UI tự refresh mỗi 1.2s để
-   hiện tiến độ + ảnh khung hình đang xử lý (nhịp 4s, `OFFLINE_REFRESH_MS`), xong thì **phát video kết quả ngay
+   bấm Start. `OfflineJob` (`offline_job.py`) chạy `run_offline.main()` ở luồng nền; UI tự refresh mỗi 4s
+   (`OFFLINE_REFRESH_MS`) để hiện tiến độ + ảnh khung hình đang xử lý, xong thì **phát video kết quả ngay
    trong trang** (§11.4). Nút bị chặn khi camera realtime đang phát.
+5. **🩺 Sức khoẻ module** (`app_webrtc.py:633-641`, cùng nhịp refresh 3s với log) — bảng fps / p50 / p95 /
+   max / số frame rớt của từng stage, lấy trực tiếp từ `pipeline/metrics.METRICS`; kèm nút **Reset số đo**.
+   Đây là nơi trả lời "module nào đang tụt" mà không phải cắm profiler; số liệu tích luỹ tới lần reset
+   (hoặc tới khi tiến trình restart).
 
 Overlay trên video: đỏ = vật cấm, vàng cam = `NGUOI LA`, cyan = giấy baseline, đỏ đậm = `CHEAT SHEET (NEW)`,
 dải đỏ đáy khung hình = cảnh báo tư thế/hành vi kèm `student_XX: <HÀNH VI>`. `OVERLAY_TTL = 1.5s`.
@@ -469,7 +495,7 @@ Môi trường: Ubuntu, Python 3.12.3 (`.venv`), Intel Core Ultra 7 155H + iGPU 
 | `ObjectDetector` | `None` (không có vật cấm trong frame) | 2.98s (gồm warm-up iGPU) |
 | `FaceVerifier` | 2 khuôn mặt; `verify_face` → `alert`, `similarity_score 0.312 < 0.4`, `unauthorized_bbox [1089,574,1201,701]` | 4.53s (gồm nạp model) |
 | `PaperCountPipeline` | 2 người, 3 tờ `cheat_sheet` `status=baseline_paper`; `arm()` → `mode=count_only`, `baseline_count=3`, `confirmation_frames=2`; `alerts=[]` | 3.6s cho init + 6 frame |
-| `PoseGazeDetector` | `None` (single frame, chưa qua warmup 4 frame) | 3.4s |
+| `PoseGazeDetector` | `None` (single frame, chưa qua warmup 4 frame) — **không còn trong runtime**, giữ làm mốc lịch sử | 3.4s |
 
 **Âm thanh** (`data/test_audio/*.m4a|mp3`, qua `AudioPipeline.process_audio`):
 
@@ -484,20 +510,50 @@ Môi trường: Ubuntu, Python 3.12.3 (`.venv`), Intel Core Ultra 7 155H + iGPU 
 hoàn toàn dựa vào PhoBERT. Thời gian xử lý một câu 1.3–2.1s trên iGPU.
 
 **Luồng offline** (`run_offline.py data/IMG_7817.MOV --stride-heavy 3 --stride-paper 5 --stride-pose 3
---stride-action 3`, 503 frame / 16.8s video, **225.8s** xử lý):
+--stride-action 3`, 503 frame / 16.8s video, **104.1s** xử lý — trước tối ưu 2026-10-28 là 225.8s):
 
 | Module | Kết quả trên file | Thời gian |
 | :-- | :-- | :-- |
-| `object` (YOLO vật cấm) | 168 lần chạy, **0** alert (không có điện thoại/tai nghe trong 16.8s này) | 0.040s/frame |
-| `face` (verify + masking) | 168 alert `unauthorized_person` (DB chỉ có 1 khuôn mặt đã đăng ký) | 0.345s/frame |
+| `object` (YOLO vật cấm) | 168 lần chạy, **0** alert (không có điện thoại/tai nghe trong 16.8s này) | 0.035s/frame |
+| `face` (verify, detect 1 lần/frame) | **41** alert `unauthorized_person`. Cả 2 actor đều ĐÃ đăng ký (DB có 2 mặt) ⇒ đây đều là cảnh báo giả; bản masking cũ bắn 51 | 0.155s/frame |
 | `paper` (đếm giấy theo người) | ARM sau 5s: baseline **2 giấy**; frame `t=7.83s` thấy tờ thứ 3 `suspicious_new_paper` (vẫn là frame `info`), cảnh báo đầu tiên `t=8.17s`, **28 alert** `paper_count_above_baseline`, owner `track_id=1` → `student_01` | stride 5 (không bấm timing riêng) |
-| `pose` (`PoseGazeDetector`) | 168 lần chạy, 0 alert (chưa vượt warmup/gate) | 0.324s/frame |
-| `action` (`gaze_scan` + causal) | 2 actor `student_01`/`student_02`, 168 frame, `predicted_class` vẫn `c5` dù `c2_score` max **0.9776** (gate + ngưỡng calibration chặn) | 0.345s/frame |
-| `audio` (track của file) | 34 chunk → 4 câu có tiếng → **1** câu có transcription (`risk=Normal`), gắn mốc `t=0.0s` | init 8.4s |
+| `pose` | **Đã bỏ.** `--modules pose` giờ là bí danh của `action` (một stack duy nhất), không còn khởi tạo `PoseGazeDetector` | — |
+| `action` (`gaze_scan` + causal) | 2 actor `student_01`/`student_02`, 168 frame, `predicted_class` vẫn `c5` dù `c2_score` max **0.61** (gate + ngưỡng calibration chặn). Điểm **không tái lập** giữa 2 lần chạy (0.69 vs 0.70 ở lần đo riêng) | 0.186s/frame |
+| `audio` (track của file) | 34 chunk → 4 câu có tiếng → **1** câu có transcription (`risk=Normal`), gắn mốc `t=0.0s` | init 6.0s |
 
 Lặp lại đúng lệnh trên cho cùng kết luận và cùng mốc giấy
-(7.83s / 8.17s / 15.33s, 28 cảnh báo), chỉ khác điểm classifier (`c2` max dao động 0.95–0.98) và thời gian
-~5% — MediaPipe/ultralytics không đảm bảo bit-identical giữa hai lần chạy.
+(7.83s / 8.17s / 15.33s, 28 cảnh báo), nhưng **điểm classifier không tái lập**: hai lần chạy liền nhau
+(2026-10-28, cùng code, `--modules action`) cho `c2` 0.6908 vs 0.6952, `suspicious` 0.8584 vs 0.8149;
+các lần chạy khác ngày còn lệch tới 0.61–0.98. Quyết định (`c5`, số alert) thì ổn định. Đừng dùng điểm
+làm thước đo A/B — chỉ dùng quyết định/cảnh báo + thời gian.
+
+### 8.2 Replay realtime không cần camera (`scripts/replay_realtime.py`)
+
+Dựng lại đúng cấu trúc app (1 vòng bơm frame + 4 queue `maxsize=2` rớt frame cũ nhất + 4 luồng tiêu thụ),
+phát video theo đúng fps để thấy fps thật và số frame rớt:
+
+```bash
+.venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --seconds 16   # nhịp thật
+.venv/bin/python scripts/replay_realtime.py data/IMG_7817.MOV --fast --modules action
+```
+
+Đo 2026-10-28, 16s @30fps, **bật cả 4 module**, cùng lúc trên iGPU (các module tranh nhau nên p50 cao hơn
+chạy một mình):
+
+| Stage | gọi | fps | p50 | p95 | rớt |
+| :-- | --: | --: | --: | --: | --: |
+| callback (bơm frame + vẽ) | 480 | 28.6 | 4.5ms | 23.9ms | — |
+| vẽ overlay | 480 | 28.6 | 2.5ms | 15.3ms | — |
+| dò vật cấm (YOLO) | 45 | 3.2 | 56ms | 77ms | vision 433/480 |
+| dò mặt (detect-once) | 45 | 3.3 | 251ms | 342ms | vision 433/480 |
+| đếm giấy | 34 | 2.4 | 587ms | 794ms | paper 60/96 |
+| hành vi (tracking + causal) | 53 | 3.9 | 275ms | 348ms | gaze 426/480 |
+
+Trước tối ưu cùng phép đo: mặt p50 708ms (2.8× chậm hơn), hành vi 2.3fps, gaze rớt 445/480. Bảng này cũng
+chính là thứ hiện trong UI ở hộp **🩺 Sức khoẻ module** (thêm nút Reset số đo) — UI lấy số từ cùng registry
+`pipeline/metrics.py`, nên không phải đo lại bằng mắt.
+
+**Chưa kiểm chứng được**: vòng lặp frame WebRTC thời gian thực.
 
 `report.json` có `alerts_by_actor = {"student_01": {"paper_count": 32}}` (32 = cả 4 frame `info` đã
 nhìn thấy tờ giấy lạ nhưng chưa đủ xác nhận, chỉ 28 trong số đó là cảnh báo — xem §9 mục 11) và mục `actors` ghi điểm max của
@@ -519,10 +575,14 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
 
 ## 9. Giới hạn đã biết (đọc trước khi sửa)
 
-1. **Chồng lặp tính toán ở luồng gaze**: `PoseGazeDetector.process_frame()` tự chạy tracking + holistic +
-   classifier, rồi `pipeline/gaze_scan.py:134` (luồng `fast_gaze_thread`, `app_webrtc.py:339`) **chạy lại
-   đúng stack đó** với một bộ tracking/holistic/classifier thứ hai ⇒ 2 lần YOLO + 2 lần MediaPipe mỗi frame.
-   `run_offline.py` cố tình giữ nguyên hành vi này để so sánh được với realtime (tắt bằng `--modules`).
+1. ~~**Chồng lặp tính toán ở luồng gaze**~~ **đã sửa 2026-10-28**: trước đây `PoseGazeDetector.process_frame()`
+   tự chạy tracking + holistic + classifier, rồi `gaze_scan.scan_frame()` **chạy lại đúng stack đó** với bộ
+   thứ hai ⇒ 2 lần YOLO + 2 lần MediaPipe mỗi frame, và hai bộ alert `pose_gaze` khác nhau (bộ cũ còn bắn
+   `c1`/`c4` trái contract). Nay chỉ còn `gaze_scan`; khung xương hiển thị được vẽ lại từ
+   `GazeStack.latest_packet/latest_results` qua `GazeStack.draw_skeleton()` (`gaze_scan.py:76`), không chạy
+   model lần hai. Offline: `--modules pose,action` chỉ chạy một lần. Đo được: offline 225.8s → 147.6s.
+   **Hệ quả cần biết**: alert `pose_gaze` chỉ còn `c2`/`c3`/`suspicious_activity`, không còn nhãn
+   "Sử dụng điện thoại/phao thi" do pose đoán (theo contract, c1/c4 phải do YOLO quyết).
 2. **`FPS_SKIP = 1`** bắt YOLO vật cấm + verify mặt chạy mọi frame, trái với chủ trương
    `object_detect_every_n_frames = 2` trong config.
 3. ~~`core, devices = initialize_openvino()`~~ **đã sửa khi gộp entry point**: hàm cũ trả về MỘT giá trị
@@ -548,9 +608,10 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
    `app_win.py`, `whisper/realtime_whisper.py` (import lỗi), `whisper/whisper_gui.py`,
    `whisper/websocket_*.py`, `ObjectDetector._extract_server_detections()` (`object_detect.py:213`),
    nhánh COCO fallback (`object_detect.py:839`).
-10. **Offline chậm hơn realtime rất nhiều vì một luồng**: 16.8s video hết 225.8s với stride 3/5/3/3 trên
-     iGPU Arc (`face`+`pose`+`action` mỗi thứ ~0.33s). Realtime chạy song song 4 thread và bỏ frame cũ;
-     offline không bỏ frame nên không có gì để so về độ trễ. Muốn nhanh: tăng stride, hoặc `--modules`.
+10. **Offline chậm hơn realtime vì chạy tuần tự**: 16.8s video hết **104.1s** với stride 3/5/3/3 trên
+     iGPU Arc (trước tối ưu: 225.8s). Realtime chạy song song 4 thread và bỏ frame cũ; offline không bỏ
+     frame nên không có gì để so về độ trễ. Muốn nhanh: tăng stride, hoặc `--modules`.
+     Ô nào là nút cổ chai thì xem bảng replay §8.2/UI thay vì đoán: hiện `paper` (587ms) là nặng nhất.
 11. **`alerts_by_module` / `alerts_by_actor` đếm cả frame "info"**: pipeline giấy push kết quả **mọi frame**
      nó chạy (`status="info"` khi chưa vi phạm) để UI vẽ được `Paper #n` — y hệt realtime. Vì vậy 101 dòng
      `paper_count` trong bảng §8 chỉ có 28 dòng là cảnh báo thật, và `alerts_by_actor` (32 cho `student_01`)
@@ -562,6 +623,29 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
 13. **`annotated.mp4` chỉ còn 1 lớp encode**: `cv2.VideoWriter` xuất mpeg4 (`mp4v`) rồi ffmpeg remux `-c:v copy`,
      nên chất lượng video kết quả thấp hơn bản gốc; emoji trong bảng `CANH BAO` bị loại bỏ vì
      `cv2.putText` không vẽ được emoji (`overlays.py:17`).
+14. **`face_verify` detect một lần/frame (2026-10-28)**: bản cũ tô đen các mặt khác rồi detect lại cho từng
+     người ⇒ N+1 lần RetinaFace + N(N-1) lần ArcFace mỗi frame (2 người = 3 detect + 4 embed). Nay
+     `face_scan.scan_stranger_with_masking` chỉ detect 1 lần và so khớp `normed_embedding` có sẵn
+     (`face_scan.py:23`). Đo trên `data/IMG_7817.MOV`: `0.290s → 0.108s`/frame (**2.68×**), 51 → 41 cảnh báo.
+     **Đánh đổi đã đo**: quyết định lệch ở 16/160 frame so với bản cũ, vì detect trên ảnh bị tô đen làm
+     landmark lệch nhẹ ⇒ embedding lệch (có frame tụt còn 0.02). Trên clip này cả 2 actor đều đã đăng ký nên
+     mọi cảnh báo đều là giả; bản mới ít hơn. Không có người lạ thật trong clip ⇒ **chưa đo được recall**;
+     cần clip có người lạ trước khi kết luận "chính xác hơn".
+15. **Gộp cảnh báo trùng trên sidebar (`LOG_COOLDOWN = 2s`, `app_webrtc.py:416`)**: cùng module + cùng nội dung
+     thì không chèn lại dòng log trong 2s. Overlay **vẫn** được làm mới mỗi alert, và `events.jsonl`/console
+     vẫn ghi đủ từng lần phát hiện — con số "Log trùng đã gộp" nằm trong bảng 🩺. Đừng dùng bảng này để đếm
+     cảnh báo; đếm bằng `report.json` / `events.jsonl`.
+16. **OOM khi chạy offline trong tiến trình Streamlit (đã sửa 2026-10-28)**: app giữ ~3GB model realtime;
+     job offline trong cùng process làm RSS ~4GB / virtual ~31GB / ~527 thread trên máy 15GB → `oom_kill_process`
+     (syslog) giết app giữa lúc chạy. Nay `OfflineJob` chạy `run_offline.py` ở tiến trình con, đọc tiến độ
+     `@@PROGRESS@@`, tự đặt `oom_score_adj=500`, có nút Huỷ, và UI chặn Start khi `MemAvailable < 2.0GB`.
+     **Đừng đưa job về lại luồng nội bộ** dù thấy tiện — sẽ tái diễn OOM.
+     Trong job con, thứ tự nạp là audio → phiên âm → `release_audio()` → thị giác: đỉnh 3.07GB → 2.66GB, và
+     RSS tụt còn ~1.35GB trước khi chạy frame (đo trên video WIN_2026…).
+17. **Không chia sẻ model giữa realtime và offline**: khác tiến trình thì không thể; cùng tiến trình thì
+     tracker/MediaPipe/classifier/pipeline giấy đều có trạng thái riêng (track_id, cửa sổ 24 frame, session),
+     dùng chung sẽ làm bẩn state realtime. Chỉ model thuần suy luận (YOLO vật cấm, FaceVerifier) là chia sẻ
+     được, nhưng tiết kiệm không đáng so với rủi ro.
 
 ---
 
@@ -572,7 +656,8 @@ camera thật — mà nay `run_offline.py` đã phủ đúng các hàm per-frame
 .venv/bin/python -m unittest discover -s backend/ai_services/pose_gaze/tracking/tests -p "test_*.py"
 ```
 
-Kết quả **chạy thật trên máy Ubuntu ngày 2026-10-27**:
+Kết quả **chạy thật trên máy Ubuntu** (2026-10-27, chạy lại 2026-10-28 sau các thay đổi P0/P1/P3: y hệt,
+`object_detect.py` không bị sửa):
 
 | Suite | Kết quả |
 | :-- | :-- |
@@ -628,7 +713,7 @@ là cách kiểm chứng `pipeline/` (§2.4) chạy đúng khi không có browse
 
 | Tham số | Mặc định | Ý nghĩa |
 | :-- | :-- | :-- |
-| `--modules` | `object,face,paper,pose,action,audio` | bật/tắt từng luồng |
+| `--modules` | `object,face,paper,pose,action,audio` | bật/tắt từng luồng. `pose` là **bí danh cũ của `action`** (một stack duy nhất) — chọn cả hai vẫn chạy một lần |
 | `--stride-heavy/-paper/-pose/-action` | `1/5/1/1` | y hệt stride realtime (`1/5/1/1`, §2.2); tăng lên để chạy nhanh |
 | `--setup-seconds` | `5` | tới mốc này thì tự ARM baseline giấy (realtime là nút bấm) |
 | `--ttl` | `1.5` | `OVERLAY_TTL` tính theo **giây video**, nên overlay trên `annotated.mp4` biến mất đúng như ngoài UI |
@@ -651,17 +736,25 @@ video thay vì giờ đồng hồ; bảng lịch sử burn vào frame thay vì s
 
 ### 11.4 Chạy ngay trong giao diện (`offline_job.py` + expander cuối `app_webrtc.py`)
 
-`OfflineJob` gọi `run_offline.main(argv, progress=...)` trong một daemon thread và giữ trạng thái để luồng
-UI đọc (`snapshot()`); module này **không import streamlit** nên test độc lập được bằng Python thuần.
-`run_offline.main()` phát tiến độ qua `_emit()` (`run_offline.py:386`) với các mốc
-`init → models → audio → video → frame… → encode → done`.
+`OfflineJob` chạy `run_offline.py` ở **tiến trình con** (`subprocess.Popen`, `cwd` = repo root) và đọc tiến
+độ từ stdout; module này **không import streamlit** nên test độc lập được bằng Python thuần.
+Tiến trình con in mỗi sự kiện thành 1 dòng `@@PROGRESS@@{json}` (`run_offline._jsonl_progress`, bật bằng
+`--progress-jsonl`) với các mốc `init → models → audio → video → frame… → encode → done`; các dòng log
+thường được cha in lại ra console và giữ 25 dòng cuối để báo lỗi.
+
+**Vì sao tiến trình con, không phải luồng nội bộ** (sự cố 2026-10-28): app realtime đã giữ ~3GB model.
+Chạy offline trong cùng tiến trình là nạp thêm bộ thứ hai vào **một** process (RSS ~4GB, virtual ~31GB,
+527 thread) → máy 15GB cạn swap và kernel bật OOM killer (`/var/log/syslog`: `oom_kill_process`), UI chết
+giữa lúc chạy. Tách tiến trình: UI giữ nguyên ~3GB và phản hồi, job chết chỉ job mất, thoát là OS thu hồi
+sạch; job con còn tự đặt `oom_score_adj=500` để nếu buộc phải giết thì giết job trước IDE/Streamlit.
 
 | Thứ UI hiển thị | Nguồn |
 | :-- | :-- |
-| "Frame x/y · N cảnh báo" | emit `stage="frame"` mỗi frame (`run_offline.py:465`) |
-| Ảnh preview | `OfflineJob._write_preview()` ghi `offline_out/<run>/preview.jpg` (rộng 640px, tối đa 1 ảnh/3s) |
-| Video phát trong trình duyệt | `run_offline.to_h264()` (`:485`) remux `annotated.mp4` → `playback_h264.mp4` (libx264, yuv420p, +faststart) |
+| "Frame x/y · N cảnh báo" | emit `stage="frame"` mỗi frame (`run_offline.py:462`) |
+| Ảnh preview | tiến trình con ghi `offline_out/<run>/preview.jpg` (rộng 640px, tối đa 1 ảnh/3s) khi có `--progress-jsonl`; cha chỉ đọc file |
+| Video phát trong trình duyệt | `run_offline.to_h264()` (`:482`) remux `annotated.mp4` → `playback_h264.mp4` (libx264, yuv420p, +faststart) |
 | Chỉ số, bảng theo actor, nút tải | `report.json` / `log.txt` / `events.jsonl` của lần chạy |
+| Nút **⏹ Huỷ job** | `OfflineJob.cancel()` → SIGTERM, quá 5s thì SIGKILL; trạng thái `cancelled` |
 
 Ràng buộc đã kiểm chứng:
 
@@ -672,11 +765,19 @@ Ràng buộc đã kiểm chứng:
 - `st.file_uploader` bị Streamlit chặn 200MB; file lớn hơn phải dùng ô đường dẫn. File upload được ghi ra
   `offline_out/_uploads/<kích_thước>_<tên>` vì `run_offline` cần đường dẫn thật.
 - **Nhịp tự làm mới tốn hơn bản thân việc suy luận.** Đo cùng workload (241 frame, stride 3/5/3/3, iGPU Arc):
-  CLI chạy một mình `face=0.414s / pose=0.327s / action=0.340s`; trong UI với refresh **1.2s** thành
-  `1.203 / 0.993 / 1.137` (~3.3 lần chậm, cả lần chạy 503 frame hết 703s); với refresh **4.0s** còn
-  `0.353 / 0.165 / 0.198` — nhanh hơn cả CLI vì model đã nạp sẵn trong tiến trình. Mỗi lần Streamlit rerun
-  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:565`)
-  và `PREVIEW_INTERVAL_S = 3.0` (`offline_job.py:23`) đi đôi nhau.
-- Không có nút huỷ giữa chừng: đã bấm Start thì phải chờ xong (`--max-seconds` là cách cắt ngắn).
+  CLI chạy một mình `face=0.155s / action=0.186s` (2026-10-28); trong UI với refresh **1.2s** từng đo được
+  `face 1.203 / action 1.137` (~3.3 lần chậm, cả lần chạy 503 frame hết 703s); với refresh **4.0s** còn
+  `0.353 / 0.198` — nhanh hơn cả CLI vì model đã nạp sẵn trong tiến trình. Mỗi lần Streamlit rerun
+  giành GIL với luồng suy luận và dựng lại element tree, nên `OFFLINE_REFRESH_MS = 4000` (`app_webrtc.py:647`)
+  và `PREVIEW_INTERVAL_S = 3.0` (`offline_job.py:23`) đi đôi nhau. Lần chạy UI 8s ngày 2026-10-28 (241 frame,
+  đủ 5 module): **69.1s**, tức 0.287s/frame — chậm hơn CLI ~40% vì lý do trên.
+- **RAM là ràng buộc thật, không phải TTL.** Đo 2026-10-28 (CLI, cùng 8s, cùng stride): `--ttl 0.5` hết
+  `131.1s`, `--ttl 1.5` hết `130.0s`, overlay tối đa 2 ở cả hai ⇒ TTL không làm tăng RAM/thời gian. Cái làm
+  tràn RAM là tổng: app realtime ~3GB + job offline ~3GB + IDE/Chrome. Job con nay đỉnh ~2.7GB (trước 3.1GB)
+  nhờ nạp audio → phiên âm → **giải phóng audio** → mới nạp thị giác; đo trên `WIN_20260802_12_05_12_Pro.mp4`:
+  đỉnh 2.63GB ở bước audio rồi tụt còn 1.35GB trước khi vào phần video.
+- UI đọc `/proc/meminfo` (`MemAvailable`): dưới **3.5GB** thì cảnh báo, dưới **2.0GB** thì **chặn nút Start**
+  (chạy lúc đó chắc chắn OOM). Đóng bớt ứng dụng rồi tải lại trang.
+- Không huỷ được job khi tiến trình cha chết đột ngột: `atexit` chỉ chạy khi Streamlit thoát bình thường.
 
-Giới hạn riêng của bản offline: §9 mục 10–13.
+Giới hạn riêng của bản offline: §9 mục 10–16.

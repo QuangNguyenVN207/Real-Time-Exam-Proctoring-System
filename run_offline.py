@@ -47,7 +47,6 @@ from backend.ai_services.object_detect.object_detect import ObjectDetector, Obje
 from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
 from backend.ai_services.pipeline import audio_scan, events, face_scan, gaze_scan, object_scan, paper_scan
 from backend.ai_services.pipeline import overlays as overlay_draw
-from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
 from backend.ai_services.whisper.audio_pipeline import AudioPipeline
 
@@ -213,21 +212,29 @@ class OfflineProctor:
         self.actors: dict[str, dict[str, Any]] = {}
         self.armed = False
 
-        if "object" in self.enabled:
-            self._timed("object_init", lambda: setattr(
-                self, "yolo", ObjectDetector(model_path=args.object_model, device=args.device,
-                                             confidence_threshold=args.confidence)))
-        if "face" in self.enabled:
-            self._timed("face_init", lambda: setattr(
-                self, "face", FaceVerifier(db_path=args.faces_dir)))
-        if "paper" in self.enabled:
-            self._timed("paper_init", self._build_paper)
-        if "pose" in self.enabled:
-            self._timed("pose_init", lambda: setattr(self, "pose", PoseGazeDetector()))
-        if "action" in self.enabled:
-            self._timed("action_init", self._build_action)
+    def load_audio(self) -> None:
+        """Nạp riêng bộ audio để phiên âm xong là giải phóng trước khi nạp bộ thị giác.
+
+        Đo 2026-10-28: audio một mình ~2.7GB, thị giác ~2.4GB, nạp cùng lúc ~3.1GB đỉnh. Nạp
+        tuần tự + `release_audio()` hạ đỉnh xuống ~2.7GB và trả ~2.7GB trước khi chạy frame.
+        """
         if "audio" in self.enabled:
             self._timed("audio_init", lambda: setattr(self, "audio_pipeline", AudioPipeline()))
+
+    def load_vision(self) -> None:
+        if "object" in self.enabled:
+            self._timed("object_init", lambda: setattr(
+                self, "yolo", ObjectDetector(model_path=self.args.object_model, device=self.args.device,
+                                             confidence_threshold=self.args.confidence)))
+        if "face" in self.enabled:
+            self._timed("face_init", lambda: setattr(
+                self, "face", FaceVerifier(db_path=self.args.faces_dir)))
+        if "paper" in self.enabled:
+            self._timed("paper_init", self._build_paper)
+        # "pose" chỉ còn là bí danh cũ của "action": realtime không còn stack pose thứ hai,
+        # nên offline cũng chỉ dựng một stack (nếu cả hai được chọn thì vẫn chỉ chạy một lần).
+        if "action" in self.enabled or "pose" in self.enabled:
+            self._timed("action_init", self._build_action)
 
     def _timed(self, name: str, fn):
         started = time.perf_counter()
@@ -260,8 +267,13 @@ class OfflineProctor:
 
     def _build_action(self) -> None:
         self.stack = gaze_scan.build_stack(device=self.args.device or "auto")
-        if self.sink.gaze_model is None:
-            self.sink.gaze_model = getattr(self, "pose", None)
+        self.sink.gaze_model = self.stack
+
+    def release_audio(self) -> None:
+        """Bỏ tham chiếu tới AudioPipeline để GC trả RAM trước khi chạy phần video."""
+        import gc
+        self.audio_pipeline = None
+        gc.collect()
 
     def process(self, frame: np.ndarray, t: float, frame_id: int) -> None:
         self.sink.frame_id = frame_id
@@ -280,10 +292,9 @@ class OfflineProctor:
         if "paper" in self.enabled and frame_id % stride["paper"] == 0:
             self._paper(frame, t, frame_id)
 
-        if "pose" in self.enabled and frame_id % stride["pose"] == 0:
-            self._detect("pose", lambda: self.pose.process_frame(frame, t), t)
-
-        if "action" in self.enabled and frame_id % stride["action"] == 0:
+        # "pose" là bí danh của "action" (một stack duy nhất); chọn cả hai vẫn chỉ chạy một lần.
+        action_stride = stride["action"] if "action" in self.enabled else stride["pose"]
+        if ("action" in self.enabled or "pose" in self.enabled) and frame_id % action_stride == 0:
             started = time.perf_counter()
             action_alerts = gaze_scan.scan_frame(self.stack, frame, t)
             self.timings.setdefault("action", []).append(round(time.perf_counter() - started, 4))
@@ -360,7 +371,7 @@ def parse_args(argv=None):
     parser.add_argument("--max-seconds", type=float, default=0.0, help="chỉ xử lý N giây đầu (0 = cả file)")
     parser.add_argument("--max-frames", type=int, default=0, help="giới hạn số frame (0 = không giới hạn)")
     parser.add_argument("--modules", default=",".join(ALL_MODULES),
-                        help="object,face,paper,pose,action,audio")
+                        help="object,face,paper,pose,action,audio (pose là bí danh của action)")
     parser.add_argument("--stride-heavy", type=int, default=1,
                         help="cứ N frame chạy YOLO vật cấm + verify mặt (realtime: FPS_SKIP=1)")
     parser.add_argument("--stride-paper", type=int, default=5)
@@ -377,10 +388,18 @@ def parse_args(argv=None):
                         help="giây đầu bị ném đi làm noise profile (realtime Ubuntu = 1.0, offline = 0)")
     parser.add_argument("--no-sound", action="store_true", help="không remux audio gốc vào video kết quả")
     parser.add_argument("--quiet", action="store_true", help="không in tiến độ từng frame")
+    parser.add_argument("--progress-jsonl", action="store_true",
+                        help="in tiến độ dạng JSON (1 dòng/lần, tiền tố @@PROGRESS@@) để tiến trình cha đọc; "
+                             "đồng thời ghi offline_out/<run>/preview.jpg mỗi 3s")
     args = parser.parse_args(argv)
     args.stride = {"heavy": max(1, args.stride_heavy), "paper": max(1, args.stride_paper),
                    "pose": max(1, args.stride_pose), "action": max(1, args.stride_action)}
     return args
+
+
+PROGRESS_PREFIX = "@@PROGRESS@@"
+PREVIEW_WIDTH = 640
+PREVIEW_INTERVAL_S = 3.0
 
 
 def _emit(progress, **event) -> None:
@@ -393,8 +412,40 @@ def _emit(progress, **event) -> None:
         print(f"[WARN] progress callback lỗi: {e}")
 
 
+def _jsonl_progress(event: dict[str, Any]) -> None:
+    """Chế độ tiến trình con: cha đọc stdout, nên bỏ ảnh (không serialize được) khỏi payload."""
+    payload = {k: v for k, v in event.items() if k != "frame"}
+    print(PROGRESS_PREFIX + json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def _write_preview(frame: np.ndarray, out_dir: Path) -> None:
+    """Ghi JPEG thu nhỏ để tiến trình cha hiển thị mà không cần truyền frame qua pipe."""
+    height, width = frame.shape[:2]
+    small = cv2.resize(frame, (PREVIEW_WIDTH, max(1, int(height * PREVIEW_WIDTH / width))))
+    target = out_dir / "preview.jpg"
+    tmp = target.with_suffix(".tmp.jpg")
+    if cv2.imwrite(str(tmp), small):
+        tmp.replace(target)
+
+
+def _lower_oom_priority() -> None:
+    """Chạy như tiến trình con của UI: nếu kernel buộc phải giết ai, giết job trước Streamlit/IDE.
+
+    Không đặt cho CLI thường — người chạy CLI có thể không muốn bị ưu tiên giết.
+    """
+    try:
+        with open("/proc/self/oom_score_adj", "w", encoding="ascii") as fh:
+            fh.write("500")
+    except OSError:
+        pass  # không phải Linux hoặc không có quyền: bỏ qua
+
+
 def main(argv=None, progress=None) -> int:
     args = parse_args(argv)
+    if args.progress_jsonl:
+        _lower_oom_priority()
+    if args.progress_jsonl and progress is None:
+        progress = _jsonl_progress
     if args.device:
         os.environ["PROCTOR_DEVICE"] = args.device
 
@@ -418,16 +469,23 @@ def main(argv=None, progress=None) -> int:
 
     sink = AlertSink(ttl=args.ttl)
     started_at = time.perf_counter()
-    _emit(progress, stage="models", detail="Đang nạp YOLO / FaceNet / paper / gaze / audio")
+    _emit(progress, stage="models", detail="Đang nạp bộ âm thanh" if "audio" in args.modules else
+          "Đang nạp YOLO / FaceNet / paper / gaze")
     proctor = OfflineProctor(args, sink)
 
     audio_stats = {"chunks": 0, "speech_segments": 0, "error": None}
     if "audio" in proctor.enabled:
+        proctor.load_audio()
         _emit(progress, stage="audio", detail="Đang giải mã audio + PhoWhisper/PhoBERT")
         print("[AUDIO] Đang giải mã track audio + cắt câu + PhoWhisper/PhoBERT ...")
         proctor.utterances, audio_stats = transcribe_file_audio(video_path, proctor.audio_pipeline, args)
         proctor.utterances.sort(key=lambda u: u["timestamp"])
         print(f"[AUDIO] {audio_stats['speech_segments']} câu có tiếng -> {len(proctor.utterances)} câu hiển thị trên UI")
+        # VAD + PhoWhisper + PhoBERT chỉ dùng cho lượt phiên âm đầu; giữ lại trong suốt phần video
+        # là giữ thêm ~2.7GB RAM vô ích (máy 16GB rất dễ chạm swap).
+        proctor.release_audio()
+    _emit(progress, stage="models", detail="Đang nạp YOLO / FaceNet / paper / gaze")
+    proctor.load_vision()
 
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -446,6 +504,7 @@ def main(argv=None, progress=None) -> int:
     video_only = out_dir / "video_only.mp4"
     writer: Optional[cv2.VideoWriter] = None
     frame_id = 0
+    last_preview = 0.0
     while True:
         ok, frame = capture.read()
         if not ok:
@@ -462,6 +521,9 @@ def main(argv=None, progress=None) -> int:
         annotated = sink.draw(frame, t)
         writer.write(annotated)
         frame_id += 1
+        if args.progress_jsonl and time.perf_counter() - last_preview >= PREVIEW_INTERVAL_S:
+            _write_preview(annotated, out_dir)
+            last_preview = time.perf_counter()
         _emit(progress, stage="frame", frame_id=frame_id, t=t, alerts=len(sink.events),
               logs=list(sink.logs[:6]), frame=annotated)
         if not args.quiet and frame_id % 30 == 0:

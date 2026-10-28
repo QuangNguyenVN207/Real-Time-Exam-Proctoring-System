@@ -52,10 +52,34 @@ Python 3.12.3). NVIDIA / Windows numbers are **not** measured yet, so treat any 
 - **Offline mirrors realtime.** `run_offline.py <video>` writes `annotated.mp4` (burned overlays + warning
   panel), `events.jsonl`, `log.txt`, `report.json`. `report.json` keys evidence by `(video, actor_id)` in
   `actors`, including actors whose final class is `c5` — that satisfies the actor-level rule above.
-- **Deliberate trade-offs, not bugs** (ask before changing): the duplicated gaze stack (README section 9
-  item 1), `alerts_by_module` counting paper `status="info"` frames (item 11), the 4s UI autorefresh
-  interval (section 11.4, measured 3.3x inference slowdown at 1.2s), and `mp4v` output for CLI with H.264
-  generated only for browser playback.
+- **The UI offline job runs as a subprocess.** `OfflineJob` spawns `run_offline.py --progress-jsonl`, parses
+  `@@PROGRESS@@` lines and cancels with SIGTERM. Do not move it back into the Streamlit process: the app
+  already holds ~3GB of realtime models, and a second in-process model set exhausted 15GB RAM and triggered
+  the kernel OOM killer (2026-10-28). The child sets `oom_score_adj=500` so it dies before the UI.
+- **TTL overlay is display-only.** `--ttl 0.5` and `1.5` measured the same wall time (131.1s vs 130.0s) and
+  overlay count; it never explains RAM or speed differences. RAM comes from model sets and modules enabled.
+- **Two test clips, different behaviour.** `data/IMG_7817.MOV` produces no behaviour alerts (both actors end
+  `c5`); `data/WIN_20260802_12_05_12_Pro.mp4` does (28 `pose_gaze` alerts for `student_01`, 532 frames).
+- **Exactly one behaviour stack.** `pipeline/gaze_scan.py` (`GazeStack`) is the only tracking + holistic +
+  causal classifier in the runtime; skeleton drawing reuses its `latest_packet`/`latest_results` via
+  `GazeStack.draw_skeleton()`. `PoseGazeDetector` is legacy — it survives only in `app_ubuntu.py`,
+  `app_win.py` and `backend/main.py`, which are not entry points. Do not reintroduce a second stack.
+- **Measure, don't guess.** `pipeline/metrics.py` (`METRICS.time(stage)` / `.drop(stage)` / `.snapshot()`)
+  is wired into the app threads and rendered in the "🩺 Sức khoẻ module" panel. For camera-free A/B, run
+  `scripts/replay_realtime.py <video> [--fast]` — it rebuilds the same 4 threads and `maxsize=2` queues.
+  Reuse its output and README section 8.2 rather than re-measuring.
+- **Behaviour scores are not reproducible.** Two runs of identical code give different `c2`/`c3`/
+  `suspicious` scores (README section 0). A/B by decisions/alert counts and latency only; never by score.
+- **`face_scan.scan_stranger_with_masking` detects once per frame.** The old masked re-detect path was
+  removed (2.68x faster, fewer false alerts on the test clip); its name is kept for call sites. Do not
+  restore masking without measuring both alert counts and per-frame decisions.
+- **Sidebar log throttling only.** `LOG_COOLDOWN = 2s` collapses duplicate log lines on the UI; overlays
+  are still refreshed and `events.jsonl` / console still record every detection. Never count alerts from
+  the sidebar — use `report.json` / `events.jsonl`.
+- **Deliberate trade-offs, not bugs** (ask before changing): `alerts_by_module` counting paper
+  `status="info"` frames (README section 9 item 11), the 4s UI autorefresh interval (section 11.4,
+  measured 3.3x inference slowdown at 1.2s), and `mp4v` output for CLI with H.264 generated only for
+  browser playback.
 - **Camera vs microphone in WSL.** WebRTC frames come from the browser, so no `/dev/video0` is needed in
   WSL; the microphone is captured server-side and is the fragile part there. The offline flow needs no
   camera or microphone — prefer it for verifying detection behaviour on a new machine.

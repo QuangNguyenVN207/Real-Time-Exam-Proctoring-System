@@ -99,7 +99,6 @@ from backend.ai_services.pose_gaze import paper_pipeline
 from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
 from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
 from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
-from backend.ai_services.pose_gaze.pose_gaze_service import PoseGazeDetector
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 # Micro: PyAudio trên Linux, sounddevice trên Windows (hai worker riêng biệt)
 if IS_WINDOWS:
@@ -109,6 +108,7 @@ else:
 # Logic per-module đã tách ra package dùng chung (realtime + offline chạy ra cảnh báo y hệt nhau)
 from backend.ai_services.pipeline import audio_scan, events, face_scan, gaze_scan, object_scan, paper_scan
 from backend.ai_services.pipeline import overlays as overlay_draw
+from backend.ai_services.pipeline.metrics import METRICS
 from offline_job import OfflineJob
 
 # ==========================================
@@ -142,7 +142,8 @@ def init_system_resources():
         "action_disarm_paper": False,    # Thay cho phím D
         "paper_status_msg": "SETUP - Đang chờ cố định baseline",
         "frame_count": 0,
-        "logs": []
+        "logs": [],
+        "log_cooldown": {}
     }
 
     # --- LUỒNG AI THỊ GIÁC ---
@@ -166,7 +167,8 @@ def init_system_resources():
         
         # ---> BÍ QUYẾT ĐỒNG BỘ: Tạo hàm Masking chung cho cả Camera và Đăng ký <---
         def get_largest_stranger_with_masking(img, ts):
-            return face_scan.scan_stranger_with_masking(face_model, img, ts)
+            with METRICS.time("face"):
+                return face_scan.scan_stranger_with_masking(face_model, img, ts)
         # -------------------------------------------------------------------------
         
         vision_ready.set()
@@ -214,16 +216,21 @@ def init_system_resources():
             frame, timestamp = data
 
             # Vật cấm (đã lọc nhãn giấy trong object_scan) + người lạ (masking) đi qua queue chung
-            alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
+            with METRICS.time("object"):
+                alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
             if alert_object is not None:
                 if not result_q.full():
                     result_q.put(alert_object)
                 else:
+                    METRICS.drop("queue.result")
                     print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
 
             result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
-            if result_face and not result_q.full(): 
-                result_q.put(result_face)
+            if result_face:
+                if not result_q.full():
+                    result_q.put(result_face)
+                else:
+                    METRICS.drop("queue.result")
 
     # ==========================================
     # LUỒNG AI ĐẾM GIẤY (ĐẶC TRỊ RIÊNG CHO PAPER PIPELINE)
@@ -289,56 +296,54 @@ def init_system_resources():
 
             # 2. Xử lý frame đếm giấy
             try:
-                result_paper = paper_pipeline.process_frame(
-                    frame, 
-                    session_id=session_id, 
-                    frame_id=shared_state["frame_count"], 
-                    timestamp_ms=int(timestamp * 1000)
-                )
+                with METRICS.time("paper"):
+                    result_paper = paper_pipeline.process_frame(
+                        frame,
+                        session_id=session_id,
+                        frame_id=shared_state["frame_count"],
+                        timestamp_ms=int(timestamp * 1000)
+                    )
             except Exception as ex:
                 print(f"[LỖI XỬ LÝ FRAME GIẤY]: {ex}")
                 result_paper = None
 
             # 3. Đẩy kết quả giấy & cảnh báo vào RESULT_QUEUE chung
             alert_paper = paper_scan.build_alert(result_paper, timestamp)
-            if alert_paper is not None and not result_q.full():
-                if alert_paper["alerts"]:
-                    print(f"[DEBUG PAPER] 🚨 Kích hoạt báo động! Danh sách lỗi: {alert_paper['alerts']} | Số lượng tờ giấy trên bàn: {len(alert_paper['papers'])}")
-                result_q.put(alert_paper)
+            if alert_paper is not None:
+                if not result_q.full():
+                    if alert_paper["alerts"]:
+                        print(f"[DEBUG PAPER] 🚨 Kích hoạt báo động! Danh sách lỗi: {alert_paper['alerts']} | Số lượng tờ giấy trên bàn: {len(alert_paper['papers'])}")
+                    result_q.put(alert_paper)
+                else:
+                    METRICS.drop("queue.result")
 
-    # LUỒNG 2: Xử lý nhẹ (MediaPipe PoseGaze) - Chạy siêu tốc
+    # LUỒNG 2: Hành vi (Tracking + Holistic + Causal Classifier)
     def fast_gaze_thread():
-        print("[INFO] Đang khởi động Fast Gaze Thread (tích hợp Holistic & Action Classifier)...")
-        
-        # 1. Khởi tạo PoseGaze gốc
-        gaze_model = PoseGazeDetector()
-        shared_state["gaze_model"] = gaze_model
+        print("[INFO] Đang khởi động Fast Gaze Thread (Tracking & Holistic & Action Classifier)...")
 
-        # 2+3. Tracking + Holistic + Causal Classifier (c2 Exchange, c3 Looking, suspicious)
+        # Stack DUY NHẤT cho hành vi: tracking + holistic + classifier (c2 Exchange, c3 Looking, suspicious).
+        # Khung xương trên video hiển thị được vẽ lại từ latest_packet/latest_results, không chạy model lần 2.
         stack = gaze_scan.build_stack(device=PERSON_DEVICE, live_pair=["student_01:student_02"])
+        shared_state["gaze_model"] = stack
         shared_state["tracking_manager"] = stack.manager
         shared_state["holistic_model"] = stack.holistic
         shared_state["live_classifier"] = stack.live_classifier
 
         gaze_ready.set()
         print("[INFO] ✅ Fast Gaze Thread (Nâng cao) đã nạp xong!")
-        # --- BỘ NHỚ THEO DÕI TRẠNG THÁI HÀNH VI CỦA TỪNG HỌC SINH ---
-        active_violations = {} # {actor_id: pred_class}
 
         while True:
             data = gaze_q.get()
             if data is None: break
             frame, timestamp = data
-            
-            # --- Step A: Chạy PoseGaze cơ bản ---
-            result_gaze = gaze_model.process_frame(frame, timestamp)
-            if result_gaze and not result_q.full():
-                result_q.put(result_gaze)
 
-            # --- Step B: Chạy Tracking & Holistic & Causal Classifier (Exchange, Looking) ---
-            for c2_c3_alert in gaze_scan.scan_frame(stack, frame, timestamp):
+            with METRICS.time("action"):
+                c2_c3_alerts = gaze_scan.scan_frame(stack, frame, timestamp)
+            for c2_c3_alert in c2_c3_alerts:
                 if not result_q.full():
                     result_q.put(c2_c3_alert)
+                else:
+                    METRICS.drop("queue.result")
 
     # --- LUỒNG AI ÂM THANH (Dùng PyAudio độc lập) ---
     def audio_ai_thread():
@@ -361,13 +366,15 @@ def init_system_resources():
 
                 # print("[DEBUG AUDIO] 🎙️ VAD đã cắt được câu! Đang đẩy vào AudioPipeline...")
 
-                res = original_pipeline(*args, **kwargs)
+                with METRICS.time("audio"):
+                    res = original_pipeline(*args, **kwargs)
 
                 alert_audio = audio_scan.to_alert(res)
                 if alert_audio is not None:
                     if not result_q.full():
                         result_q.put(alert_audio)
                     else:
+                        METRICS.drop("queue.result")
                         print("[DEBUG AUDIO] ⚠️ RESULT_QUEUE đã đầy, rớt gói tin âm thanh!")
                     
                 return res
@@ -404,6 +411,9 @@ def init_system_resources():
 FRAME_QUEUE, PAPER_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
 FPS_SKIP = 1
+# Cùng một nội dung cảnh báo không lặp lại trong sidebar trong N giây. Chỉ gộp DÒNG LOG:
+# overlay vẫn được làm mới mỗi alert, và offline/`events.jsonl` vẫn ghi đủ từng lần phát hiện.
+LOG_COOLDOWN = 2.0
 
 # ==========================================
 # 2. HÀM VẼ GIAO DIỆN (ĐƯỢC GỌI TRONG WEBRTC)
@@ -414,12 +424,34 @@ def draw_warning_overlays(frame):
         current_time = time.time()
         events.expire_overlays(ACTIVE_OVERLAYS, current_time, OVERLAY_TTL)
         snapshot = list(ACTIVE_OVERLAYS)
-    return overlay_draw.draw(frame, snapshot, gaze_model=gaze_ai)
+    with METRICS.time("draw"):
+        return overlay_draw.draw(frame, snapshot, gaze_model=gaze_ai)
+
+def _log_allowed(module: str, log_msg: str, now: float) -> bool:
+    """True nếu chưa có dòng log cùng nội dung trong LOG_COOLDOWN giây (bỏ tiền tố giờ)."""
+    key = (module, log_msg.partition("]** ")[2] or log_msg)
+    seen = SHARED_STATE["log_cooldown"]
+    if now - seen.get(key, 0.0) < LOG_COOLDOWN:
+        METRICS.drop("log.suppressed")
+        return False
+    seen[key] = now
+    if len(seen) > 64:  # dọn key cũ để dict không phình mãi
+        cutoff = now - 60
+        for k, ts in list(seen.items()):
+            if ts < cutoff:
+                del seen[k]
+    return True
+
 
 # ==========================================
 # 3. CALLBACK VIDEO XỬ LÝ FRAME WEBRTC
 # ==========================================
 def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
+    with METRICS.time("callback"):
+        return _process_incoming_frame(frame)
+
+
+def _process_incoming_frame(frame: av.VideoFrame) -> av.VideoFrame:
     # 1. Chuyển đổi định dạng frame từ WebRTC sang Numpy (OpenCV)
     img = frame.to_ndarray(format="bgr24")
     
@@ -445,7 +477,7 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
             with OVERLAY_LOCK:
                 events.prune_overlays(ACTIVE_OVERLAYS, alert)
 
-            if log_msg:
+            if log_msg and _log_allowed(module_name, log_msg, current_time):
                 SHARED_STATE["logs"].insert(0, log_msg)
                 if len(SHARED_STATE["logs"]) > 20:
                     SHARED_STATE["logs"].pop()
@@ -460,17 +492,20 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
         if GAZE_QUEUE.full():
             try: GAZE_QUEUE.get_nowait()
             except queue.Empty: pass
+            METRICS.drop("queue.gaze")
         GAZE_QUEUE.put((img.copy(), current_time))
     # Bơm ảnh cho luồng AI Đếm Giấy (Chạy ngầm độc lập - Lấy 1 ảnh mỗi 2 frame)
     if SHARED_STATE["frame_count"] % 5 == 0:
         if PAPER_QUEUE.full():
             try: PAPER_QUEUE.get_nowait()
             except queue.Empty: pass
+            METRICS.drop("queue.paper")
         PAPER_QUEUE.put((img.copy(), current_time))
     if SHARED_STATE["frame_count"] % FPS_SKIP == 0:
         if FRAME_QUEUE.full():
             try: FRAME_QUEUE.get_nowait()
             except queue.Empty: pass
+            METRICS.drop("queue.vision")
         FRAME_QUEUE.put((img.copy(), current_time))
 
     # 4. Chụp ảnh đăng ký khuôn mặt
@@ -487,6 +522,46 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 # ==========================================
 # 4. GIAO DIỆN TRANG WEB STREAMLIT
 # ==========================================
+_METRIC_LABELS = {
+    "callback": "Callback WebRTC (cả frame)",
+    "object": "YOLO vật cấm",
+    "face": "FaceNet người lạ",
+    "paper": "Đếm giấy",
+    "action": "Tracking + action",
+    "audio": "Âm thanh (VAD→PhoBERT)",
+    "draw": "Vẽ overlay",
+    "queue.gaze": "Rớt frame → luồng gaze",
+    "queue.paper": "Rớt frame → luồng giấy",
+    "queue.vision": "Rớt frame → luồng thị giác",
+    "queue.result": "Rớt cảnh báo → RESULT_QUEUE",
+    "log.suppressed": "Log trùng đã gộp (sidebar)",
+}
+
+
+def _render_metrics_table():
+    """Bảng sức khoẻ module: đọc snapshot của METRICS (thread-safe) tại thời điểm rerun."""
+    snap = METRICS.snapshot()
+    rows = []
+    for name, stat in snap.items():
+        label = _METRIC_LABELS.get(name, name)
+        if name.startswith("queue.") or stat["runs"] == 0:  # chỉ đếm sự kiện, không đo thời gian
+            rows.append({"Module": label, "fps": None, "p50": None, "p95": None, "max": None,
+                         "rớt": stat["drops"]})
+            continue
+        rows.append({"Module": label, "fps": stat["fps"], "p50": stat["p50_ms"], "p95": stat["p95_ms"],
+                     "max": stat["max_ms"], "rớt": stat["drops"]})
+    if not rows:
+        st.caption("Chưa có số đo — bấm START camera rồi chờ vài giây.")
+        return
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+    bad = [f"`{name}` {stat['errors']} lần" for name, stat in snap.items() if stat["errors"]]
+    if bad:
+        st.caption("Lỗi: " + " · ".join(bad))
+    errors = [f"`{name}`: {stat['last_error']}" for name, stat in snap.items() if stat["last_error"]]
+    if errors:
+        st.caption("Lỗi gần nhất — " + " · ".join(errors))
+
+
 st.set_page_config(layout="wide", page_title="AI Exam Proctoring (WebRTC)")
 st.markdown("<h1 style='text-align: center; color: #4CAF50;'>HỆ THỐNG GIÁM SÁT PHÒNG THI AI (WEBRTC)</h1>", unsafe_allow_html=True)
 
@@ -555,10 +630,17 @@ with col2:
     # Nút Refresh Log bằng tay (vì WebRTC chạy ngầm, giao diện cần trigger để hiện Log mới)
     # st.button("🔄 Làm mới Log", use_container_width=True)
 
+    with st.expander("🩺 Sức khoẻ module (fps / độ trễ / rớt frame)", expanded=True):
+        # Cùng nhịp 3s với log: đọc snapshot rất nhẹ, không giành GIL với luồng suy luận.
+        _render_metrics_table()
+        if st.button("♻️ Reset số đo", key="reset_metrics"):
+            METRICS.reset()
+            st.rerun()
+
 # ==========================================
 # 5. CHẠY OFFLINE TRÊN MỘT FILE VIDEO (không cần camera/micro)
 # ==========================================
-OFFLINE_MODULES = ["object", "face", "paper", "pose", "action", "audio"]
+OFFLINE_MODULES = ["object", "face", "paper", "action", "audio"]
 OFFLINE_UPLOAD_DIR = Path("offline_out/_uploads")
 # Mỗi lần Streamlit rerun là giành GIL với luồng suy luận: đo trên iGPU Arc, refresh 1.2s làm mỗi frame
 # lâu gấp ~3 lần (face 0.35s -> 1.20s); 4s thì trở lại bằng CLI chạy một mình.
@@ -576,6 +658,18 @@ def _offline_input_path(uploaded, typed_path: str) -> Optional[Path]:
         return target
     typed_path = typed_path.strip()
     return Path(typed_path).expanduser() if typed_path else None
+
+
+def _available_ram_gb() -> Optional[float]:
+    """RAM còn dùng được (Linux: MemAvailable). None nếu nền tảng không đọc được."""
+    try:
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / 1024 / 1024
+    except OSError:
+        pass
+    return None
 
 
 def _render_offline_result(snap: dict) -> None:
@@ -616,7 +710,7 @@ def _render_offline_result(snap: dict) -> None:
 with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay trong trình duyệt", expanded=False):
     st.caption("Dùng đúng bộ phát hiện của camera (`backend/ai_services/pipeline/`): vừa chạy vừa xem khung hình "
                "đã burn cảnh báo, xong thì nhận video phát trực tiếp + `events.jsonl` / `report.json`. "
-               "Quá trình chạy nằm ở luồng nền nên giao diện không bị đơ.")
+               "Job chạy ở **tiến trình riêng** nên giao diện vẫn phản hồi và huỷ được giữa chừng.")
 
     job = st.session_state.get("offline_job")
     busy = bool(job and job.running)
@@ -625,6 +719,15 @@ with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay 
     if camera_on:
         st.error("⛔ Camera realtime đang phát — bấm STOP trước khi chạy offline. "
                  "Luồng offline nạp một bộ model RIÊNG nên chạy cả hai sẽ nhân đôi RAM/iGPU.")
+    ram_gb = _available_ram_gb()
+    ram_blocked = ram_gb is not None and ram_gb < 2.0
+    if ram_gb is not None and not busy:
+        if ram_blocked:
+            st.error(f"⛔ RAM trống chỉ còn **{ram_gb:.1f} GB** — job offline cần ~3 GB nên chưa cho chạy "
+                     "(chạy lúc này sẽ tràn RAM và bị OOM-kill). Đóng bớt ứng dụng rồi tải lại trang.")
+        elif ram_gb < 3.5:
+            st.warning(f"⚠️ RAM trống còn **{ram_gb:.1f} GB**, job offline cần ~3 GB. Nên đóng bớt ứng dụng, "
+                       "hoặc bỏ module `audio`/`paper` cho nhẹ.")
 
     src_mode = st.radio("Nguồn file", ["Đường dẫn trên máy", "Tải file lên"],
                         horizontal=True, key="off_src", disabled=busy)
@@ -644,7 +747,7 @@ with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay 
                                  key="off_maxs")
         setup_seconds = st.number_input("ARM baseline giấy sau (giây)", 0.0, 300.0, 5.0, 1.0, key="off_setup")
     with c2:
-        stride = st.slider("Stride nặng (YOLO/mặt/pose/action) — lớn = nhanh", 1, 8, 3, key="off_stride")
+        stride = st.slider("Stride nặng (YOLO/mặt/action) — lớn = nhanh", 1, 8, 3, key="off_stride")
         stride_paper = st.slider("Stride giấy", 1, 10, 5, key="off_stride_paper")
     with c3:
         modules = st.multiselect("Module bật", OFFLINE_MODULES, default=OFFLINE_MODULES, key="off_modules")
@@ -663,7 +766,7 @@ with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay 
         start_enabled = True
 
     if st.button("▶ Bắt đầu chạy offline", type="primary", key="off_start",
-                 disabled=(busy or camera_on or not start_enabled)):
+                 disabled=(busy or camera_on or ram_blocked or not start_enabled)):
         out_dir = Path("offline_out") / f"ui_{video_path.stem}_{int(time.time())}"
         argv = [str(video_path), "--output", str(out_dir),
                 "--max-seconds", str(max_seconds), "--setup-seconds", str(setup_seconds), "--ttl", str(ttl),
@@ -681,6 +784,9 @@ with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay 
             if snap["detail"]:
                 text += f" · {snap['detail']}"
             st.progress(snap["fraction"], text=text)
+            if st.button("⏹ Huỷ job", key="off_cancel"):
+                job.cancel()
+                st.rerun()
             if snap["preview"]:
                 st.image(snap["preview"], caption="Khung hình offline mới nhất (đã burn cảnh báo)",
                          use_container_width=True)
@@ -689,6 +795,8 @@ with st.expander("🎬 Chạy offline trên file video — xem kết quả ngay 
                 for line in snap["logs"]:
                     st.text(overlay_draw.plain_text(line))
             st_autorefresh(interval=OFFLINE_REFRESH_MS, key="off_refresh")
+        elif snap["status"] == "cancelled":
+            st.info(f"Đã huỷ job offline. Phần đã chạy nằm trong {snap['out_dir']}")
         elif snap["status"] == "error":
             st.error(f"Lỗi khi chạy offline: {snap['error']}")
             st.caption(f"Log chi tiết trong {snap['out_dir']}")

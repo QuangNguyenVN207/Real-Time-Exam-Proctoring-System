@@ -1,6 +1,12 @@
-"""Quét 'người lạ' bằng FaceVerifier + kỹ thuật tô đen các khuôn mặt còn lại.
+"""Quét 'người lạ' trên frame: detect MỘT lần, embed tất cả, so khớp tất cả.
 
-Sao y `get_largest_stranger_with_masking()` trong app_webrtc.py:156-195.
+Bản cũ (detect-once có masking) chạy `FaceVerifier._detect_faces` N+1 lần cho N khuôn mặt:
+1 lần đầu để lấy danh sách, rồi mỗi khuôn mặt lại tô đen các mặt khác và detect lại. Với 2 người
+trong khung hình đó là 3 lần RetinaFace + 4 lần ArcFace mỗi frame, dù chỉ cần 1 + N.
+
+Ở đây mỗi khuôn mặt đã có sẵn `normed_embedding` từ lần detect duy nhất, nên so khớp trực tiếp
+với DB là đủ. Thứ tự xét vẫn là diện tích giảm dần (mặt lớn nhất trước) và vẫn chỉ trả về
+người lạ ĐẦU TIÊN gặp — giữ nguyên hợp đồng alert của bản cũ.
 """
 from __future__ import annotations
 
@@ -11,7 +17,6 @@ import numpy as np
 
 __all__ = ["scan_stranger_with_masking", "crop_for_registration"]
 
-_FACE_MASK_MARGIN = 10
 _REGISTER_MARGIN = 40
 
 
@@ -22,34 +27,28 @@ def scan_stranger_with_masking(
 ) -> Tuple[Optional[dict[str, Any]], Optional[Any]]:
     """Trả (alert|None, bbox_khuôn_mặt_lớn_nhất).
 
-    `verify_face()` chỉ báo khuôn mặt khớp kém **đầu tiên** nó gặp, nên khi trong khung hình
-    có nhiều người phải che các mặt khác đi thì kết quả mới đúng cho từng người.
+    Tên hàm giữ nguyên để app realtime và offline không phải đổi chỗ gọi; bên trong không còn
+    tô đen + detect lại (xem docstring module).
     """
     faces = face_model._detect_faces(img)
     if not faces:
         return None, None
 
     faces = sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
-    h, w = img.shape[:2]
 
-    for i, target_face in enumerate(faces):
-        masked_frame = img.copy()
-        for j, other_face in enumerate(faces):
-            if i == j:
-                continue
-            ox1, oy1, ox2, oy2 = map(int, other_face.bbox)
-            cv2.rectangle(
-                masked_frame,
-                (max(0, ox1 - _FACE_MASK_MARGIN), max(0, oy1 - _FACE_MASK_MARGIN)),
-                (min(w, ox2 + _FACE_MASK_MARGIN), min(h, oy2 + _FACE_MASK_MARGIN)),
-                (0, 0, 0),
-                -1,
-            )
-
-        verify_result = face_model.verify_face(masked_frame, timestamp)
-        if verify_result and verify_result.get("status") == "alert":
-            verify_result["details"]["unauthorized_bbox"] = [int(x) for x in target_face.bbox]
-            return verify_result, target_face.bbox
+    for target_face in faces:
+        _, best_score = face_model._best_match(target_face.normed_embedding)
+        if best_score < face_model.similarity_threshold:
+            return {
+                "module": "face_verify",
+                "status": "alert",
+                "timestamp": timestamp,
+                "message": "unauthorized_person",
+                "details": {
+                    "similarity_score": round(best_score, 4),
+                    "unauthorized_bbox": [int(x) for x in target_face.bbox],
+                },
+            }, target_face.bbox
 
     return None, faces[0].bbox
 

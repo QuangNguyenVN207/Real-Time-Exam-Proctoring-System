@@ -1,8 +1,9 @@
 """Luồng hành vi: tracking người -> holistic landmark -> causal classifier.
 
-Sao y phần khởi tạo (`fast_gaze_thread`, app_webrtc.py:404-459) và phần xử lý frame
-(app_webrtc.py:474-518) của bản realtime. `scan_frame()` trả về *danh sách* alert
-(mỗi actor một alert) thay vì đẩy thẳng vào queue, nên offline runner và app cùng dùng.
+Dùng chung cho realtime (`fast_gaze_thread` trong app_webrtc.py) và offline (`run_offline.py`).
+`scan_frame()` trả về *danh sách* alert (mỗi actor một alert) thay vì đẩy thẳng vào queue.
+Đây là stack hành vi DUY NHẤT trong hệ thống: khung xương hiển thị được vẽ lại từ
+`latest_packet`/`latest_results` bằng `GazeStack.draw_skeleton()`, không chạy model lần hai.
 """
 from __future__ import annotations
 
@@ -64,10 +65,23 @@ class GazeStack:
     classifier_error: Optional[str] = None
     # Phân loại mới nhất của *mọi* actor (kể cả c5) — offline dùng để báo cáo theo từng người.
     last_classifications: dict[str, Any] = field(default_factory=dict)
+    # Frame gần nhất đã suy luận: UI vẽ lại khung xương từ đây (không suy luận thêm lần nữa).
+    latest_packet: Optional[Any] = None
+    latest_results: Optional[list[Any]] = None
 
     @property
     def manager(self) -> Any:
         return self.tracking_module.manager
+
+    def draw_skeleton(self, frame: Any) -> None:
+        """overlays.draw() gọi hàm này trên frame hiển thị — chỉ vẽ, không chạy model."""
+        try:
+            if self.latest_results:
+                self.holistic.draw_results(frame, self.latest_results)
+            if self.latest_packet:
+                self.tracking_module.draw_tracks(frame, self.latest_packet)
+        except Exception:  # frame hiển thị khác kích thước/định dạng thì bỏ qua, không làm chết callback
+            pass
 
     def close(self) -> None:
         try:
@@ -147,6 +161,8 @@ def scan_frame(stack: GazeStack, frame: Any, timestamp: float) -> list[dict[str,
                 )
 
         holistic_results = stack.holistic.process_packet(frame, packet)
+        stack.latest_packet = packet
+        stack.latest_results = holistic_results
 
         if stack.live_classifier is not None:
             classifications = stack.live_classifier.update(
