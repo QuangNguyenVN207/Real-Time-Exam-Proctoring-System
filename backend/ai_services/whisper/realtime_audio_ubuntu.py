@@ -8,6 +8,16 @@ from contextlib import contextmanager
 import numpy as np
 
 
+def _vad_threshold() -> float:
+    """Ngưỡng RMS cắt câu; `PROCTOR_VAD_THRESHOLD` cho phép hạ khi mic laptop quá nhỏ."""
+    raw = os.environ.get("PROCTOR_VAD_THRESHOLD", "").strip()
+    try:
+        value = float(raw) if raw else audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    except ValueError:
+        value = audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    return max(0.001, value)
+
+
 def _configure_alsa_plugins() -> None:
     """Trỏ ALSA tới plugin pulse nằm trong `~/.local/lib/alsa-lib` (nếu có).
 
@@ -67,11 +77,26 @@ class RealtimeAudioWorker:
         self.audio_stream = None
         self.pyaudio_instance = None
         self.started = False
+        self.last_error = None
+        self._silent_warned = False
 
         self.input_sr = self.TARGET_SR
+        self.device_index = None          # None = thiết bị mặc định; đổi bằng PROCTOR_MIC_DEVICE=<index>
+        self.device_name = ""
 
-        # Thuật toán cắt câu theo RMS dùng chung với luồng offline (pipeline/audio_scan.py)
-        self.chunker = audio_scan.DynamicSpeechChunker(self.input_sr)
+        # Số đo để UI trả lời được "mic có nghe thấy gì không?" — RMS dưới ngưỡng VAD thì
+        # không câu nào được cắt, nên không có gì hiện trên giao diện dù người dùng đang nói.
+        self.last_rms = 0.0
+        self.last_peak = 0.0
+        self.max_rms = 0.0
+        self.chunks_captured = 0
+        self.segments_cut = 0
+
+        # Thuật toán cắt câu theo RMS dùng chung với luồng offline (pipeline/audio_scan.py).
+        # Hạ ngưỡng khi mic yếu: PROCTOR_VAD_THRESHOLD=0.012
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, silence_threshold=_vad_threshold()
+        )
 
         self.total_sent = 0
         self.total_alert = 0
@@ -84,6 +109,16 @@ class RealtimeAudioWorker:
             print(f"[PyAudio] Cảnh báo luồng âm thanh: {status}")
 
         chunk = np.frombuffer(in_data, dtype=np.float32)
+        if chunk.size:
+            self.last_rms = float(np.sqrt(np.mean(chunk ** 2)))
+            self.last_peak = float(np.abs(chunk).max())
+            if self.last_rms > self.max_rms:
+                self.max_rms = self.last_rms
+        self.chunks_captured += 1
+        if self.chunks_captured >= 20 and self.max_rms == 0.0 and not self._silent_warned:
+            self._silent_warned = True
+            print("[Audio] ⚠️ 10 giây không có mẫu nào khác 0 -> thiết bị vào đang câm. "
+                  "Chọn mic khác bằng PROCTOR_MIC_DEVICE=<index> (xem danh sách ở trên).")
         if self.audio_queue.full():
             try:
                 _ = self.audio_queue.get_nowait()
@@ -111,6 +146,7 @@ class RealtimeAudioWorker:
             clean_audio = self.chunker.feed(chunk)
             if clean_audio is None:
                 continue
+            self.segments_cut += 1
 
             try:
                 timestamp = time.time()
@@ -211,14 +247,25 @@ class RealtimeAudioWorker:
             p = pyaudio.PyAudio()
         self.pyaudio_instance = p
 
+        # PROCTOR_MIC_DEVICE=<index> để chọn mic khác khi mặc định là DMIC câm hoặc thiết bị lạ.
+        raw_device = os.environ.get("PROCTOR_MIC_DEVICE", "").strip()
+        self.device_index = int(raw_device) if raw_device.isdigit() else None
         try:
-            default_device = p.get_default_input_device_info()
-            self.input_sr = int(default_device["defaultSampleRate"])
-        except Exception:
+            info = (
+                p.get_device_info_by_index(self.device_index)
+                if self.device_index is not None
+                else p.get_default_input_device_info()
+            )
+            self.input_sr = int(info["defaultSampleRate"])
+            self.device_name = str(info.get("name", ""))
+        except Exception as e:
             self.input_sr = self.TARGET_SR
+            print(f"[Audio] Không lấy được thông tin mic ({e}) -> dùng {self.input_sr} Hz")
 
         # Chunker làm việc theo sample rate thật của card âm thanh
-        self.chunker = audio_scan.DynamicSpeechChunker(self.input_sr)
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, silence_threshold=_vad_threshold()
+        )
         # Thread mới mỗi lần start -> dừng rồi bật lại được (Thread của Python chỉ start 1 lần).
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
@@ -227,8 +274,10 @@ class RealtimeAudioWorker:
 
         print("=" * 70)
         print("Realtime audio worker started (PyAudio + Dynamic VAD)")
+        print(f"Input device  : [{self.device_index if self.device_index is not None else 'default'}] {self.device_name}")
         print(f"Input SR      : {self.input_sr}")
         print(f"Target SR     : {self.TARGET_SR}")
+        print(f"VAD threshold : {self.chunker.threshold} (RMS; đổi bằng PROCTOR_VAD_THRESHOLD)")
         print("=" * 70)
         print("Listening... (Ctrl+C to stop)")
         print("Tip: giữ im lặng ~1 giây đầu để lấy noise profile.\n")
@@ -243,12 +292,22 @@ class RealtimeAudioWorker:
                     channels=self.CHANNELS,
                     rate=self.input_sr,
                     input=True,
+                    input_device_index=self.device_index,
                     frames_per_buffer=blocksize,
                     stream_callback=self._audio_callback
                 )
             stream.start_stream()
         except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             print(f"[Audio] ❌ Không mở được micro: {e}")
+            try:
+                print("[Audio] Các thiết bị vào khả dụng (đặt PROCTOR_MIC_DEVICE=<số> để chọn):")
+                for i in range(p.get_device_count()):
+                    dev = p.get_device_info_by_index(i)
+                    if dev.get("maxInputChannels", 0) > 0:
+                        print(f"   [{i}] {dev['name']} @ {int(dev['defaultSampleRate'])} Hz")
+            except Exception:
+                pass
             print("[Audio] Gợi ý (WSL): cần libasound2-plugins để ALSA đi qua PulseAudio của WSLg.")
             print("        sudo apt install -y libasound2-plugins pulseaudio-utils")
             print("        rồi `~/.asoundrc` có pcm.!default { type pulse } (README §5.1).")

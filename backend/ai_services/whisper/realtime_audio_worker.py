@@ -1,3 +1,4 @@
+import os
 import time
 import queue
 import threading
@@ -8,6 +9,17 @@ import sounddevice as sd
 # Đảm bảo đường dẫn import đúng với cấu trúc thư mục của bạn
 from backend.ai_services.whisper.audio_pipeline import AudioPipeline
 from backend.ai_services.pipeline import audio_scan
+
+
+def _vad_threshold() -> float:
+    """Ngưỡng RMS cắt câu; `PROCTOR_VAD_THRESHOLD` cho phép hạ khi mic laptop quá nhỏ."""
+    raw = os.environ.get("PROCTOR_VAD_THRESHOLD", "").strip()
+    try:
+        value = float(raw) if raw else audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    except ValueError:
+        value = audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    return max(0.001, value)
+
 
 class RealtimeAudioWorker:
     TARGET_SR = 16000
@@ -21,11 +33,24 @@ class RealtimeAudioWorker:
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
 
         self.device_id = None
+        self.device_name = ""
         self.input_sr = self.TARGET_SR
+        self.last_error = None
+        self._silent_warned = False
+
+        # Số đo để UI trả lời được "mic có nghe thấy gì không?": RMS dưới ngưỡng VAD thì
+        # không câu nào được cắt nên giao diện im lặng dù người dùng đang nói.
+        self.last_rms = 0.0
+        self.last_peak = 0.0
+        self.max_rms = 0.0
+        self.chunks_captured = 0
+        self.segments_cut = 0
 
         # Thuật toán cắt câu theo RMS dùng chung với luồng offline (pipeline/audio_scan.py).
         # Bản Windows không ném đi 1 giây lấy noise profile như bản Ubuntu.
-        self.chunker = audio_scan.DynamicSpeechChunker(self.input_sr, noise_profile_seconds=0.0)
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, noise_profile_seconds=0.0, silence_threshold=_vad_threshold()
+        )
 
         self.total_sent = 0
         self.total_alert = 0
@@ -72,11 +97,14 @@ class RealtimeAudioWorker:
         return candidates[0] if candidates else None
 
     def resolve_device_and_samplerate(self):
-        self.device_id = self.select_input_device()
+        # PROCTOR_MIC_DEVICE=<index> để chọn mic khác khi mặc định là thiết bị lạ hoặc câm.
+        raw_device = os.environ.get("PROCTOR_MIC_DEVICE", "").strip()
+        self.device_id = int(raw_device) if raw_device.isdigit() else self.select_input_device()
         if self.device_id is None:
             raise RuntimeError("No input device found.")
 
         info = sd.query_devices(self.device_id, "input")
+        self.device_name = str(info.get("name", ""))
         default_sr = int(info.get("default_samplerate", self.TARGET_SR))
 
         try:
@@ -97,6 +125,16 @@ class RealtimeAudioWorker:
     # =========================
     def _audio_callback(self, indata, frames, time_info, status):
         chunk = indata.copy().astype(np.float32).reshape(-1)
+        if chunk.size:
+            self.last_rms = float(np.sqrt(np.mean(chunk ** 2)))
+            self.last_peak = float(np.abs(chunk).max())
+            if self.last_rms > self.max_rms:
+                self.max_rms = self.last_rms
+        self.chunks_captured += 1
+        if self.chunks_captured >= 20 and self.max_rms == 0.0 and not self._silent_warned:
+            self._silent_warned = True
+            print("[Audio] ⚠️ 10 giây không có mẫu nào khác 0 -> thiết bị vào đang câm. "
+                  "Chọn mic khác bằng PROCTOR_MIC_DEVICE=<index> (xem danh sách ở trên).")
         if self.audio_queue.full():
             try: _ = self.audio_queue.get_nowait()
             except queue.Empty: pass
@@ -124,6 +162,7 @@ class RealtimeAudioWorker:
             audio_16k = self.chunker.feed(chunk)
             if audio_16k is None:
                 continue
+            self.segments_cut += 1
 
             try:
                 result = self.pipeline.process_audio(audio_16k, timestamp=time.time(), source="realtime-mic")
@@ -187,16 +226,23 @@ class RealtimeAudioWorker:
         self.list_input_devices()
         self.resolve_device_and_samplerate()
         # Chunker phải theo đúng sample rate của thiết bị đã chọn
-        self.chunker = audio_scan.DynamicSpeechChunker(self.input_sr, noise_profile_seconds=0.0)
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, noise_profile_seconds=0.0, silence_threshold=_vad_threshold()
+        )
+        if not self.worker_thread.is_alive():
+            # Thread đã start rồi (stop() rồi start() lại) thì dùng lại, không tạo mới:
+            # một đối tượng Thread của Python chỉ start được MỘT lần.
+            self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
 
         blocksize = int(self.input_sr * self.CHUNK_SECONDS)
 
         print("=" * 70)
         print("Realtime Audio Worker Started (DYNAMIC VAD CHUNKING OPTIMIZED)")
-        print(f"Device        : {self.device_id}")
+        print(f"Device        : [{self.device_id}] {self.device_name}")
         print(f"Input SR      : {self.input_sr}")
         print(f"Target SR     : {self.TARGET_SR}")
+        print(f"VAD threshold : {self.chunker.threshold} (RMS; đổi bằng PROCTOR_VAD_THRESHOLD)")
         print("=" * 70)
         print("🎤 Đang lắng nghe... (Nhấn Ctrl+C để dừng)")
 

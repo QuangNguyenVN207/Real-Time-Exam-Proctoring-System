@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -96,6 +97,13 @@ class RemoteHolistic:
         self._log_path: str | None = None
         self._restarts = 0
         self._last_error: str | None = None
+        # Chỉ MỘT lần start() được chạy tại một thời điểm. Bản cũ submit self.start từ mỗi
+        # tick lỗi -> hai tiến trình con dựng song song, cái sau đè `_conn` của cái trước
+        # ("AttributeError: 'NoneType' object has no attribute 'recv'") rồi rơi về chạy
+        # tại chỗ (giữ GIL -> hình đứng vài giây).
+        self._start_lock = threading.Lock()
+        self._restart_pending = False
+        self._closed = False
 
         self.stats = {"remote": 0, "fallback": 0, "restarts": 0}
 
@@ -117,6 +125,12 @@ class RemoteHolistic:
 
     def start(self) -> bool:
         """Khởi động tiến trình con. Trả False nếu thất bại (khi đó dùng đường lui)."""
+        with self._start_lock:
+            return self._start_locked()
+
+    def _start_locked(self) -> bool:
+        if self._closed:
+            return False
         if self.alive:
             return True
         self._cleanup()
@@ -172,12 +186,17 @@ class RemoteHolistic:
             return False
 
     def close(self) -> None:
-        try:
-            if self._conn is not None:
-                self._conn.send({"cmd": "quit"})
-        except Exception:
-            pass
-        self._cleanup()
+        # Giữ khoá: nếu một lần restart đang chạy nền thì phải đợi nó xong, nếu không
+        # `_cleanup()` sẽ đóng listener/conn giữa lúc `start()` đang bắt tay
+        # ("AttributeError: 'NoneType' object has no attribute 'recv'").
+        with self._start_lock:
+            self._closed = True
+            try:
+                if self._conn is not None:
+                    self._conn.send({"cmd": "quit"})
+            except Exception:
+                pass
+            self._cleanup()
         try:
             if self._local_started:
                 self._local.__exit__(None, None, None)
@@ -204,11 +223,45 @@ class RemoteHolistic:
                 raise RuntimeError(str(reply.get("error") or "process thất bại"))
             except Exception as exc:
                 self._last_error = f"{type(exc).__name__}: {exc}"
-                self._cleanup()
-                if self._restarts <= self._max_restarts:
-                    # thử dựng lại ngay cho tick sau; tick này vẫn phải có kết quả
-                    ThreadPoolExecutor(max_workers=1).submit(self.start)
-        return self._fallback_process_packet(frame, packet)
+                with self._start_lock:
+                    self._cleanup()
+                self._schedule_restart()
+                # Tick này không có landmark là chấp nhận được; KHÔNG nạp model ngay trong
+                # tiến trình chính (giữ GIL vài giây -> video đứng). Chỉ dùng đường lui tại
+                # chỗ khi đã hết số lần restart.
+                if self._restarts > self._max_restarts:
+                    return self._fallback_process_packet(frame, packet)
+                return ()
+        # Chưa có tiến trình con (đang dựng lại / chưa từng dựng được). Trong lúc chờ thì trả
+        # rỗng, KHÔNG nạp model vào tiến trình chính; chỉ chạy tại chỗ khi đã hết lượt restart.
+        if self._restarts > self._max_restarts:
+            return self._fallback_process_packet(frame, packet)
+        self._schedule_restart()
+        return ()
+
+    def _schedule_restart(self) -> None:
+        """Dựng lại tiến trình con ở thread nền, tối đa một lần đang chờ.
+
+        Không chặn: `start()` giữ lock trong lúc chờ accept (tới `startup_timeout`), nên
+        luồng gaze không được phép đứng chờ ở đây.
+        """
+        if not self._start_lock.acquire(blocking=False):
+            return  # một lần start() khác đang chạy -> nó sẽ dựng xong
+        try:
+            if self._closed or self._restart_pending or self._restarts > self._max_restarts:
+                return
+            self._restart_pending = True
+        finally:
+            self._start_lock.release()
+
+        def _run() -> None:
+            try:
+                self.start()
+            finally:
+                with self._start_lock:
+                    self._restart_pending = False
+
+        threading.Thread(target=_run, name="holistic-restart", daemon=True).start()
 
     def draw_results(self, frame: Any, results: Iterable[Any]) -> Any:
         """Vẽ khung xương: hàm thuần OpenCV, không đụng model."""

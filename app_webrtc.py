@@ -86,8 +86,11 @@ _DEVICE_PROFILE = {
     "cpu": ("weights/best (1).pt", None, "cpu"),
 }
 
-from backend.core.device import select_device
+from backend.core.device import select_device, configure_cpu_threads
 DEVICE = select_device()
+# Bốn luồng model chạy song song; mỗi thư viện mặc định lấy hết core (torch 16 thread) nên
+# chúng tranh CPU lẫn nhau. Đặt ngân sách thread TRƯỚC khi nạp model (xem device.CPU_THREADS).
+CPU_THREADS = configure_cpu_threads()
 VISION_MODEL_PATH, VISION_DEVICE, PERSON_DEVICE = _DEVICE_PROFILE.get(DEVICE.kind, _DEVICE_PROFILE["cpu"])
 OPENVINO_DEVICES = _openvino_devices() if DEVICE.kind == "intel" else []
 # print(f"[INFO] Thiết bị suy luận: {DEVICE.kind} ({DEVICE.name}) -> vật cấm={VISION_MODEL_PATH}"
@@ -110,6 +113,11 @@ from backend.ai_services.pipeline import audio_scan, events, face_scan, gaze_sca
 from backend.ai_services.pipeline import overlays as overlay_draw
 from backend.ai_services.pipeline.metrics import METRICS
 from offline_job import OfflineJob
+
+# Tên module realtime — giống luồng offline (`run_offline.ALL_MODULES`) để người dùng và log
+# dùng cùng một từ vựng. "pose" ở offline chỉ là bí danh cũ của "action" nên realtime bỏ.
+REALTIME_MODULES = ("object", "face", "paper", "action", "audio")
+FACES_DIR = Path("data/student_faces")
 
 # ==========================================
 # 1. KHỞI TẠO TÀI NGUYÊN (CHẠY 1 LẦN DUY NHẤT)
@@ -145,10 +153,29 @@ def init_system_resources():
         "last_gaze_push": 0.0,
         "last_vision_push": 0.0,
         "logs": [],
-        "log_cooldown": {}
+        "log_cooldown": {},
+        # Bật/tắt module realtime lúc đang chạy. Tên trùng `run_offline.ALL_MODULES` để hai
+        # luồng dùng cùng từ vựng. Thread đọc cờ này MỖI vòng lặp nên đổi trên UI có hiệu lực
+        # ngay, không phải restart (model vẫn nằm trong RAM, chỉ bỏ qua phần suy luận).
+        "modules": set(REALTIME_MODULES),
+        "face_model": None,
     }
 
     # --- LUỒNG AI THỊ GIÁC ---
+    # `os.nice` chỉ hạ ưu tiên của ĐÚNG thread đang gọi (Linux/WSL). Khi CPU bị AI chiếm hết,
+    # event loop của aiortc không kịp nhận/ACK gói -> bộ ước lượng băng thông tưởng nghẽn ->
+    # gửi REMB thấp -> Chrome hạ độ phân giải (mờ) và trả frame cũ (lag). Nhường CPU cho
+    # callback WebRTC là cách rẻ nhất để cắt vòng lặp đó; Windows không hỗ trợ -> bỏ qua.
+    def _be_nice() -> None:
+        try:
+            os.nice(5)
+        except (AttributeError, OSError):
+            pass
+
+    def _module_on(name: str) -> bool:
+        """Module có đang bật không (UI ghi vào `shared_state["modules"]`, mặc định bật hết)."""
+        return name in shared_state.get("modules", REALTIME_MODULES)
+
     # LUỒNG 1: Xử lý nặng (YOLO + FaceNet) - Chạy chậm
     def heavy_vision_thread():
         print("[INFO] Đang khởi động luồng AI Thị giác (Nặng) bằng OpenVINO...")
@@ -162,6 +189,8 @@ def init_system_resources():
                 confidence_threshold=0.7
             )
             face_model = FaceVerifier(db_path="data/student_faces/")
+            # UI cần model này để nạp lại DB sau khi xoá/thêm ảnh học sinh.
+            shared_state["face_model"] = face_model
         except Exception as e:
             print(f"[LỖI KHỞI TẠO AI THỊ GIÁC]: {e}")
             vision_ready.set()
@@ -175,6 +204,7 @@ def init_system_resources():
         
         vision_ready.set()
         print("[INFO] ✅ AI Thị giác (Nặng) đã nạp xong!")
+        _be_nice()
 
         while True:
             # 1. Xử lý chụp ảnh đăng ký (Đồng bộ Masking)
@@ -212,27 +242,43 @@ def init_system_resources():
                 register_face_event.clear()
                 shared_state["register_frame"] = None
 
-            # 2. Xử lý khung hình
-            data = frame_q.get()
+            # Nạp lại DB khuôn mặt theo yêu cầu từ UI (xoá/thêm ảnh). Làm Ở THREAD NÀY vì
+            # `_load_database()` ghi đè `_known_names`/`_known_vectors`; gọi từ luồng Streamlit
+            # có thể để lọt trạng thái nửa cũ nửa mới khi đang có frame được xử lý.
+            if shared_state.pop("reload_face_db", False):
+                try:
+                    face_model._load_database()
+                except Exception as exc:
+                    print(f"[LỖI NẠP LẠI FACE DB] {exc}")
+
+            # 2. Xử lý khung hình. Cờ module đọc lại mỗi frame -> tắt trên UI là dừng ngay
+            # (không chạy model, không đẩy cảnh báo) mà không phải restart app.
+            # `timeout` để vòng lặp vẫn thức dậy xử lý cờ `reload_face_db` khi camera chưa chạy.
+            try:
+                data = frame_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
             if data is None: break
             frame, timestamp = data
 
             # Vật cấm (đã lọc nhãn giấy trong object_scan) + người lạ (masking) đi qua queue chung
-            with METRICS.time("object"):
-                alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
-            if alert_object is not None:
-                if not result_q.full():
-                    result_q.put(alert_object)
-                else:
-                    METRICS.drop("queue.result")
-                    print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
+            if _module_on("object"):
+                with METRICS.time("object"):
+                    alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
+                if alert_object is not None:
+                    if not result_q.full():
+                        result_q.put(alert_object)
+                    else:
+                        METRICS.drop("queue.result")
+                        print("[DEBUG YOLO] CẢNH BÁO: RESULT_QUEUE đã đầy, bị rớt frame cảnh báo!")
 
-            result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
-            if result_face:
-                if not result_q.full():
-                    result_q.put(result_face)
-                else:
-                    METRICS.drop("queue.result")
+            if _module_on("face"):
+                result_face, _ = get_largest_stranger_with_masking(frame, timestamp)
+                if result_face:
+                    if not result_q.full():
+                        result_q.put(result_face)
+                    else:
+                        METRICS.drop("queue.result")
 
     # ==========================================
     # LUỒNG AI ĐẾM GIẤY (ĐẶC TRỊ RIÊNG CHO PAPER PIPELINE)
@@ -245,7 +291,11 @@ def init_system_resources():
                 confidence_threshold=0.55, 
                 device=PERSON_DEVICE
             )
-            paper_object_detector = ObjectDetectModule(device=PERSON_DEVICE)
+            # `device=None` -> auto: trên máy Intel là OV/iGPU, trên NVIDIA là CUDA. Trước đây ép
+            # `PERSON_DEVICE` (= "cpu") nên model vật cấm của luồng giấy chạy .pt trên CPU, cộng
+            # thêm person detector cũng CPU -> hai model xếp hàng trên cùng CPU. Tách sang iGPU
+            # (person vẫn CPU) thì hai model chạy song song: đo 2026-10-29, paper p50 1089 -> 319 ms.
+            paper_object_detector = ObjectDetectModule(device=None)
             
             session_id = f"paper_session_{int(time.time())}"
             paper_pipeline = PaperCountPipeline(
@@ -272,6 +322,7 @@ def init_system_resources():
 
         paper_ready.set()
         print("[INFO] ✅ AI Đếm Giấy đã sẵn sàng trên luồng riêng!")
+        _be_nice()
 
         while True:
             data = paper_q.get()
@@ -297,6 +348,8 @@ def init_system_resources():
                 shared_state["action_disarm_paper"] = False
 
             # 2. Xử lý frame đếm giấy
+            if not _module_on("paper"):
+                continue  # frame đã được rút khỏi queue ở trên -> không đọng lại
             try:
                 with METRICS.time("paper"):
                     result_paper = paper_pipeline.process_frame(
@@ -340,11 +393,20 @@ def init_system_resources():
 
         gaze_ready.set()
         print("[INFO] ✅ Fast Gaze Thread (Nâng cao) đã nạp xong!")
+        # KHÔNG `_be_nice()` cho luồng này: phần nặng (MediaPipe) đã ở tiến trình con, còn lại
+        # là chờ socket + tracking CPU. Hạ ưu tiên chỉ làm khung xương cập nhật chậm hơn (đứng
+        # hình ở chỗ cũ) mà không giúp gì cho callback video.
 
         while True:
             data = gaze_q.get()
             if data is None: break
             frame, timestamp = data
+
+            if not _module_on("action"):
+                # Xoá kết quả cũ, nếu không overlay sẽ vẽ lại khung xương đã "đóng băng".
+                stack.latest_packet = None
+                stack.latest_results = ()
+                continue
 
             with METRICS.time("action"):
                 c2_c3_alerts = gaze_scan.scan_frame(stack, frame, timestamp)
@@ -359,10 +421,15 @@ def init_system_resources():
         print("[INFO] Đang khởi động luồng AI Âm thanh thực tế...")
         try:
             audio_worker = RealtimeAudioWorker()
+            # Phơi ra cho panel "Sức khoẻ module": nếu mic không nghe thấy gì (RMS thấp hơn
+            # ngưỡng VAD) thì không câu nào được cắt và giao diện im lặng dù người dùng đang nói.
+            shared_state["audio_worker"] = audio_worker
             print("[DEBUG AUDIO] ✅ Đã khởi tạo RealtimeAudioWorker thành công!")
 
             original_pipeline = audio_worker.pipeline.process_audio
             def hooked_process_audio(*args, **kwargs):
+                if not _module_on("audio"):
+                    return None  # worker coi None là "không có gì để báo"
                 # Kiểm tra các tham số đầu vào (thường là mảng numpy hoặc bytes chứa audio chunk)
                 if args:
                     raw_audio = args[0]
@@ -393,10 +460,23 @@ def init_system_resources():
             print("[INFO] ✅ Audio Thread đã nạp xong và chuẩn bị lắng nghe micro!")
             audio_worker.start()
         except Exception as e:
+            shared_state["audio_error"] = f"{type(e).__name__}: {e}"
             print(f"[LỖI LUỒNG ÂM THANH] Khởi tạo thất bại: {e}")
             import traceback
             traceback.print_exc()
             audio_ready.set()
+
+    # Nạp trước các thư viện nặng, TUẦN TỰ ở luồng chính. Python 3.12 coi việc hai thread cùng
+    # import một module là deadlock (`_ModuleLock`) và đã ném thật:
+    #   "[LỖI KHỞI TẠO PAPER PIPELINE]: deadlock detected by _ModuleLock('ultralytics.utils')"
+    # khi luồng thị giác và luồng đếm giấy cùng import ultralytics. Import ở đây chỉ chạy một lần
+    # trong `st.cache_resource`, các luồng sau đó chỉ tra `sys.modules`.
+    for _module in ("ultralytics", "ultralytics.utils", "torch", "mediapipe",
+                    "onnxruntime", "insightface", "faiss"):
+        try:
+            __import__(_module)
+        except Exception as _exc:  # thiếu gói là chuyện của từng module, không chặn khởi động
+            print(f"[INFO] Bỏ qua preload {_module}: {_exc}")
 
     # Khởi chạy các luồng
     t_vision = threading.Thread(target=heavy_vision_thread, daemon=True)
@@ -420,7 +500,8 @@ def init_system_resources():
 FRAME_QUEUE, PAPER_QUEUE, GAZE_QUEUE, RESULT_QUEUE, ACTIVE_OVERLAYS, OVERLAY_LOCK, REG_EVENT, SHARED_STATE = init_system_resources()
 OVERLAY_TTL = 1.5
 # Nhịp đẩy frame cho luồng "nặng" (YOLO vật cấm + FaceNet). Đo trên RTX 4050: 22 + 32 ms nên
-# trần ~18 fps; đẩy mỗi frame chỉ sinh ra drop liên tục và tranh GIL với callback. 10 fps là dư.
+# trần ~18 fps; đẩy mỗi frame chỉ sinh ra drop liên tục và tranh GIL với callback. 10 fps là dư
+# khi mỗi model đã có ngân sách thread riêng (device.CPU_THREADS) thay vì mỗi cái chiếm 16 thread.
 VISION_TARGET_FPS = 10.0
 VISION_MIN_INTERVAL = 1.0 / VISION_TARGET_FPS
 # Nhịp đẩy frame vào luồng HÀNH VI. Model causal được train ở 8 fps
@@ -432,6 +513,47 @@ GAZE_MIN_INTERVAL = 1.0 / GAZE_TARGET_FPS
 # Cùng một nội dung cảnh báo không lặp lại trong sidebar trong N giây. Chỉ gộp DÒNG LOG:
 # overlay vẫn được làm mới mỗi alert, và offline/`events.jsonl` vẫn ghi đủ từng lần phát hiện.
 LOG_COOLDOWN = 2.0
+# Không có frame trong khoảng này = phiên stream mới (STOP rồi START, hoặc lần đầu bấm START).
+# Dùng để bỏ cảnh báo đã sinh ra trong lúc camera chưa chạy (model âm thanh vẫn chạy nền).
+# 10 s (không phải 3): lúc mở stream Chrome có thể ngừng gửi vài giây để thương lượng, hạ
+# ngưỡng quá thấp sẽ xoá oan cảnh báo vừa sinh ra trong lúc đang chạy.
+STREAM_GAP_RESET_S = 10.0
+# Sàn REMB (bps). aiortc ước lượng băng thông Chrome -> server từ jitter gói RTP
+# (aiortc/rate.py: RemoteBitrateEstimator) rồi gửi NGUYÊN giá trị đó về Chrome qua REMB.
+# Khi tiến trình Python bận, gói đến dồn cục -> estimator tưởng nghẽn -> REMB thấp -> Chrome
+# bật scaleResolutionDownBy (960x540 -> 640x360 -> 320x180) nên hình "lúc rõ lúc mờ". Loopback
+# thừa băng thông nên đây là nghẽn giả. Sàn này khác MIN_BITRATE của VP8: MIN_BITRATE chỉ chặn
+# encoder server -> Chrome, không chặn REMB Chrome -> server. PROCTOR_REMB_FLOOR=0 để tắt.
+REMB_FLOOR = int(os.environ.get("PROCTOR_REMB_FLOOR", "1200000") or 0)
+
+
+def _apply_remb_floor() -> None:
+    if REMB_FLOOR <= 0 or SHARED_STATE.get("remb_floor_applied"):
+        return
+    try:
+        from aiortc.codecs import vpx
+        from aiortc.rate import RemoteBitrateEstimator
+
+        original_add = RemoteBitrateEstimator.add
+
+        def add_with_floor(self, *args, **kwargs):
+            estimate = original_add(self, *args, **kwargs)
+            if estimate is None:
+                return None
+            bitrate, ssrcs = estimate
+            return max(bitrate, REMB_FLOOR), ssrcs
+
+        RemoteBitrateEstimator.add = add_with_floor
+        vpx.MIN_BITRATE = min(REMB_FLOOR, 2_000_000)
+        vpx.DEFAULT_BITRATE = max(vpx.DEFAULT_BITRATE, REMB_FLOOR)
+        SHARED_STATE["remb_floor_applied"] = True
+        print(
+            f"[WEBRTC] Sàn REMB {REMB_FLOOR // 1000} kbps "
+            f"(VP8 min {vpx.MIN_BITRATE // 1000} kbps) — Chrome không tự hạ 960x540."
+        )
+    except Exception as exc:
+        print(f"[WEBRTC] Không áp được sàn REMB: {type(exc).__name__}: {exc}")
+
 
 # ==========================================
 # 2. HÀM VẼ GIAO DIỆN (ĐƯỢC GỌI TRONG WEBRTC)
@@ -472,14 +594,52 @@ def video_frame_callback(frame: av.VideoFrame) -> av.VideoFrame:
 def _process_incoming_frame(frame: av.VideoFrame) -> av.VideoFrame:
     # 1. Chuyển đổi định dạng frame từ WebRTC sang Numpy (OpenCV)
     img = frame.to_ndarray(format="bgr24")
-    
+
+    # Kích thước + nhịp frame THẬT trình duyệt đang gửi. Chrome tự hạ 960x540 -> 480x270 khi
+    # ước lượng băng thông (aiortc gửi REMB ngược lại) tụt vì jitter -> hình "lúc rõ lúc mờ".
+    # Đây là số đo duy nhất phân biệt mờ-do-trình-duyệt với mờ-do-encoder của server.
+    SHARED_STATE["in_size"] = (frame.width, frame.height)
+    in_now = time.monotonic()
+    in_prev = SHARED_STATE.get("in_last_ts") or 0.0
+    prev_size = SHARED_STATE.get("in_size_prev")
+    if prev_size and prev_size != (frame.width, frame.height):
+        print(f"[WEBRTC] đổi kích thước vào: {prev_size[0]}x{prev_size[1]} -> {frame.width}x{frame.height}")
+    SHARED_STATE["in_size_prev"] = (frame.width, frame.height)
+    if in_prev and 0.005 < in_now - in_prev < 1.0:
+        inst_fps = 1.0 / (in_now - in_prev)
+        prev_fps = SHARED_STATE.get("in_fps") or 0.0
+        SHARED_STATE["in_fps"] = inst_fps if prev_fps <= 0 else prev_fps * 0.9 + inst_fps * 0.1
+    SHARED_STATE["in_last_ts"] = in_now
+
+    # Phiên stream mới (frame đầu tiên sau khi bấm START). Model âm thanh chạy suốt từ lúc mở
+    # app nên `RESULT_QUEUE` đã đầy cảnh báo cũ; nếu để nguyên thì vừa START là panel tuôn ra
+    # một loạt log của lúc chưa có camera. Bỏ chúng và ghi mốc để lọc tiếp phần còn lại.
+    # Console vẫn in đủ — cái này chỉ ảnh hưởng panel/lịch sử cảnh báo.
+    if not in_prev or in_now - in_prev > STREAM_GAP_RESET_S:
+        SHARED_STATE["stream_epoch"] = time.time()
+        dropped = 0
+        while not RESULT_QUEUE.empty():
+            try:
+                RESULT_QUEUE.get_nowait()
+                dropped += 1
+            except queue.Empty:
+                break
+        if dropped:
+            print(f"[INFO] Bỏ {dropped} cảnh báo tồn đọng trước khi START (vẫn xem được ở terminal).")
+
     SHARED_STATE["frame_count"] += 1
     current_time = time.time()
 
     # 2. Xử lý Hàng đợi Kết quả & Đóng gói Cảnh báo
+    stream_epoch = SHARED_STATE.get("stream_epoch", 0.0)
     while not RESULT_QUEUE.empty():
         try:
             alert = RESULT_QUEUE.get_nowait()
+
+            # Cảnh báo sinh ra TRƯỚC khi phiên stream này bắt đầu thì không đưa lên panel.
+            event_ts = alert.get("timestamp")
+            if event_ts is not None and event_ts < stream_epoch:
+                continue
 
             module_name = alert.get("module", "")
             timestamp = alert.get("timestamp", current_time)
@@ -588,6 +748,111 @@ def _render_metrics_table():
         st.caption("Lỗi gần nhất — " + " · ".join(errors))
 
 
+def _render_stream_status() -> None:
+    """Độ phân giải/nhịp frame trình duyệt đang gửi — thứ quyết định hình rõ hay mờ."""
+    size = SHARED_STATE.get("in_size")
+    if not size:
+        st.caption("📥 WebRTC: chưa nhận frame nào (bấm START).")
+        return
+    width, height = size
+    fps = float(SHARED_STATE.get("in_fps") or 0.0)
+    st.caption(f"📥 WebRTC vào: **{width}×{height}** @ {fps:.1f} fps · server trả về cùng kích thước")
+    if width < 900 or height < 500:
+        st.caption(
+            f"⚠️ Trình duyệt đang gửi {width}×{height} (thấp hơn 960×540): Chrome tự hạ độ phân giải "
+            "khi jitter/CPU tăng, nên hình mờ dù pipeline không đổi. Tắt START rồi bật lại chỉ tạm thời; "
+            "giảm tải máy (đóng app khác, hạ `stride` giấy) mới bền."
+        )
+
+
+def _render_student_manager() -> None:
+    """Danh sách học sinh đã đăng ký (`data/student_faces`) — xem, xoá, nạp lại.
+
+    Không xoá trực tiếp DB trong RAM: đặt cờ `reload_face_db` để luồng thị giác tự nạp lại
+    (xem `_load_database` được gọi trong `heavy_vision_thread`).
+    """
+    files = []
+    if FACES_DIR.exists():
+        files = sorted(p for p in FACES_DIR.iterdir()
+                       if p.suffix.lower() in {".jpg", ".jpeg", ".png"})
+    model = SHARED_STATE.get("face_model")
+    loaded = len(getattr(model, "_known_names", []) or []) if model is not None else None
+
+    with st.expander(f"👥 Học sinh đã đăng ký ({len(files)})", expanded=False):
+        if loaded is not None and loaded != len(files):
+            st.caption(f"⚠️ AI đang giữ {loaded} khuôn mặt (khác số file) — bấm **Nạp lại** bên dưới.")
+        if not files:
+            st.caption("Chưa có ai. Bấm **📸 Đăng ký khuôn mặt** khi khuôn mặt đang trong khung hình.")
+            return
+
+        cols = st.columns(2)
+        for i, path in enumerate(files):
+            with cols[i % 2]:
+                st.image(str(path), caption=path.name, use_container_width=True)
+                if st.button("🗑 Xoá", key=f"faces_del_{path.name}", use_container_width=True):
+                    st.session_state["faces_delete_target"] = path.name
+
+        target = st.session_state.get("faces_delete_target")
+        if target:
+            st.warning(f"Xoá vĩnh viễn `{target}` khỏi danh sách học sinh?")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Xác nhận xoá", type="primary", key="faces_del_confirm"):
+                    try:
+                        (FACES_DIR / target).unlink()
+                        SHARED_STATE["reload_face_db"] = True
+                        st.session_state["faces_delete_target"] = None
+                        st.rerun()
+                    except OSError as exc:
+                        st.error(f"Không xoá được: {exc}")
+            with c2:
+                if st.button("Huỷ", key="faces_del_cancel"):
+                    st.session_state["faces_delete_target"] = None
+                    st.rerun()
+
+        if st.button("↻ Nạp lại danh sách vào AI", key="faces_reload"):
+            SHARED_STATE["reload_face_db"] = True
+            st.rerun()
+
+
+def _render_mic_status() -> None:
+    """Hiện mức mic thật để phân biệt "mic câm/chọn nhầm thiết bị" với "VAD chưa cắt câu"."""
+    error = SHARED_STATE.get("audio_error")
+    if error:
+        st.caption(f"🎙️ Micro: ❌ khởi tạo lỗi — {error}")
+        return
+    worker = SHARED_STATE.get("audio_worker")
+    if worker is None:
+        st.caption("🎙️ Micro: đang khởi động…")
+        return
+
+    threshold = float(getattr(getattr(worker, "chunker", None), "threshold", 0.0) or 0.0)
+    rms = float(getattr(worker, "last_rms", 0.0) or 0.0)
+    max_rms = float(getattr(worker, "max_rms", 0.0) or 0.0)
+    chunks = int(getattr(worker, "chunks_captured", 0) or 0)
+    segments = int(getattr(worker, "segments_cut", 0) or 0)
+    device = getattr(worker, "device_name", "") or "(mặc định)"
+    sr = int(getattr(worker, "input_sr", 0) or 0)
+
+    st.caption(
+        f"🎙️ Micro: **{device}** @ {sr} Hz · RMS {rms:.4f} / ngưỡng VAD {threshold:.4f} · "
+        f"cao nhất {max_rms:.4f} · {chunks} chunk · {segments} câu đã cắt"
+    )
+    worker_error = getattr(worker, "last_error", None)
+    if worker_error:
+        st.caption(f"❌ Micro không mở được: {worker_error} — xem console để chọn thiết bị khác.")
+    elif chunks == 0:
+        st.caption("🎙️ Chưa nhận được mẫu âm thanh nào — kiểm tra quyền micro / thiết bị đầu vào.")
+    elif max_rms < threshold:
+        st.caption(
+            f"⚠️ Mức thu cao nhất {max_rms:.4f} vẫn dưới ngưỡng {threshold:.4f}: nếu bạn **đã nói to mà dòng "
+            "này không đổi**, không câu nào được cắt. Hạ ngưỡng bằng `PROCTOR_VAD_THRESHOLD=0.012`, hoặc chọn "
+            "mic khác bằng `PROCTOR_MIC_DEVICE=<số>` (index in ra ở console), rồi chạy lại app."
+        )
+    elif segments == 0:
+        st.caption("🎙️ Đã nghe thấy tiếng nhưng chưa cắt được câu — cần ≥2 giây nói liên tục trong một câu.")
+
+
 @st.fragment(run_every="1s")
 def _render_live_panel() -> None:
     """Cột phải (lịch sử cảnh báo + sức khoẻ module) tự làm mới mỗi 1 s.
@@ -612,9 +877,12 @@ def _render_live_panel() -> None:
             stats = getattr(worker, "stats", None) or {}
             st.caption(
                 f"MediaPipe Holistic: **{worker.mode}** · "
-                f"remote={stats.get('remote', 0)} · tại chỗ={stats.get('fallback', 0)}"
+                f"remote={stats.get('remote', 0)} · tại chỗ={stats.get('fallback', 0)} · "
+                f"restart={stats.get('restarts', 0)}"
                 + (f" · lỗi gần nhất: {worker.last_error}" if worker.last_error else "")
             )
+        _render_stream_status()
+        _render_mic_status()
         if st.button("♻️ Reset số đo", key="reset_metrics"):
             METRICS.reset()
             st.rerun(scope="fragment")
@@ -650,14 +918,18 @@ with col1:
     # độ chính xác; ảnh đăng ký mặt vẫn nét hơn hẳn mức 320x240 mà Chrome tự hạ trước đây.
     # KHÔNG dùng STUN: trình duyệt và Streamlit chạy cùng máy (Windows -> WSL2), host candidate
     # là đủ; STUN chỉ thêm một vòng ICE ra Internet và treo nếu mạng công ty chặn UDP.
+    _apply_remb_floor()
     webrtc_ctx = webrtc_streamer(
         key="exam-proctor",
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
         media_stream_constraints={
+            # `max` cũng phải bằng 960x540: trước đây max 1280x720 nên Chrome có thể chọn 720p,
+            # decode + encode 720p tốn gấp đôi -> callback vượt hạn 50 ms của 20 fps -> aiortc
+            # báo REMB thấp -> Chrome hạ tiếp độ phân giải (mờ) và trả frame cũ (lag).
             "video": {
-                "width": {"ideal": 960, "max": 1280},
-                "height": {"ideal": 540, "max": 720},
+                "width": {"ideal": 960, "max": 960},
+                "height": {"ideal": 540, "max": 540},
                 "frameRate": {"ideal": 20, "max": 20},
             },
             "audio": False,  # Chặn WebRTC thu âm để tránh đụng độ với luồng PyAudio
@@ -681,6 +953,23 @@ with col2:
             
     # Hiển thị trạng thái đếm giấy hiện tại
     st.info(SHARED_STATE.get("paper_status_msg", "Trạng thái: SETUP - Đang chờ cố định baseline"))
+
+    # --- Bật/tắt module ngay khi đang chạy (giống ô "Module bật" của luồng offline) ---
+    st.markdown("#### ⚙️ Module realtime")
+    if "rt_modules" not in st.session_state:
+        st.session_state.rt_modules = list(REALTIME_MODULES)
+    rt_modules = st.multiselect("Module bật", REALTIME_MODULES, key="rt_modules",
+                                help="Tắt module để giảm tải máy; có hiệu lực ngay, không cần restart.")
+    # Thread đọc lại tập này mỗi vòng lặp (xem `_module_on` trong init_system_resources).
+    SHARED_STATE["modules"] = set(rt_modules)
+    if not rt_modules:
+        st.caption("Không module nào bật — chỉ còn video, không có cảnh báo nào.")
+    else:
+        off = [m for m in REALTIME_MODULES if m not in rt_modules]
+        if off:
+            st.caption("Đang tắt: " + ", ".join(f"`{m}`" for m in off))
+
+    _render_student_manager()
 
     # Khối log + bảng sức khoẻ tự làm mới mỗi 1 s (chỉ khối này, không rerun cả trang).
     _render_live_panel()

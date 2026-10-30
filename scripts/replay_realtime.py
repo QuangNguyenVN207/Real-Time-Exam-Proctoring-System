@@ -55,7 +55,10 @@ from backend.ai_services.pipeline import events, face_scan, gaze_scan, object_sc
 from backend.ai_services.pipeline import overlays as overlay_draw
 from backend.ai_services.pipeline.metrics import METRICS
 from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
-from backend.core.device import resolve_model_path, select_device
+from backend.core.device import configure_cpu_threads, resolve_model_path, select_device
+
+# Cùng ngân sách thread với app: 4 model chạy song song, mỗi cái không được chiếm hết core.
+configure_cpu_threads()
 
 ALL_MODULES = ("object", "face", "paper", "action")
 GAZE_TARGET_FPS = 8.0  # app: cổng thời gian GAZE_MIN_INTERVAL, khớp temporal_policy target_fps=8
@@ -141,7 +144,7 @@ class Modules:
     def _build_paper(self, person_device: str) -> PaperCountPipeline:
         person = UltralyticsPersonDetector(
             model_path=str(ROOT / "weights" / "yolov8n.pt"), confidence_threshold=0.55, device=person_device)
-        detector = ObjectDetectModule(device=person_device)
+        detector = ObjectDetectModule(device=None)  # auto -> OV/iGPU (A/B 2026-10-29)
         pipeline = PaperCountPipeline(
             person_detector=person, object_detector=detector, storage_root=self.tracking_dir, max_people=2)
         # Giấy chỉ đếm giấy: tắt fallback smartphone y như app realtime

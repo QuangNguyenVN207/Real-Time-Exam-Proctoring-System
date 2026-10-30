@@ -66,8 +66,8 @@ def video_relative(line: str, t: float) -> str:
 
 
 # ---------------------------------------------------------------- audio
-def decode_audio(path: Path, target_sr: int, chunk_samples: int) -> Iterator[np.ndarray]:
-    """Track audio của file video -> từng chunk float32 mono ở `target_sr`."""
+def _iter_audio(path: Path, target_sr: int, chunk_samples: int) -> Iterator[np.ndarray]:
+    """Track audio của file video -> từng chunk float32 mono ở `target_sr` (mức gốc)."""
     with av.open(str(path)) as container:
         if not container.streams.audio:
             return
@@ -84,10 +84,60 @@ def decode_audio(path: Path, target_sr: int, chunk_samples: int) -> Iterator[np.
             yield carry
 
 
+def decode_audio(
+    path: Path, target_sr: int, chunk_samples: int, gain: float = 1.0
+) -> Iterator[np.ndarray]:
+    """Như `_iter_audio`, nhân thêm `gain` — xem `_auto_gain()` để biết vì sao cần."""
+    for chunk in _iter_audio(path, target_sr, chunk_samples):
+        yield chunk if gain == 1.0 else (chunk * gain).astype(np.float32)
+
+
+def measure_audio_level(path: Path, target_sr: int) -> tuple[float, float]:
+    """(RMS, đỉnh) của cả track audio. Một lượt giải mã, không giữ mẫu trong RAM."""
+    total = 0
+    sum_sq = 0.0
+    peak = 0.0
+    for chunk in _iter_audio(path, target_sr, target_sr):
+        total += chunk.size
+        sum_sq += float(np.dot(chunk, chunk))
+        peak = max(peak, float(np.abs(chunk).max(initial=0.0)))
+    if not total:
+        return 0.0, 0.0
+    return (sum_sq / total) ** 0.5, peak
+
+
+#: RMS mà DynamicSpeechChunker được thiết kế để nghe (SILENCE_THRESHOLD = 0.02). File quay
+#: bằng điện thoại để âm lượng thấp (đo data/video_test_demo.mp4: RMS 0.019, đỉnh -8 dBFS)
+#: rơi xuống dưới ngưỡng đó nên gần như không cắt được câu nào -> không có log âm thanh.
+AUDIO_TARGET_RMS = 0.05
+AUDIO_MAX_GAIN = 30.0
+AUDIO_PEAK_CEILING = 0.95
+#: Dưới mức này coi như file không có tiếng thật (~-54 dBFS). Khuếch đại nền nhiễu lên chỉ
+#: tạo ra câu rác cho PhoWhisper.
+AUDIO_SILENT_RMS = 0.002
+
+
+def _auto_gain(rms: float, peak: float) -> float:
+    """Hệ số khuếch đại để file yên tĩnh có mức nghe tương đương micro realtime. Không bao giờ giảm."""
+    if rms < AUDIO_SILENT_RMS:
+        return 1.0
+    gain = min(AUDIO_TARGET_RMS / rms, AUDIO_MAX_GAIN)
+    if peak > 0:
+        gain = min(gain, AUDIO_PEAK_CEILING / peak)
+    return max(1.0, gain)
+
+
 def transcribe_file_audio(path: Path, pipeline: AudioPipeline, args) -> tuple[list[dict], dict]:
     """Cắt câu bằng đúng DynamicSpeechChunker của luồng realtime -> alert audio theo mốc video."""
     stats = {"chunks": 0, "speech_segments": 0, "error": None}
-    chunks = decode_audio(path, args.audio_sample_rate, args.audio_sample_rate // 2)
+    gain = float(getattr(args, "audio_gain", 0.0) or 0.0)
+    if gain <= 0:
+        rms, peak = measure_audio_level(path, args.audio_sample_rate)
+        gain = _auto_gain(rms, peak)
+        print(f"[AUDIO] Chuẩn hoá âm lượng x{gain:.2f} "
+              f"({20 * np.log10(gain) if gain > 0 else 0:+.1f} dB) — file RMS {rms:.4f}, đỉnh {peak:.3f}")
+    stats["gain"] = round(gain, 3)
+    chunks = decode_audio(path, args.audio_sample_rate, args.audio_sample_rate // 2, gain=gain)
     first = next(chunks, None)
     if first is None:
         print("[AUDIO] ⚠️ File không có track audio (hoặc giải mã ra rỗng) -> bỏ qua giám sát âm thanh.")
@@ -126,6 +176,15 @@ def _emit_utterance(pipeline, chunker, audio_16k, utterances, stats) -> None:
 
 
 # ---------------------------------------------------------------- sink cảnh báo
+#: Bảng log vẽ lên video được làm mới mỗi LOG_REFRESH_S giây video thay vì mỗi frame: pipeline
+#: giấy/vật cấm sinh 1-3 dòng mỗi frame, chèn liên tục làm cả bảng xô lệch 30 lần/giây nên
+#: mắt không đọc được. Cửa sổ LOG_WINDOW_S giữ dòng gần mốc đang phát; dòng trùng nội dung
+#: (sau khi bỏ mốc [mm:ss]) chỉ hiện lần mới nhất.
+LOG_REFRESH_S = 1.0
+LOG_WINDOW_S = 20.0
+LOG_DISPLAY_LINES = 8
+
+
 @dataclass
 class AlertSink:
     """Đóng vai trò video_frame_callback(): nhận alert, lọc overlay, tạo log, vẽ lên frame."""
@@ -136,6 +195,11 @@ class AlertSink:
     events: list[dict[str, Any]] = field(default_factory=list)
     frame_id: int = 0
     gaze_model: Optional[Any] = None
+    log_entries: list[tuple[float, str]] = field(default_factory=list)
+    display_logs: list[str] = field(default_factory=list)
+    log_refresh_s: float = LOG_REFRESH_S
+    log_window_s: float = LOG_WINDOW_S
+    _next_refresh_t: float = 0.0
 
     def add(self, alert: Optional[dict[str, Any]], t: float) -> None:
         if not alert:
@@ -157,21 +221,42 @@ class AlertSink:
             "alert": alert,
         })
 
+        if line:
+            self.log_entries.append((moment, line))
+            self.logs.insert(0, line)
+            del self.logs[MAX_LOG_LINES:]
+            if len(self.log_entries) > 4000:  # video dài: chỉ giữ phần còn dùng để vẽ
+                del self.log_entries[:2000]
+
         if alert.get("module") == "system":
-            if line:
-                self.logs.insert(0, line)
             return
 
         events.prune_overlays(self.overlays, alert)
-        if line:
-            self.logs.insert(0, line)
-            del self.logs[MAX_LOG_LINES:]
 
     def draw(self, frame: np.ndarray, t: float) -> np.ndarray:
         events.expire_overlays(self.overlays, t, self.ttl)
+        if t >= self._next_refresh_t:
+            self.display_logs = self._recent_logs(t)
+            self._next_refresh_t = t + self.log_refresh_s
         return overlay_draw.draw(
-            frame, list(self.overlays), gaze_model=self.gaze_model, log_lines=self.logs[:8]
+            frame, list(self.overlays), gaze_model=self.gaze_model, log_lines=self.display_logs
         )
+
+    def _recent_logs(self, t: float) -> list[str]:
+        cutoff = t - self.log_window_s
+        seen: set[str] = set()
+        shown: list[str] = []
+        for moment, text in reversed(self.log_entries):
+            if moment < cutoff:
+                continue
+            key = text.partition("]** ")[2] or text
+            if key in seen:
+                continue
+            seen.add(key)
+            shown.append(text)
+            if len(shown) >= LOG_DISPLAY_LINES:
+                break
+        return shown
 
 
 def _resolve_actor(alert: dict[str, Any], line: str) -> Optional[str]:
@@ -385,6 +470,9 @@ def parse_args(argv=None):
     parser.add_argument("--faces-dir", default="data/student_faces/")
     parser.add_argument("--confidence", type=float, default=0.7)
     parser.add_argument("--audio-sample-rate", type=int, default=16000)
+    parser.add_argument("--audio-gain", type=float, default=0.0,
+                        help="hệ số nhân âm lượng trước khi cắt câu (0 = tự chuẩn hoá theo RMS, "
+                             "1 = giữ nguyên mức gốc của file)")
     parser.add_argument("--audio-noise-seconds", type=float, default=0.0,
                         help="giây đầu bị ném đi làm noise profile (realtime Ubuntu = 1.0, offline = 0)")
     parser.add_argument("--no-sound", action="store_true", help="không remux audio gốc vào video kết quả")

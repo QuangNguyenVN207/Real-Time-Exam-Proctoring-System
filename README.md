@@ -528,10 +528,17 @@ Cấu hình thêm:
 | :-- | :-- |
 | `PROCTOR_DEVICE=cuda\|intel\|cpu` | Ép thiết bị suy luận |
 | `PROCTOR_HOLISTIC_RESERVED_CORES` (4) | Số core **để dành cho app** khi MediaPipe chạy ở tiến trình con (§2.3) |
+| `PROCTOR_MIC_DEVICE=<index>` | Chọn thiết bị vào (mặc định = thiết bị mặc định của OS; index in ra ở console) |
+| `PROCTOR_VAD_THRESHOLD` (0.02) | Ngưỡng RMS cắt câu của **luồng realtime**; hạ xuống 0.012 nếu mic nhỏ (§7 mục 6) |
 | `--server.headless true` | Chạy không mở browser tự động (tiện khi test bằng script) |
 | `settings.face_similarity_threshold` (0.4) | Ngưỡng cosine → "người lạ" |
 | `settings.object_detect_every_n_frames` (2) | stride YOLO giấy (luồng nặng của app dùng cổng 10 fps, không dùng biến này) |
 | `settings.paper_count_confirm_inferences` (2) | số lần inference liên tiếp để báo phao mới |
+
+`.streamlit/config.toml` đặt `fileWatcherType = "poll"` và blacklist các thư mục lớn (`offline_out/`,
+`data/`, `weights`, `.venv/`). Không có file này, Streamlit 1.61 trên máy 16 core in
+`Failed to schedule watch observer for path ...` / `event_based_path_watcher.py` mỗi lần lưu file và còn
+tốn inotify cho các thư mục output. Đã kiểm chứng 2026-10-29: 0 lần xuất hiện lỗi sau khi thêm cấu hình.
 
 ---
 
@@ -557,6 +564,20 @@ Cột trái: video WebRTC đã vẽ đè. Cột phải (`app_webrtc.py:669-686`)
    MediaPipe (`mode=process|in-process`, `remote=`, `tại chỗ=`) và nút **Reset số đo**.
    Đây là nơi trả lời "module nào đang tụt" mà không phải cắm profiler; số liệu tích luỹ tới lần reset
    (hoặc tới khi tiến trình restart).
+6. **🎙️ Dòng trạng thái micro** (`_render_mic_status`) — thiết bị đang dùng + sample rate, RMS hiện tại,
+   RMS cao nhất từ lúc chạy, ngưỡng VAD, số chunk đã nhận và số câu đã cắt. Dưới đây là chẩn đoán khi
+   "nói mà không thấy gì" (số đo trên laptop Intel Core Ultra 7 155H, 2026-10-29: nền phòng RMS ≈ 0.006,
+   `Dmic0` 91% / -8 dB, phát lại file test ở 100% âm lượng thì cắt được câu, ở 25% thì không):
+
+   | Hiện tượng | Nguyên nhân | Xử lý |
+   | :-- | :-- | :-- |
+   | `chunk = 0`, RMS = 0.0000 | không mở được thiết bị / thiết bị câm | console có `[Audio] ❌ Không mở được micro` + danh sách index; chạy lại với `PROCTOR_MIC_DEVICE=<index>` |
+   | chunk tăng, RMS cao nhất < ngưỡng | mic quá nhỏ so với 0.02 | `PROCTOR_VAD_THRESHOLD=0.012` (chỉ ảnh hưởng realtime, không đổi offline) |
+   | chunk tăng, "câu đã cắt" > 0, console có transcript mà panel trống | camera chưa START nên `_process_incoming_frame` không chạy ⇒ `RESULT_QUEUE` không được rút | bấm START camera, hoặc xem console |
+   | "câu đã cắt" > 0 nhưng transcript rỗng | Silero-VAD (ngưỡng 0.65) hoặc PhoWhisper loại câu | nói to/rõ hơn hoặc hạ ngưỡng chunker như trên |
+
+   Hai biến môi trường trên chỉ đọc lúc khởi động, phải chạy lại app. Danh sách thiết bị vào được in ở
+   console mỗi lần start (và in đầy đủ khi mở stream thất bại).
 
 Overlay trên video: đỏ = vật cấm, vàng cam = `NGUOI LA`, cyan = giấy baseline, đỏ đậm = `CHEAT SHEET (NEW)`,
 dải đỏ đáy khung hình = cảnh báo tư thế/hành vi kèm `student_XX: <HÀNH VI>`. `OVERLAY_TTL = 1.5s`.

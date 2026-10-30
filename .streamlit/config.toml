@@ -1,0 +1,17 @@
+# Cấu hình Streamlit dùng chung cho repo.
+#
+# Vì sao không để "auto": repo hay nằm trên ổ NTFS/exFAT gắn ngoài, hoặc /mnt/c trong WSL —
+# watchdog không schedule được trên các mount đó và Streamlit in traceback
+# "Failed to schedule watch observer for path ..." ngay khi khởi động. "poll" vẫn tự reload
+# khi sửa code mà không cần inotify; đổi lại nó quét cây thư mục mỗi giây nên phải bỏ qua
+# các thư mục sinh ra lúc chạy hoặc rất nặng.
+[server]
+fileWatcherType = "poll"
+folderWatchBlacklist = [
+    "offline_out",
+    "data",
+    "stage6_bundle_exact",
+    "test_data_tracking",
+    "backend/ai_services/whisper/weights",
+    ".venv",
+]
