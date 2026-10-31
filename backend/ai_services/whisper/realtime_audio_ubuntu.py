@@ -3,14 +3,44 @@ import queue
 import threading
 import os
 import sys
-from math import gcd
 from contextlib import contextmanager
 
 import numpy as np
-import pyaudio
-from scipy.signal import butter, sosfiltfilt, resample_poly
 
-from backend.ai_services.whisper.audio_pipeline import AudioPipeline
+
+def _vad_threshold() -> float:
+    """Ngưỡng RMS cắt câu; `PROCTOR_VAD_THRESHOLD` cho phép hạ khi mic laptop quá nhỏ."""
+    raw = os.environ.get("PROCTOR_VAD_THRESHOLD", "").strip()
+    try:
+        value = float(raw) if raw else audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    except ValueError:
+        value = audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    return max(0.001, value)
+
+
+def _configure_alsa_plugins() -> None:
+    """Trỏ ALSA tới plugin pulse nằm trong `~/.local/lib/alsa-lib` (nếu có).
+
+    WSLg cho Windows dùng được micro qua PulseAudio socket `/mnt/wslg/PulseServer`, nhưng ảnh
+    Ubuntu không cài sẵn `libasound2-plugins`, nên `pcm.!default { type pulse }` trong
+    `~/.asoundrc` báo "cannot open shared library" và PyAudio chỉ thấy `default` giả.
+    README §5.1 ghi cách giải nén gói đó vào `~/.local/lib/alsa-lib` **không cần sudo**; ở đây
+    chỉ cần đặt `ALSA_PLUGIN_DIR` trước khi libasound được nạp (tức trước `import pyaudio`).
+    Nếu máy đã cài `libasound2-plugins` (plugin ở `/usr/lib/*/alsa-lib`) thì biến này không cần.
+    """
+    if os.environ.get("ALSA_PLUGIN_DIR"):
+        return  # người dùng đã tự đặt -> tôn trọng
+    local_dir = os.path.expanduser("~/.local/lib/alsa-lib")
+    if os.path.isfile(os.path.join(local_dir, "libasound_module_pcm_pulse.so")):
+        os.environ["ALSA_PLUGIN_DIR"] = local_dir
+
+
+_configure_alsa_plugins()
+
+import pyaudio  # noqa: E402  (phải import SAU khi đặt ALSA_PLUGIN_DIR)
+
+from backend.ai_services.whisper.audio_pipeline import AudioPipeline  # noqa: E402
+from backend.ai_services.pipeline import audio_scan  # noqa: E402
 
 # =========================
 # Tắt log ALSA rác trên Linux
@@ -34,29 +64,39 @@ class RealtimeAudioWorker:
     CHANNELS = 1
     CHUNK_SECONDS = 0.5
 
-    # 🔥 THUẬT TOÁN CẮT CÂU THÔNG MINH (DYNAMIC VAD CHUNKING TỪ CỘNG SỰ)
-    MIN_PROCESS_SECONDS = 2.0   # Tối thiểu 2 giây mới đem đi dịch
-    MAX_PROCESS_SECONDS = 6.0   # Tối đa 6 giây (nếu sinh viên nói liên tục không nghỉ)
-    SILENCE_TAIL_SECONDS = 0.8  # Nếu phát hiện im lặng 0.8s ở cuối -> Cắt câu mang đi dịch ngay
-    SILENCE_THRESHOLD = 0.02    # Ngưỡng âm lượng để tính là "im lặng"
-    
-    # Giữ lại thời gian lấy mẫu tiếng ồn cho Ubuntu
-    NOISE_PROFILE_SECONDS = 1.0 
-
     def __init__(self):
         self.pipeline = AudioPipeline()
         self.audio_queue = queue.Queue(maxsize=20)
         self.stop_event = threading.Event()
-        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        # Thread tạo trong `start()` (không phải ở đây) để worker có thể dừng rồi chạy lại:
+        # một đối tượng Thread của Python chỉ start được MỘT lần.
+        self.worker_thread = None
+        self._stop_lock = threading.Lock()
+        self._stopped = False
 
         self.audio_stream = None
         self.pyaudio_instance = None
         self.started = False
+        self.last_error = None
+        self._silent_warned = False
 
         self.input_sr = self.TARGET_SR
+        self.device_index = None          # None = thiết bị mặc định; đổi bằng PROCTOR_MIC_DEVICE=<index>
+        self.device_name = ""
 
-        self.buffer_raw = np.array([], dtype=np.float32)
-        self.noise_raw = np.array([], dtype=np.float32)
+        # Số đo để UI trả lời được "mic có nghe thấy gì không?" — RMS dưới ngưỡng VAD thì
+        # không câu nào được cắt, nên không có gì hiện trên giao diện dù người dùng đang nói.
+        self.last_rms = 0.0
+        self.last_peak = 0.0
+        self.max_rms = 0.0
+        self.chunks_captured = 0
+        self.segments_cut = 0
+
+        # Thuật toán cắt câu theo RMS dùng chung với luồng offline (pipeline/audio_scan.py).
+        # Hạ ngưỡng khi mic yếu: PROCTOR_VAD_THRESHOLD=0.012
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, silence_threshold=_vad_threshold()
+        )
 
         self.total_sent = 0
         self.total_alert = 0
@@ -69,6 +109,16 @@ class RealtimeAudioWorker:
             print(f"[PyAudio] Cảnh báo luồng âm thanh: {status}")
 
         chunk = np.frombuffer(in_data, dtype=np.float32)
+        if chunk.size:
+            self.last_rms = float(np.sqrt(np.mean(chunk ** 2)))
+            self.last_peak = float(np.abs(chunk).max())
+            if self.last_rms > self.max_rms:
+                self.max_rms = self.last_rms
+        self.chunks_captured += 1
+        if self.chunks_captured >= 20 and self.max_rms == 0.0 and not self._silent_warned:
+            self._silent_warned = True
+            print("[Audio] ⚠️ 10 giây không có mẫu nào khác 0 -> thiết bị vào đang câm. "
+                  "Chọn mic khác bằng PROCTOR_MIC_DEVICE=<index> (xem danh sách ở trên).")
         if self.audio_queue.full():
             try:
                 _ = self.audio_queue.get_nowait()
@@ -77,43 +127,6 @@ class RealtimeAudioWorker:
         self.audio_queue.put_nowait(chunk)
         return (in_data, pyaudio.paContinue)
 
-    def _resample_to_target(self, audio):
-        if self.input_sr == self.TARGET_SR:
-            return audio
-        audio = np.asarray(audio, dtype=np.float32)
-        g = gcd(self.input_sr, self.TARGET_SR)
-        return resample_poly(audio, self.TARGET_SR // g, self.input_sr // g).astype(np.float32)
-
-    def _normalize_gain(self, audio, target_rms=0.08):
-        audio = audio.astype(np.float32)
-        rms = np.sqrt(np.mean(audio ** 2) + 1e-8)
-        gain = target_rms / (rms + 1e-8)
-        gain = np.clip(gain, 0.5, 8.0)
-        audio = audio * gain
-        peak = np.max(np.abs(audio)) + 1e-8
-        if peak > 1.0:
-            audio = audio / peak
-        return np.clip(audio, -1.0, 1.0)
-
-    def _bandpass_filter(self, audio, sr, lowcut=80.0, highcut=7600.0, order=4):
-        nyq = 0.5 * sr
-        highcut = min(highcut, nyq - 100.0)
-        if highcut <= lowcut: return audio
-        sos = butter(order, [lowcut / nyq, highcut / nyq], btype="bandpass", output="sos")
-        return sosfiltfilt(sos, audio).astype(np.float32)
-
-    def _noise_reduce(self, audio, sr, noise_profile=None):
-        if noise_profile is None or len(noise_profile) < sr // 4:
-            return audio
-        try:
-            import noisereduce as nr
-            return nr.reduce_noise(y=audio, sr=sr, y_noise=noise_profile, stationary=False, prop_decrease=0.5).astype(np.float32)
-        except Exception:
-            return audio
-
-    def _preprocess_audio(self, audio, sr, noise_profile=None):
-        audio = audio.astype(np.float32)
-        return np.clip(audio, -1.0, 1.0)
     # =========================
     # Worker loop (Tích hợp logic VAD thông minh)
     # =========================
@@ -126,161 +139,152 @@ class RealtimeAudioWorker:
             except queue.Empty:
                 continue
 
-            # Thu noise profile từ 1 giây đầu (Giữ nguyên của Ubuntu)
-            if len(self.noise_raw) < int(self.input_sr * self.NOISE_PROFILE_SECONDS):
-                self.noise_raw = np.concatenate((self.noise_raw, chunk))
+            if chunk is None:  # sentinel từ stop()
+                break
+
+            # 1..6. Gom sample -> đo RMS đuôi câu -> cắt câu 16kHz khi ngừng nói hoặc nói quá 6s
+            clean_audio = self.chunker.feed(chunk)
+            if clean_audio is None:
                 continue
+            self.segments_cut += 1
 
-            # 1. Liên tục gom âm thanh vào hộp chứa
-            self.buffer_raw = np.concatenate((self.buffer_raw, chunk))
-            buffer_len_sec = len(self.buffer_raw) / self.input_sr
+            try:
+                timestamp = time.time()
+                result = self.pipeline.process_audio(clean_audio, timestamp=timestamp, source="realtime-mic")
 
-            # 2. Chưa đủ 2 giây thì không làm gì cả
-            if buffer_len_sec < self.MIN_PROCESS_SECONDS:
-                continue
-
-            # 3. Đo âm lượng của 0.8 giây cuối cùng (đuôi câu)
-            tail_samples = int(self.input_sr * self.SILENCE_TAIL_SECONDS)
-            tail_audio = self.buffer_raw[-tail_samples:]
-            rms_tail = np.sqrt(np.mean(tail_audio ** 2))
-            
-            is_silence_tail = rms_tail < self.SILENCE_THRESHOLD
-
-            # 4. Kích hoạt dịch nếu ngừng nói HOẶC nói liên tục quá 6 giây
-            if is_silence_tail or buffer_len_sec >= self.MAX_PROCESS_SECONDS:
-                
-                # Kiểm tra âm lượng TOÀN BỘ hộp chứa
-                rms_total = np.sqrt(np.mean(self.buffer_raw ** 2))
-                if rms_total < self.SILENCE_THRESHOLD:
-                    self.buffer_raw = np.array([], dtype=np.float32)
+                if result is None:
                     continue
 
-                # 5. Có tiếng người -> Copy ra để chuẩn bị gửi AI
-                raw_audio_to_process = self.buffer_raw.copy()
+                transcription = result.get('transcription', '').strip()
+                is_alert = audio_scan.is_alert(result)
 
-                # 🔥 6. QUYẾT ĐỊNH XÓA/GIỮ HỘP CHỨA
-                if is_silence_tail:
-                    self.buffer_raw = np.array([], dtype=np.float32)
+                # Chặn log rác nếu không có tiếng và không có cảnh báo
+                if not transcription and not is_alert:
+                    continue
+
+                print("\n" + "=" * 70)
+                if is_alert:
+                    reason_text = str(result.get('fusion_reason', '')).lower()
+                    nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)" if 'ai catch' in reason_text else "🔑 Keyword (Bộ luật cứng)"
+                    print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
                 else:
-                    overlap_samples = int(self.input_sr * 1.5)
-                    self.buffer_raw = self.buffer_raw[-overlap_samples:]
+                    print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
 
-                # --- BẮT ĐẦU DỊCH VÀ XỬ LÝ KẾT QUẢ ---
-                audio_16k = self._resample_to_target(raw_audio_to_process)
-                # noise_16k = self._resample_to_target(self.noise_raw[: int(self.input_sr * self.NOISE_PROFILE_SECONDS)])
-                
-                clean_audio = self._preprocess_audio(audio_16k, sr=self.TARGET_SR) # , noise_profile=noise_16k)
+                print(f"🗣️ Transcript : '{transcription}'")
+                print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
 
-                try:
-                    timestamp = time.time()
-                    result = self.pipeline.process_audio(clean_audio, timestamp=timestamp, source="realtime-mic")
+                keywords = result.get('matched_keywords', [])
+                if keywords:
+                    print("🔑 Từ khóa bị bắt:")
+                    for kw in keywords:
+                        print(f"   - '{kw['keyword']}' (Mức độ: {kw['severity']})")
 
-                    if result is None:
-                        continue
+                self.total_sent += 1
+                if is_alert:
+                    self.total_alert += 1
 
-                    transcription = result.get('transcription', '').strip()
-                    risk_final = str(result.get('risk', '')).lower()
-                    status_final = str(result.get('status', '')).lower()
-                    
-                    is_alert = risk_final in ['cheating', 'high', 'medium'] or status_final == 'alert'
-                    
-                    # Chặn log rác nếu không có tiếng và không có cảnh báo
-                    if not transcription and not is_alert:
-                        continue
+                print(f"Thống kê Alert: {self.total_alert}/{self.total_sent}")
+                print("=" * 70)
 
-                    print("\n" + "=" * 70)
-                    if is_alert:
-                        reason_text = str(result.get('fusion_reason', '')).lower()
-                        nguoi_bat = "🤖 AI PhoBERT (Bọc lót Keyword)" if 'ai catch' in reason_text else "🔑 Keyword (Bộ luật cứng)"
-                        print(f"🚨 [CẢNH BÁO GIAN LẬN] - Phát hiện bởi: {nguoi_bat}")
-                    else:
-                        print(f"✅ [AN TOÀN] - Cả Keyword và AI đều đồng ý an toàn")
-                        
-                    print(f"🗣️ Transcript : '{transcription}'")
-                    print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
-                    
-                    keywords = result.get('matched_keywords', [])
-                    if keywords:
-                        print("🔑 Từ khóa bị bắt:")
-                        for kw in keywords:
-                            print(f"   - '{kw['keyword']}' (Mức độ: {kw['severity']})")
-
-                    self.total_sent += 1
-                    if is_alert:
-                        self.total_alert += 1
-
-                    print(f"Thống kê Alert: {self.total_alert}/{self.total_sent}")
-                    print("=" * 70)
-
-                except Exception as e:
-                    print(f"[Worker] Error: {e}")
+            except Exception as e:
+                print(f"[Worker] Error: {e}")
 
     def stop(self):
-        print("[Audio] 🛑 Đang dừng RealtimeAudioWorker...")
-        self.stop_event.set()
-        if self.audio_stream is not None:
+        # `stop()` được gọi từ 2 nơi: nút/timer bên ngoài và `finally` của `start()`.
+        # Bản cũ đọc `self.audio_stream` 3 lần -> luồng kia set None ở giữa -> văng
+        # "'NoneType' object has no attribute 'close'". Giữ tham chiếu cục bộ + khoá.
+        with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            self.started = False
+
+            print("[Audio] 🛑 Đang dừng RealtimeAudioWorker...")
+            self.stop_event.set()
+            stream, self.audio_stream = self.audio_stream, None
+            if stream is not None:
+                try:
+                    if stream.is_active():
+                        stream.stop_stream()
+                except Exception as e:
+                    print(f"[Audio] Lỗi stop stream: {e}")
+
+                try:
+                    stream.close()
+                except Exception as e:
+                    print(f"[Audio] Lỗi close stream: {e}")
+
+            instance, self.pyaudio_instance = self.pyaudio_instance, None
+            if instance is not None:
+                try:
+                    instance.terminate()
+                except Exception as e:
+                    print(f"[Audio] Lỗi terminate PyAudio: {e}")
+
+            # Đánh thức worker thread nếu đang chờ queue
             try:
-                if self.audio_stream.is_active():
-                    self.audio_stream.stop_stream()
-            except Exception as e:
-                print(f"[Audio] Lỗi stop stream: {e}")
+                self.audio_queue.put_nowait(None)
+            except Exception:
+                pass
 
-            try:
-                self.audio_stream.close()
-            except Exception as e:
-                print(f"[Audio] Lỗi close stream: {e}")
-
-            self.audio_stream = None
-
-        if self.pyaudio_instance is not None:
-            try:
-                self.pyaudio_instance.terminate()
-            except Exception as e:
-                print(f"[Audio] Lỗi terminate PyAudio: {e}")
-
-            self.pyaudio_instance = None
-
-        # Đánh thức worker thread nếu đang chờ queue
-        try:
-            self.audio_queue.put_nowait(None)
-        except Exception:
-            pass
-
-        if self.worker_thread.is_alive():
-            self.worker_thread.join(timeout=2.0)
-        self.started = False
-        print("[Audio] ✅ RealtimeAudioWorker đã dừng.")
+            if self.worker_thread is not None and self.worker_thread.is_alive():
+                self.worker_thread.join(timeout=2.0)
+            print("[Audio] ✅ RealtimeAudioWorker đã dừng.")
 
     # =========================
     # Start
     # =========================
     def start(self):
-        if self.started: return
-        self.started = True
+        with self._stop_lock:
+            if self.started:
+                return
+            self.started = True
+            self._stopped = False
         self.stop_event.clear()
-        self.worker_thread.start()
 
         print("[Audio] 🔊 Khởi động PyAudio...")
         with suppress_alsa_logs():
             p = pyaudio.PyAudio()
         self.pyaudio_instance = p
 
+        # PROCTOR_MIC_DEVICE=<index> để chọn mic khác khi mặc định là DMIC câm hoặc thiết bị lạ.
+        raw_device = os.environ.get("PROCTOR_MIC_DEVICE", "").strip()
+        self.device_index = int(raw_device) if raw_device.isdigit() else None
         try:
-            default_device = p.get_default_input_device_info()
-            self.input_sr = int(default_device["defaultSampleRate"])
-        except Exception:
+            info = (
+                p.get_device_info_by_index(self.device_index)
+                if self.device_index is not None
+                else p.get_default_input_device_info()
+            )
+            self.input_sr = int(info["defaultSampleRate"])
+            self.device_name = str(info.get("name", ""))
+        except Exception as e:
             self.input_sr = self.TARGET_SR
+            print(f"[Audio] Không lấy được thông tin mic ({e}) -> dùng {self.input_sr} Hz")
+
+        # Chunker làm việc theo sample rate thật của card âm thanh
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, silence_threshold=_vad_threshold()
+        )
+        # Thread mới mỗi lần start -> dừng rồi bật lại được (Thread của Python chỉ start 1 lần).
+        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.worker_thread.start()
 
         blocksize = int(self.input_sr * self.CHUNK_SECONDS)
 
         print("=" * 70)
         print("Realtime audio worker started (PyAudio + Dynamic VAD)")
+        print(f"Input device  : [{self.device_index if self.device_index is not None else 'default'}] {self.device_name}")
         print(f"Input SR      : {self.input_sr}")
         print(f"Target SR     : {self.TARGET_SR}")
+        print(f"VAD threshold : {self.chunker.threshold} (RMS; đổi bằng PROCTOR_VAD_THRESHOLD)")
         print("=" * 70)
         print("Listening... (Ctrl+C to stop)")
         print("Tip: giữ im lặng ~1 giây đầu để lấy noise profile.\n")
 
+        # Mở stream: lỗi ở bước này là "không có micro" thật (thiếu plugin pulse / quyền
+        # micro Windows) -> in gợi ý cụ thể. Lỗi ở vòng chờ bên dưới chỉ là do stop() đóng
+        # stream trước, không phải sự cố.
         try:
             with suppress_alsa_logs():
                 stream = p.open(
@@ -288,19 +292,43 @@ class RealtimeAudioWorker:
                     channels=self.CHANNELS,
                     rate=self.input_sr,
                     input=True,
+                    input_device_index=self.device_index,
                     frames_per_buffer=blocksize,
                     stream_callback=self._audio_callback
                 )
-            self.audio_stream = stream
             stream.start_stream()
-
-            while stream.is_active() and not self.stop_event.is_set():
-                time.sleep(0.1)
-
         except Exception as e:
-            print(f"[Audio] ❌ Audio stream error: {e}")
-        finally:
+            self.last_error = f"{type(e).__name__}: {e}"
+            print(f"[Audio] ❌ Không mở được micro: {e}")
+            try:
+                print("[Audio] Các thiết bị vào khả dụng (đặt PROCTOR_MIC_DEVICE=<số> để chọn):")
+                for i in range(p.get_device_count()):
+                    dev = p.get_device_info_by_index(i)
+                    if dev.get("maxInputChannels", 0) > 0:
+                        print(f"   [{i}] {dev['name']} @ {int(dev['defaultSampleRate'])} Hz")
+            except Exception:
+                pass
+            print("[Audio] Gợi ý (WSL): cần libasound2-plugins để ALSA đi qua PulseAudio của WSLg.")
+            print("        sudo apt install -y libasound2-plugins pulseaudio-utils")
+            print("        rồi `~/.asoundrc` có pcm.!default { type pulse } (README §5.1).")
+            print("        Trên Windows: Settings > Privacy > Microphone > cho phép desktop apps.")
             self.stop()
+            return
+
+        self.audio_stream = stream
+        if self.stop_event.is_set():
+            # stop() có thể đã chạy xong trước khi ta kịp gán -> tự đóng, tránh rò stream.
+            try:
+                stream.close()
+            except Exception:
+                pass
+            self.audio_stream = None
+            return
+        # Chờ tới khi có người gọi stop(). Dùng stop_event (không dùng stream.is_active())
+        # vì stop() có thể đã đóng stream -> is_active() raise "Stream not open".
+        while not self.stop_event.is_set():
+            time.sleep(0.1)
+        self.stop()
 
 if __name__ == "__main__":
     RealtimeAudioWorker().start()

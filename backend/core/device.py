@@ -190,11 +190,46 @@ def make_ort_session(model_path: str, **kwargs):
     """Tạo onnxruntime.InferenceSession theo thiết bị đã chọn; lỗi provider thì rơi về CPU."""
     import onnxruntime as ort
     info = select_device()
+    # ORT mặc định lấy số thread = số core vật lý cho MỖI session. Ba session chạy song song
+    # (det/rec/embedding) thì tổng thread gấp ba lần số core -> tranh CPU, latency dao động.
+    # `CPU_THREADS` (mặc định 4) là ngân sách cho một session; caller truyền sess_options riêng
+    # thì tôn trọng caller.
+    if "sess_options" not in kwargs:
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = CPU_THREADS
+        opts.inter_op_num_threads = 1
+        kwargs["sess_options"] = opts
     try:
         return ort.InferenceSession(model_path, providers=info.ort_providers, **kwargs)
     except Exception as e:
         print(f"[DEVICE] Lỗi tạo session với {info.kind} ({e}) -> rơi về CPU")
         return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"], **kwargs)
+
+
+#: Số thread CPU cho MỘT model. Đo trên Core Ultra 7 155H (2026-10-29), YOLOv8n 1080p:
+#: 1 thread 145 ms, 2 -> 68 ms, 8 -> 60 ms, 16 -> 118 ms. Nhiều thread hơn không nhanh hơn vì
+#: các model chạy song song giẫm lên nhau; 4 là điểm cân bằng cho 4 luồng model cùng lúc.
+CPU_THREADS = max(1, int(os.environ.get("PROCTOR_CPU_THREADS", "4")))
+
+
+def configure_cpu_threads(threads: int = CPU_THREADS) -> int:
+    """Đặt ngân sách thread cho các thư viện suy luận — gọi MỘT lần trước khi nạp model.
+
+    Trả về số thread đã đặt. `PROCTOR_CPU_THREADS` để đổi mà không sửa code.
+    """
+    threads = max(1, int(threads))
+    os.environ.setdefault("OMP_NUM_THREADS", str(threads))
+    try:
+        import torch
+
+        torch.set_num_threads(threads)
+        try:
+            torch.set_num_interop_threads(1)
+        except RuntimeError:
+            pass  # đã có interop task chạy -> không đổi được nữa
+    except Exception:
+        pass
+    return threads
 
 
 if __name__ == "__main__":

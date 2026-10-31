@@ -91,6 +91,8 @@ class ObjectDetector:
                 frame,
                 conf=self.confidence_threshold,
                 # device=self.device,
+                # fp16 trên NVIDIA: ~1.5–2x nhanh hơn, cùng kết quả (chỉ bật khi đang chạy CUDA).
+                half=(self.device_info.kind == "cuda"),
                 verbose=False,
             )
             # print(f"[DEBUG YOLO] Kết quả thô từ model.predict: {results}")
@@ -1920,3 +1922,18 @@ def _bbox_center_inside(
         container_xyxy[0] <= center_x <= container_xyxy[2]
         and container_xyxy[1] <= center_y <= container_xyxy[3]
     )
+
+
+def load_phone_confuser(device: str | None = None) -> Any:
+    """Model COCO gốc dùng làm bằng chứng phủ định cho `smartphone` (chair/couch/remote).
+
+    Trọng số lấy từ `smartphone_fallback_model_path` — cùng file với person detector, nên
+    đây không phải một bộ model mới nạp vào quy trình. Gọi lúc khởi tạo luồng, không gọi
+    trong vòng suy luận, để tránh ultralytics khởi tạo lần đầu giữa hai thread.
+    """
+    from ultralytics import YOLO
+
+    info = resolve_device(device)
+    path = resolve_model_path(settings.smartphone_fallback_model_path, info)
+    print(f"[Confuser] device={info.kind} model={path}")
+    return YOLO(str(path), task="detect")

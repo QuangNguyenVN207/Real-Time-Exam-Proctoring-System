@@ -1,3 +1,4 @@
+import os
 import time
 import numpy as np
 
@@ -13,6 +14,36 @@ from backend.ai_services.whisper.audio_logger import AudioLogger
 # Import các Service PhoBERT (giả định bạn đặt trong thư mục phobert)
 from backend.ai_services.whisper.phobert.phobert_service import PhobertService
 from backend.ai_services.whisper.phobert.decision_fusion import DecisionFusionService
+
+#: Prompt miền thi cử cho PhoWhisper. Đo trên data/test_audio (6 mẫu): không cải thiện rõ rệt
+#: nên MẶC ĐỊNH TẮT — prompt sai làm model thiên vị sang từ vựng trong prompt. Bật bằng
+#: `PROCTOR_ASR_PROMPT="..."` nếu âm thanh của bạn toàn thuật ngữ thi cử.
+ASR_PROMPT = os.environ.get("PROCTOR_ASR_PROMPT", "").strip()
+#: Đoạn VAD ngắn hơn mức này thì không đưa vào Whisper. Mẩu 0.7 s tiếng ho/va chạm vẫn qua
+#: VAD và Whisper sẽ "viết báo" thành cả câu (đã gặp: 0.75 s nhiễu -> 'là tay bà mẹ đứng về.').
+ASR_MIN_SPEECH_S = float(os.environ.get("PROCTOR_ASR_MIN_SPEECH_S", "0.8"))
+#: Cổng thứ hai: độ tự tin tiếng người trung bình của chính đoạn đó. Nói thật 0.76-0.85,
+#: nhiễu lọt lưới 0.08-0.13 (đo 2026-10-29) -> 0.5 nằm giữa hai vùng, còn dư rất rộng.
+ASR_MIN_SPEECH_PROB = float(os.environ.get("PROCTOR_ASR_MIN_SPEECH_PROB", "0.5"))
+#: Mức RMS đưa vào Whisper. File quay bằng điện thoại ở xa có giọng nói RMS ~0.01 trong khi
+#: ngưỡng cắt câu 0.02: khuếch đại cục bộ giúp model nghe rõ hơn mà không đổi ngưỡng chung.
+ASR_TARGET_RMS = 0.1
+ASR_PEAK_CEILING = 0.95
+ASR_SILENT_RMS = 0.003
+
+
+def _normalize_level(audio: np.ndarray) -> np.ndarray:
+    """Khuếch đại đoạn tiếng về mức ASR_TARGET_RMS, chặn đỉnh; không bao giờ giảm âm lượng."""
+    rms = float(np.sqrt(np.mean(audio ** 2)))
+    if rms < ASR_SILENT_RMS:
+        return audio
+    gain = ASR_TARGET_RMS / rms
+    peak = float(np.abs(audio).max())
+    if peak > 0:
+        gain = min(gain, ASR_PEAK_CEILING / peak)
+    if gain <= 1.0:
+        return audio
+    return (audio * gain).astype(np.float32)
 
 
 class AudioPipeline:
@@ -36,8 +67,12 @@ class AudioPipeline:
         audio = load_audio(audio_path)
         return self.process_audio(audio, source=audio_path)
 
-    def process_audio(self, audio, timestamp=None, source="pipeline"):
-        """Xử lý trực tiếp từ numpy array (microphone hoặc audio đã load)"""
+    def process_audio(self, audio, timestamp=None, source="pipeline", bypass_gate=False):
+        """Xử lý trực tiếp từ numpy array (microphone hoặc audio đã load).
+
+        `bypass_gate=True` tắt cổng chặn ảo giác — chỉ dùng cho ablation trong
+        `scripts/asr_ablation.py` để đo tỉ lệ câu bịa khi không có cổng.
+        """
         ts = float(timestamp if timestamp is not None else time.time())
 
         # ==========================================================
@@ -52,10 +87,26 @@ class AudioPipeline:
         if len(speech_audio) == 0:
             return self._build_empty_response(ts, "idle")
 
+        speech_seconds = len(speech_audio) / 16000.0
+        speech_prob = self.vad.mean_probability(speech_audio)
+        reason = None
+        if bypass_gate:
+            reason = None
+        elif speech_seconds < ASR_MIN_SPEECH_S:
+            reason = f"dài {speech_seconds:.2f}s < {ASR_MIN_SPEECH_S}s"
+        elif speech_prob < ASR_MIN_SPEECH_PROB:
+            reason = (f"độ tự tin tiếng người {speech_prob:.2f} < {ASR_MIN_SPEECH_PROB} "
+                      f"(nói rõ dù lẫn nhiễu đo được 0.55-0.85)")
+        if reason:
+            print(f"[AUDIO] Bỏ đoạn {speech_seconds:.2f}s — {reason}: đưa vào Whisper chỉ tổ bịa câu.")
+            return self._build_empty_response(ts, "idle")
+
+        speech_audio = _normalize_level(speech_audio)
+
         # ==========================================================
         # 2. Speech-to-Text (PhoWhisper)
         # ==========================================================
-        transcript = self.whisper.transcribe(speech_audio)
+        transcript = self.whisper.transcribe(speech_audio, prompt=ASR_PROMPT or None)
         text = transcript.get("text", "").strip()
 
         # Bỏ qua nếu Whisper trả về chuỗi rỗng hoặc quá ngắn (ảo giác nhiễu)

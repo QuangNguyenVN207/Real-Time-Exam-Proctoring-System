@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import librosa
+from typing import Optional
 
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
@@ -65,7 +66,18 @@ class PhoWhisperService:
 
         return audio
 
-    def transcribe(self, audio):
+    def _prompt_ids(self, prompt: str):
+        """Token prompt miền thi cử. Cache lại: mỗi câu không phải mã hoá lại chuỗi này."""
+        cached = getattr(self, "_prompt_cache", None)
+        if cached is not None and cached[0] == prompt:
+            return cached[1]
+        ids = self.processor.get_prompt_ids(prompt, return_tensors="pt")
+        if ids.ndim == 2:  # transformers 5.x nhận prompt_ids dạng 1-D
+            ids = ids.squeeze(0)
+        self._prompt_cache = (prompt, ids)
+        return ids
+
+    def transcribe(self, audio, prompt: Optional[str] = None):
         audio = self._prepare_audio(audio)
 
         if audio.size == 0:
@@ -75,6 +87,7 @@ class PhoWhisperService:
                 "segments": [],
             }
 
+        duration_s = audio.size / self.TARGET_SR
         inputs = self.processor(
             audio,
             sampling_rate=self.TARGET_SR,
@@ -98,14 +111,23 @@ class PhoWhisperService:
             repetition_penalty=1.1,  # Tăng nhẹ lên 1.1 để phạt gắt hơn các từ lặp lại
             no_repeat_ngram_size=3,  # CỰC KỲ QUAN TRỌNG: Ngăn chặn lỗi lặp lại 1 cụm từ vô tận (bệnh phổ biến của Whisper)
             early_stopping=True,     # Dừng sớm quá trình beam search khi đã tìm thấy sequence tốt nhất
-            max_new_tokens=128,
+            # Số token tối đa phải theo ĐỘ DÀI audio: câu 0.75 s không thể dài 20 từ. Whisper khi
+            # gặp đoạn không phải tiếng người vẫn "viết báo" (ảo giác kiểu 'nhiều doanh nghiệp đã
+            # không thể tập trung...'), và trần 128 token cho nó đủ chỗ bịa. 6 token/giây là mức
+            # thoáng cho tiếng Việt nói nhanh.
+            max_new_tokens=min(128, max(16, int(duration_s * 6) + 8)),
             
             # (Tùy chọn nâng cao nếu HuggingFace version hỗ trợ) 
             # Giúp bỏ qua các đoạn mà mô hình có độ tự tin cực thấp (thường là tiếng ồn)
             # suppress_tokens=[...], 
         )
 
-        if self.forced_decoder_ids is not None:
+        prompt_ids = self._prompt_ids(prompt) if prompt else None
+        if prompt_ids is not None:
+            # prompt_ids đã chứa <|startoftranscript|><|vi|><|transcribe|> nên không truyền
+            # forced_decoder_ids nữa (generate từ chối cả hai cùng lúc).
+            generate_kwargs["prompt_ids"] = prompt_ids
+        elif self.forced_decoder_ids is not None:
             generate_kwargs["forced_decoder_ids"] = self.forced_decoder_ids
         else:
             generate_kwargs["language"] = "vi"

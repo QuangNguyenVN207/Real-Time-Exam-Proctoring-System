@@ -1,27 +1,30 @@
+import os
 import time
 import queue
 import threading
-from math import gcd
 
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample_poly
 
 # Đảm bảo đường dẫn import đúng với cấu trúc thư mục của bạn
 from backend.ai_services.whisper.audio_pipeline import AudioPipeline
+from backend.ai_services.pipeline import audio_scan
+
+
+def _vad_threshold() -> float:
+    """Ngưỡng RMS cắt câu; `PROCTOR_VAD_THRESHOLD` cho phép hạ khi mic laptop quá nhỏ."""
+    raw = os.environ.get("PROCTOR_VAD_THRESHOLD", "").strip()
+    try:
+        value = float(raw) if raw else audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    except ValueError:
+        value = audio_scan.DynamicSpeechChunker.SILENCE_THRESHOLD
+    return max(0.001, value)
+
 
 class RealtimeAudioWorker:
     TARGET_SR = 16000
     CHANNELS = 1
     CHUNK_SECONDS = 0.5 
-
-    # 🔥 THUẬT TOÁN CẮT CÂU THÔNG MINH (DYNAMIC VAD CHUNKING)
-    MIN_PROCESS_SECONDS = 2.0   # Tối thiểu 2 giây mới đem đi dịch
-    MAX_PROCESS_SECONDS = 6.0   # Tối đa 6 giây (nếu sinh viên nói liên tục không nghỉ)
-    SILENCE_TAIL_SECONDS = 0.8  # Nếu phát hiện im lặng 0.8s ở cuối -> Cắt câu mang đi dịch ngay
-    
-    # 🔥 CẢI TIẾN: Hạ ngưỡng im lặng xuống (Raw mic thường có volume rất nhỏ, để 0.01 sẽ bị cắt chữ liên tục)
-    SILENCE_THRESHOLD = 0.02  
 
     def __init__(self):
         self.pipeline = AudioPipeline()
@@ -30,9 +33,24 @@ class RealtimeAudioWorker:
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
 
         self.device_id = None
+        self.device_name = ""
         self.input_sr = self.TARGET_SR
+        self.last_error = None
+        self._silent_warned = False
 
-        self.buffer_raw = np.array([], dtype=np.float32)
+        # Số đo để UI trả lời được "mic có nghe thấy gì không?": RMS dưới ngưỡng VAD thì
+        # không câu nào được cắt nên giao diện im lặng dù người dùng đang nói.
+        self.last_rms = 0.0
+        self.last_peak = 0.0
+        self.max_rms = 0.0
+        self.chunks_captured = 0
+        self.segments_cut = 0
+
+        # Thuật toán cắt câu theo RMS dùng chung với luồng offline (pipeline/audio_scan.py).
+        # Bản Windows không ném đi 1 giây lấy noise profile như bản Ubuntu.
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, noise_profile_seconds=0.0, silence_threshold=_vad_threshold()
+        )
 
         self.total_sent = 0
         self.total_alert = 0
@@ -79,11 +97,14 @@ class RealtimeAudioWorker:
         return candidates[0] if candidates else None
 
     def resolve_device_and_samplerate(self):
-        self.device_id = self.select_input_device()
+        # PROCTOR_MIC_DEVICE=<index> để chọn mic khác khi mặc định là thiết bị lạ hoặc câm.
+        raw_device = os.environ.get("PROCTOR_MIC_DEVICE", "").strip()
+        self.device_id = int(raw_device) if raw_device.isdigit() else self.select_input_device()
         if self.device_id is None:
             raise RuntimeError("No input device found.")
 
         info = sd.query_devices(self.device_id, "input")
+        self.device_name = str(info.get("name", ""))
         default_sr = int(info.get("default_samplerate", self.TARGET_SR))
 
         try:
@@ -104,6 +125,16 @@ class RealtimeAudioWorker:
     # =========================
     def _audio_callback(self, indata, frames, time_info, status):
         chunk = indata.copy().astype(np.float32).reshape(-1)
+        if chunk.size:
+            self.last_rms = float(np.sqrt(np.mean(chunk ** 2)))
+            self.last_peak = float(np.abs(chunk).max())
+            if self.last_rms > self.max_rms:
+                self.max_rms = self.last_rms
+        self.chunks_captured += 1
+        if self.chunks_captured >= 20 and self.max_rms == 0.0 and not self._silent_warned:
+            self._silent_warned = True
+            print("[Audio] ⚠️ 10 giây không có mẫu nào khác 0 -> thiết bị vào đang câm. "
+                  "Chọn mic khác bằng PROCTOR_MIC_DEVICE=<index> (xem danh sách ở trên).")
         if self.audio_queue.full():
             try: _ = self.audio_queue.get_nowait()
             except queue.Empty: pass
@@ -111,12 +142,6 @@ class RealtimeAudioWorker:
             self.audio_queue.put_nowait(chunk)
         except queue.Full:
             pass
-
-    def _resample_to_target(self, audio):
-        """Giữ nguyên hàm này vì nó cực kỳ quan trọng cho các mic giá rẻ chỉ hỗ trợ 44.1kHz hoặc 48kHz"""
-        if self.input_sr == self.TARGET_SR: return audio
-        g = gcd(self.input_sr, self.TARGET_SR)
-        return resample_poly(np.asarray(audio, dtype=np.float32), self.TARGET_SR // g, self.input_sr // g).astype(np.float32)
 
     # =========================
     # Worker loop (🔥 LOGIC CẮT CÂU MỚI ĐÃ ĐƯỢC TỐI ƯU)
@@ -133,89 +158,54 @@ class RealtimeAudioWorker:
             if chunk is None:  # sentinel từ stop()
                 break
 
-            # 1. Liên tục gom âm thanh vào hộp chứa
-            self.buffer_raw = np.concatenate((self.buffer_raw, chunk))
-            buffer_len_sec = len(self.buffer_raw) / self.input_sr
-
-            # 2. Chưa đủ 2 giây thì không làm gì cả (Chờ thí sinh nói trọn câu)
-            if buffer_len_sec < self.MIN_PROCESS_SECONDS:
+            # 1..6. Gom sample -> đo RMS đuôi câu -> cắt câu 16kHz (logic dùng chung với luồng offline)
+            audio_16k = self.chunker.feed(chunk)
+            if audio_16k is None:
                 continue
+            self.segments_cut += 1
 
-            # 3. Đo âm lượng của 0.8 giây cuối cùng (đuôi câu)
-            tail_samples = int(self.input_sr * self.SILENCE_TAIL_SECONDS)
-            tail_audio = self.buffer_raw[-tail_samples:]
-            rms_tail = np.sqrt(np.mean(tail_audio ** 2) + 1e-8) # Tránh lỗi chia 0
-            
-            is_silence_tail = rms_tail < self.SILENCE_THRESHOLD
+            try:
+                result = self.pipeline.process_audio(audio_16k, timestamp=time.time(), source="realtime-mic")
 
-            # 4. Kích hoạt dịch nếu: Người dùng ngừng nói (im lặng) HOẶC nói liên tục quá 6 giây
-            if is_silence_tail or buffer_len_sec >= self.MAX_PROCESS_SECONDS:
-                
-                # Kiểm tra âm lượng TOÀN BỘ hộp chứa
-                rms_total = np.sqrt(np.mean(self.buffer_raw ** 2) + 1e-8)
-                if rms_total < self.SILENCE_THRESHOLD:
-                    # Nguyên đoạn vừa rồi toàn im lặng -> Xóa sạch hộp chứa, KHÔNG GỌI AI ĐỂ TIẾT KIỆM CPU
-                    self.buffer_raw = np.array([], dtype=np.float32)
+                if not result or result.get("status") == "idle": 
                     continue
 
-                # 5. Có tiếng người -> Copy ra để chuẩn bị gửi AI
-                raw_audio_to_process = self.buffer_raw.copy()
+                transcription = result.get('transcription', '').strip()
+                status_final = str(result.get('status', '')).lower()
 
-                # 🔥 6. QUYẾT ĐỊNH XÓA/GIỮ HỘP CHỨA (Tối ưu Overlap)
-                if is_silence_tail:
-                    # Cắt tự nhiên tại khoảng lặng -> Trọn vẹn câu -> Xóa sạch (Chống lặp chữ)
-                    self.buffer_raw = np.array([], dtype=np.float32)
+                is_alert = (status_final == 'alert')
+
+                if not transcription and not is_alert:
+                    continue
+
+                print("\n" + "=" * 70)
+                if is_alert:
+                    reason_text = str(result.get('fusion_reason', '')).lower()
+                    nguoi_bat = "🤖 AI PhoBERT (Ngữ cảnh)" if 'ai' in reason_text else "🔑 Keyword (Bộ luật cứng)"
+                    print(f"🚨 [CẢNH BÁO GIAN LẬN] - Bắt bởi: {nguoi_bat}")
                 else:
-                    # Bị ép cắt do quá 6 giây -> Giữ lại 1.5s làm gối đầu cho câu sau (Chống mất chữ)
-                    overlap_samples = int(self.input_sr * 1.5)
-                    self.buffer_raw = self.buffer_raw[-overlap_samples:]
+                    print(f"✅ [AN TOÀN]")
 
-                # --- BẮT ĐẦU DỊCH VÀ XỬ LÝ KẾT QUẢ ---
-                # Chỉ cần Resample về 16kHz, mọi việc lọc nhiễu, AGC đã có AudioPipeline lo!
-                audio_16k = self._resample_to_target(raw_audio_to_process)
+                print(f"🗣️ Transcript : '{transcription}'")
 
-                try:
-                    result = self.pipeline.process_audio(audio_16k, timestamp=time.time(), source="realtime-mic")
+                if is_alert:
+                    print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
+                    keywords = result.get('matched_keywords', [])
+                    if keywords:
+                        print("Từ khóa bị bắt:")
+                        for kw in keywords:
+                            # Hỗ trợ format list string hoặc list dict tùy chuẩn của KeywordDetector
+                            kw_str = kw.get('keyword', kw) if isinstance(kw, dict) else kw
+                            print(f"   - '{kw_str}'")
 
-                    if not result or result.get("status") == "idle": 
-                        continue
+                self.total_sent += 1
+                if is_alert: self.total_alert += 1
 
-                    transcription = result.get('transcription', '').strip()
-                    status_final = str(result.get('status', '')).lower()
-                    
-                    is_alert = (status_final == 'alert')
-                    
-                    if not transcription and not is_alert:
-                        continue
+                print(f"Thống kê Alert: {self.total_alert}/{self.total_sent}")
+                print("=" * 70)
 
-                    print("\n" + "=" * 70)
-                    if is_alert:
-                        reason_text = str(result.get('fusion_reason', '')).lower()
-                        nguoi_bat = "🤖 AI PhoBERT (Ngữ cảnh)" if 'ai' in reason_text else "🔑 Keyword (Bộ luật cứng)"
-                        print(f"🚨 [CẢNH BÁO GIAN LẬN] - Bắt bởi: {nguoi_bat}")
-                    else:
-                        print(f"✅ [AN TOÀN]")
-                        
-                    print(f"🗣️ Transcript : '{transcription}'")
-                    
-                    if is_alert:
-                        print(f"🧠 Lý do      : {result.get('fusion_reason', '')}")
-                        keywords = result.get('matched_keywords', [])
-                        if keywords:
-                            print("Từ khóa bị bắt:")
-                            for kw in keywords:
-                                # Hỗ trợ format list string hoặc list dict tùy chuẩn của KeywordDetector
-                                kw_str = kw.get('keyword', kw) if isinstance(kw, dict) else kw
-                                print(f"   - '{kw_str}'")
-
-                    self.total_sent += 1
-                    if is_alert: self.total_alert += 1
-
-                    print(f"Thống kê Alert: {self.total_alert}/{self.total_sent}")
-                    print("=" * 70)
-
-                except Exception as e:
-                    print(f"[Worker] Lỗi xử lý AI: {e}")
+            except Exception as e:
+                print(f"[Worker] Lỗi xử lý AI: {e}")
 
         print("[Worker] Stopped.")
 
@@ -235,15 +225,24 @@ class RealtimeAudioWorker:
     def start(self):
         self.list_input_devices()
         self.resolve_device_and_samplerate()
+        # Chunker phải theo đúng sample rate của thiết bị đã chọn
+        self.chunker = audio_scan.DynamicSpeechChunker(
+            self.input_sr, noise_profile_seconds=0.0, silence_threshold=_vad_threshold()
+        )
+        if not self.worker_thread.is_alive():
+            # Thread đã start rồi (stop() rồi start() lại) thì dùng lại, không tạo mới:
+            # một đối tượng Thread của Python chỉ start được MỘT lần.
+            self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
 
         blocksize = int(self.input_sr * self.CHUNK_SECONDS)
 
         print("=" * 70)
         print("Realtime Audio Worker Started (DYNAMIC VAD CHUNKING OPTIMIZED)")
-        print(f"Device        : {self.device_id}")
+        print(f"Device        : [{self.device_id}] {self.device_name}")
         print(f"Input SR      : {self.input_sr}")
         print(f"Target SR     : {self.TARGET_SR}")
+        print(f"VAD threshold : {self.chunker.threshold} (RMS; đổi bằng PROCTOR_VAD_THRESHOLD)")
         print("=" * 70)
         print("🎤 Đang lắng nghe... (Nhấn Ctrl+C để dừng)")
 

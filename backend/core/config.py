@@ -51,7 +51,12 @@ class Settings:
     # COCO has no calculator class. Ask the pretrained model for nearby
     # confuser classes as negative evidence, then use a button-grid check on
     # phone candidates before raising a smartphone alert.
-    smartphone_confuser_class_names: list[str] = ["remote"]
+    # chair/couch: a chair back is a rounded rectangle with an oval cut-out, and the
+    # fine-tuned model labels those smartphone at 0.58-0.73 (measured 2026-10-31 on
+    # data/video_test_demo.mp4 t=16.2 and data/cheatsheet.mp4 t=0.5-10.0). COCO sees them
+    # as chair at 0.87, and IoS(candidate, chair) was 0.94-1.00 for all 9 false positives
+    # vs 0.00 for all 6 real phones at the 0.20 gate below.
+    smartphone_confuser_class_names: list[str] = ["remote", "chair", "couch"]
     smartphone_confuser_confidence_threshold: float = 0.20
     smartphone_confuser_overlap_threshold: float = 0.20
     smartphone_calculator_grid_filter_enabled: bool = True

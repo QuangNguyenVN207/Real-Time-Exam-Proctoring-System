@@ -87,3 +87,5 @@ backend/ai_services/whisper/phobert/weights_openvino/
 kernel.errors.txt
 stage6_bundle_exact/
 *.wav
+# san phẩm luồng offline (run_offline.py)
+offline_out/
