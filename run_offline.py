@@ -43,7 +43,11 @@ import cv2
 import numpy as np
 
 from backend.ai_services.face_verify.face_verify import FaceVerifier
-from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
+from backend.ai_services.object_detect.object_detect import (
+    ObjectDetector,
+    ObjectDetectModule,
+    load_phone_confuser,
+)
 from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
 from backend.ai_services.pipeline import audio_scan, events, face_scan, gaze_scan, object_scan, paper_scan
 from backend.ai_services.pipeline import overlays as overlay_draw
@@ -308,9 +312,13 @@ class OfflineProctor:
 
     def load_vision(self) -> None:
         if "object" in self.enabled:
-            self._timed("object_init", lambda: setattr(
-                self, "yolo", ObjectDetector(model_path=self.args.object_model, device=self.args.device,
-                                             confidence_threshold=self.args.confidence)))
+            def _build_object() -> None:
+                self.yolo = ObjectDetector(
+                    model_path=self.args.object_model, device=self.args.device,
+                    confidence_threshold=self.args.confidence)
+                # Cùng weights với person detector; chỉ suy luận khi có ứng viên smartphone.
+                self.phone_confuser = load_phone_confuser(self.args.device)
+            self._timed("object_init", _build_object)
         if "face" in self.enabled:
             self._timed("face_init", lambda: setattr(
                 self, "face", FaceVerifier(db_path=self.args.faces_dir)))
@@ -370,7 +378,9 @@ class OfflineProctor:
 
         if frame_id % stride["heavy"] == 0:
             if "object" in self.enabled:
-                self._detect("object", lambda: object_scan.scan_objects(self.yolo, frame, t), t)
+                self._detect("object", lambda: object_scan.scan_objects(
+                    self.yolo, frame, t, getattr(self, "phone_confuser", None),
+                    multi_scale=True), t)
             if "face" in self.enabled:
                 self._detect("face", lambda: face_scan.scan_stranger_with_masking(self.face, frame, t)[0], t)
 

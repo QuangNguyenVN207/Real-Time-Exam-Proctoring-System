@@ -101,7 +101,11 @@ from pathlib import Path
 from backend.ai_services.pose_gaze import paper_pipeline
 from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
 from backend.ai_services.pose_gaze.tracking.detectors import UltralyticsPersonDetector
-from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
+from backend.ai_services.object_detect.object_detect import (
+    ObjectDetector,
+    ObjectDetectModule,
+    load_phone_confuser,
+)
 from backend.ai_services.face_verify.face_verify import FaceVerifier
 # Micro: PyAudio trên Linux, sounddevice trên Windows (hai worker riêng biệt)
 if IS_WINDOWS:
@@ -188,6 +192,8 @@ def init_system_resources():
                 device=VISION_DEVICE,
                 confidence_threshold=0.7
             )
+            # Cổng phụ chặn "lưng ghế = điện thoại": chỉ suy luận khi có ứng viên smartphone.
+            phone_confuser = load_phone_confuser(VISION_DEVICE)
             face_model = FaceVerifier(db_path="data/student_faces/")
             # UI cần model này để nạp lại DB sau khi xoá/thêm ảnh học sinh.
             shared_state["face_model"] = face_model
@@ -264,7 +270,8 @@ def init_system_resources():
             # Vật cấm (đã lọc nhãn giấy trong object_scan) + người lạ (masking) đi qua queue chung
             if _module_on("object"):
                 with METRICS.time("object"):
-                    alert_object = object_scan.scan_objects(yolo_model, frame, timestamp)
+                    alert_object = object_scan.scan_objects(
+                        yolo_model, frame, timestamp, phone_confuser)
                 if alert_object is not None:
                     if not result_q.full():
                         result_q.put(alert_object)

@@ -49,7 +49,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.ai_services.face_verify.face_verify import FaceVerifier
-from backend.ai_services.object_detect.object_detect import ObjectDetector, ObjectDetectModule
+from backend.ai_services.object_detect.object_detect import (
+    ObjectDetector,
+    ObjectDetectModule,
+    load_phone_confuser,
+)
 from backend.ai_services.object_detect.paper_count_pipeline import PaperCountPipeline
 from backend.ai_services.pipeline import events, face_scan, gaze_scan, object_scan, paper_scan
 from backend.ai_services.pipeline import overlays as overlay_draw
@@ -128,6 +132,7 @@ class Modules:
 
         if "object" in enabled:
             self.yolo = ObjectDetector(model_path=vision_path, device=vision_device, confidence_threshold=0.7)
+            self.phone_confuser = load_phone_confuser(vision_device)
         if "face" in enabled:
             self.face = FaceVerifier(db_path=str(ROOT / "data" / "student_faces"))
         if "paper" in enabled:
@@ -198,7 +203,7 @@ def build_consumers(mods: Modules, sink: Sink, queues: dict[str, queue.Queue]) -
     def heavy(frame: np.ndarray, ts: float) -> None:
         if "object" in mods.enabled:
             with METRICS.time("object"):
-                alert = object_scan.scan_objects(mods.yolo, frame, ts)
+                alert = object_scan.scan_objects(mods.yolo, frame, ts, getattr(mods, "phone_confuser", None))
             sink.add(alert)
         if "face" in mods.enabled:
             with METRICS.time("face"):
